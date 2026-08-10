@@ -1,1 +1,142 @@
-c
+name: Build iOS Mod Menu
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    paths:
+      - 'template/**'
+      - 'Tweak.xm'
+      - 'control'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Dependencies
+        run: |
+          brew install ldid dpkg xz
+          echo "Xcode: $(xcode-select -p)"
+          echo "SDK: $(xcrun --sdk iphoneos --show-sdk-path)"
+
+      - name: Setup Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+
+      - name: Prepare Build Files
+        run: |
+          if [ ! -f Tweak.xm ] && [ -f template/Tweak.xm ]; then
+            cp template/Tweak.xm ./Tweak.xm
+          fi
+          ls -la Tweak.xm || true
+
+          # v114.4: control repo'da YOKSA fallback olustur (Package114 + Version114.4)
+          # VARSA dokunma (git'ten gelen kullanilir)
+          if [ ! -f control ]; then
+            echo "control repo'da yok - fallback olusturuluyor (v114.4)"
+            cat > control << 'EOF'
+          Package: com.few1n.dreamroadmod114
+          Name: FEW1N Mod Menu
+          Depends: mobilesubstrate, firmware (>= 14.0)
+          Version: 114.4
+          Architecture: iphoneos-arm64
+          Description: FEW1N Mod Menu v114.4 - Balata Method 6 (WheelCollider slip) + Grok/Groq AI + Package rename cache fix
+          Maintainer: few1n
+          Author: few1n
+          Section: Tweaks
+          EOF
+          else
+            echo "control repo'dan geldi - kullaniliyor"
+          fi
+
+          if [ ! -f Makefile ]; then
+            cat > Makefile << 'EOF'
+          TARGET := iphone:clang:latest:14.0
+          ARCHS = arm64
+          INSTALL_TARGET_PROCESSES = DreamRoadMultiplayer
+          THEOS_PACKAGE_SCHEME = rootless
+
+          include $(THEOS)/makefiles/common.mk
+
+          TWEAK_NAME = FEW1NMod
+
+          FEW1NMod_FILES = Tweak.xm
+          FEW1NMod_CFLAGS = -fobjc-arc -std=c++14 -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-function -Wno-format-invalid-specifier -Wno-unknown-warning-option
+          FEW1NMod_FRAMEWORKS = UIKit Foundation QuartzCore CoreGraphics ImageIO PhotosUI
+          FEW1NMod_LIBRARIES = substrate
+
+          include $(THEOS_MAKE_PATH)/tweak.mk
+          EOF
+          fi
+
+          if [ ! -f FEW1NMod.plist ]; then
+            cat > FEW1NMod.plist << 'EOF'
+          { Filter = { Bundles = ( "com.TenebryFox.DreamRoadMultiplayer" ); }; }
+          EOF
+          fi
+
+          echo "==> control:"
+          cat control
+
+      - name: Build Tweak
+        run: |
+          export THEOS=$HOME/theos
+          make clean
+          make package FINALPACKAGE=1
+
+      - name: Prepare Output
+        run: |
+          mkdir -p output
+          cp packages/*.deb output/FEW1NMod_114.4_${{ github.run_number }}.deb
+          DYLIB=$(find .theos/obj -name "*.dylib" | head -1)
+          if [ -z "$DYLIB" ]; then
+            dpkg -x packages/*.deb extracted
+            DYLIB=$(find extracted -name "*.dylib" | head -1)
+          fi
+          cp "$DYLIB" output/FEW1NMod.dylib
+          echo "==> Output:"
+          ls -la output/
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: FEW1N-ModMenu-v114.4-deb-${{ github.run_number }}
+          path: output/*.deb
+
+      - name: Upload .dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: FEW1N-ModMenu-v114.4-dylib-${{ github.run_number }}
+          path: output/FEW1NMod.dylib
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            output/*.deb
+            output/*.dylib
+          tag_name: v114.4-build${{ github.run_number }}
+          name: FEW1N Mod Menu v114.4 (Build #${{ github.run_number }})
+          body: |
+            🚀 **FEW1N Mod Menu Otomatik Derleme**
+            
+            - **Sürüm:** v114.4
+            - **Build:** #${{ github.run_number }}
+            - **Commit:** ${{ github.sha }}
+            
+            `.deb` → Jailbreak (Filza/Sileo)
+            `.dylib` → Sideload (ESign/TrollStore)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
