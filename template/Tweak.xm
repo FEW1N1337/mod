@@ -1064,6 +1064,69 @@ static NSString* readStr(void* il2s) {
         return [NSString stringWithCharacters:(unichar*)((uintptr_t)il2s + 0x14) length:len];
     } @catch (...) { return @""; }
 }
+#include <signal.h>
+#include <setjmp.h>
+
+// v114.5: Gercek Crash Guard - sigjmp ile hata noktasini atlar
+static sigjmp_buf few1n_jmpBuf;
+static volatile int few1n_inProtected = 0;
+static volatile int few1n_signalCount = 0;
+
+static void few1n_signalHandler(int sig, siginfo_t *info, void *ucontext) {
+    few1n_signalCount++;
+    if (few1n_inProtected) {
+        siglongjmp(few1n_jmpBuf, sig);
+    }
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = SIG_DFL;
+    sigaction(sig, &sa, NULL);
+    raise(sig);
+}
+
+static void few1n_setupCrashGuard(void) {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = few1n_signalHandler;
+    sa.sa_flags = SA_SIGINFO;
+    sigfillset(&sa.sa_mask);
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGBUS, &sa, NULL);
+}
+
+// Bir pointer okunabilir mi test et (crash-safe)
+static inline bool few1n_memOk(void* p) {
+    if ((uintptr_t)p < 0x1000) return false;
+    few1n_inProtected = 1;
+    volatile bool ok = false;
+    if (sigsetjmp(few1n_jmpBuf, 1) == 0) {
+        volatile uint8_t dummy = *(volatile uint8_t*)p;
+        (void)dummy;
+        ok = true;
+    }
+    few1n_inProtected = 0;
+    return ok;
+}
+
+// Guvenli bellek okuma/yazma makrolari
+#define FEW1N_SAFE_READ(type, ptr, offset, fallback) ({\
+    type _r = (fallback);\
+    few1n_inProtected = 1;\
+    if (sigsetjmp(few1n_jmpBuf, 1) == 0) {\
+        _r = *(type*)((uintptr_t)(ptr) + (offset));\
+    }\
+    few1n_inProtected = 0;\
+    _r;\
+})
+
+#define FEW1N_SAFE_WRITE(type, ptr, offset, value) do {\
+    few1n_inProtected = 1;\
+    if (sigsetjmp(few1n_jmpBuf, 1) == 0) {\
+        *(type*)((uintptr_t)(ptr) + (offset)) = (value);\
+    }\
+    few1n_inProtected = 0;\
+} while(0)
+
 // Substrate calisiyor mu? Bagli sembol bos stub olabilir -> dlsym ile gercegini ara.
 typedef void (*MSHookFn)(void*, void*, void**);
 static MSHookFn g_msHook = NULL;
@@ -5808,6 +5871,15 @@ static NSString* rainbowWrap(NSString* text, int idx) {
     FLog(@"Secim iptal");
 }
 
+- (void)playGifAscii {
+    FLog(@"GIF Oynat/Durdur tetiklendi");
+}
+
+- (void)buildGifAsciiFromData:(NSData*)data {
+    if (!data.length) return;
+    FLog([NSString stringWithFormat:@"GIF Verisi İşleniyor: %lu bayt", (unsigned long)data.length]);
+}
+
 - (void)applyBrakeGlowOld_UNUSED { }
 
 // v114.4 TEMIZ: SADECE Method 6 (WheelCollider slip = MAX, senin ipucu)
@@ -10077,69 +10149,7 @@ static void few1n_poll(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ few1n_poll(); });
 }
 
-#include <signal.h>
-#include <setjmp.h>
 
-// v114.5: Gercek Crash Guard - sigjmp ile hata noktasini atlar
-static sigjmp_buf few1n_jmpBuf;
-static volatile int few1n_inProtected = 0;
-static volatile int few1n_signalCount = 0;
-
-static void few1n_signalHandler(int sig, siginfo_t *info, void *ucontext) {
-    few1n_signalCount++;
-    if (few1n_inProtected) {
-        siglongjmp(few1n_jmpBuf, sig);
-    }
-    // Korunmayan yerde crash -> varsayilan davranisa birak
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = SIG_DFL;
-    sigaction(sig, &sa, NULL);
-    raise(sig);
-}
-
-static void few1n_setupCrashGuard(void) {
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_sigaction = few1n_signalHandler;
-    sa.sa_flags = SA_SIGINFO;
-    sigfillset(&sa.sa_mask);
-    sigaction(SIGSEGV, &sa, NULL);
-    sigaction(SIGBUS, &sa, NULL);
-}
-
-// Bir pointer okunabilir mi test et (crash-safe)
-static inline bool few1n_memOk(void* p) {
-    if ((uintptr_t)p < 0x1000) return false;
-    few1n_inProtected = 1;
-    volatile bool ok = false;
-    if (sigsetjmp(few1n_jmpBuf, 1) == 0) {
-        volatile uint8_t dummy = *(volatile uint8_t*)p;
-        (void)dummy;
-        ok = true;
-    }
-    few1n_inProtected = 0;
-    return ok;
-}
-
-// Guvenli bellek okuma/yazma makrolari
-#define FEW1N_SAFE_READ(type, ptr, offset, fallback) ({\
-    type _r = (fallback);\
-    few1n_inProtected = 1;\
-    if (sigsetjmp(few1n_jmpBuf, 1) == 0) {\
-        _r = *(type*)((uintptr_t)(ptr) + (offset));\
-    }\
-    few1n_inProtected = 0;\
-    _r;\
-})
-
-#define FEW1N_SAFE_WRITE(type, ptr, offset, value) do {\
-    few1n_inProtected = 1;\
-    if (sigsetjmp(few1n_jmpBuf, 1) == 0) {\
-        *(type*)((uintptr_t)(ptr) + (offset)) = (value);\
-    }\
-    few1n_inProtected = 0;\
-} while(0)
 
 
 %ctor {
