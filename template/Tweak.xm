@@ -12,7 +12,12 @@
 #import <objc/runtime.h>
 
 // ============================================================
-//  v114.5 - FEW1N MOD MENU  (derlenir, hatasiz - bu dosyayi kullan)
+//  v114.8 - FEW1N MOD MENU  (derlemeye hazir guncel surum)
+//  v114.6 FIX: i_class_from_name(NULL,...) -> few1n_classAnyImage. NULL image SIGSEGV yapip
+//  balata + motor olmez + emissive + trafik + /scan + /write ozelliklerini cokertiyordu. Duzeldi.
+//  v114.7 BALATA: RCCP_WheelGlow.dob(float) mekanizmasi makine kodunda dogrulandi (t=InverseLerp+gradient*curve).
+//  dob(1e9) ve minVisibleTemperature=-100000 ayri test edilebilir; goruntusel sonuc cihazda dogrulanir.
+//  v114.8 ODA: Oda sifresi oyunun kullandigi "pWd" custom property ile master odasina yazilir.
 //  DUZELTME: rainbowWrap forward-decl (tanim sirasi), decl-order taramasi temiz, autogreet poll optimize.
 //  Ozellikler: GERCEK Kick (liste/isim), Ucus D-pad, Emoji sprite+test, Otomatik Karsilama, Normal Oda 31
 //  DreamRoadMultiplayer | Unity 6 (6000.3.0b1) | Metadata v39
@@ -90,6 +95,9 @@ static bool isDriftEnabled = false;     // drift modu (kusursuz yan kayma)
 static bool isPopBangsEnabled = false;
 // v85: Balata sıcak tut — RCCP_WheelGlow bulunan her nesnede her frame temperature = max yap
 static bool isBrakeGlowEnabled = false;
+// Iki kaldiraci ayri ayri cihazda test etmek icin. Ikisi birden aciksa eski birlesik davranis korunur.
+static bool isBrakeGlowDobEnabled = false;       // Sadece RCCP_WheelGlow.dob(1e9)
+static bool isBrakeGlowMinTempEnabled = false;   // Sadece minVisibleTemperature = -100000
 static bool isAlwaysLightsEnabled = false;   // v97: Farlar Surekli Acik geri geldi (RCCP_Lights offset 0x40/0x41)
 static void* g_wheelGlowTypeObj = NULL;    // typeof(RCCP_WheelGlow)
 // v91: Hasar Yok — RCCP_Damage.Update hook ile
@@ -551,6 +559,35 @@ static void* few1n_typeObjOf(void* cls) {
     @try {
         void* t = i_class_get_type(cls);
         if (t) return i_type_get_object(t);
+    } @catch (...) {}
+    return NULL;
+}
+// v114.6: GECERLI image ile class ara. i_class_from_name(NULL,...) il2cpp icinde NULL image
+// dereference eder -> SIGSEGV. Obj-C @try/@catch bir donanim sinyalini (SIGSEGV) YAKALAYAMAZ,
+// bu yuzden oyun aninda coker (balata/motor/emissive/trafik/scan/write hepsi bu yuzden atiyordu).
+// Cozum: tum assembly image'lerini gezip GECERLI img ile ara; bulunamazsa isimle tam tarama.
+static void* few1n_classAnyImage(const char* ns, const char* name) {
+    if (!name || !i_class_from_name || !i_domain_get || !i_domain_get_assemblies || !i_assembly_get_image) return NULL;
+    @try {
+        void* domain = i_domain_get();
+        if (!domain) return NULL;
+        unsigned long n = 0;
+        void** asms = i_domain_get_assemblies(domain, &n);
+        if (!asms || n == 0 || n > 8192) return NULL;
+        for (unsigned long i = 0; i < n; i++) {
+            const void* img = i_assembly_get_image(asms[i]);
+            if (!img) continue;
+            void* c = NULL;
+            @try { c = i_class_from_name(img, ns ? ns : "", name); } @catch (...) { c = NULL; }
+            if (c) return c;
+        }
+        // namespace tahmini tutmadi -> sinif adiyla tam tarama (obfuscation-safe)
+        for (unsigned long i = 0; i < n; i++) {
+            const void* img = i_assembly_get_image(asms[i]);
+            if (!img) continue;
+            void* c = few1n_findClassByName(img, name);
+            if (c) return c;
+        }
     } @catch (...) {}
     return NULL;
 }
@@ -2136,7 +2173,7 @@ static void few1n_applyGizliCheats(void) {
         // engineRunning bool - offset bilinmiyor, class'a field ekle runtime'da al
         if (g_rccpEngineTypeObj && i_class_get_field_from_name && i_field_get_offset) {
             @try {
-                void* c = i_class_from_name(NULL, "", "RCCP_Engine");
+                void* c = few1n_classAnyImage("", "RCCP_Engine");
                 if (c) {
                     void* f = i_class_get_field_from_name(c, "engineRunning");
                     if (f) { int off = (int)i_field_get_offset(f); if (off > 0) few1n_writeBoolOnAllOfType(g_rccpEngineTypeObj, off, true); }
@@ -2151,7 +2188,7 @@ static void few1n_applyGizliCheats(void) {
     if (isEmissivePaintEnabled && g_mMatSetColor && g_carMatCount > 0 && i_runtime_invoke) {
         static void* g_mMatSetColorEmis = NULL;
         if (!g_mMatSetColorEmis && i_class_from_name && i_class_get_method_from_name) {
-            void* mc = i_class_from_name(NULL, "UnityEngine", "Material");
+            void* mc = few1n_classAnyImage("UnityEngine", "Material");
             if (mc) g_mMatSetColorEmis = i_class_get_method_from_name(mc, "SetColor", 2);
         }
         // Fallback: mevcut MatSetColor kullan (albedo bile parlak yapiyor)
@@ -2175,7 +2212,7 @@ static void few1n_applyGizliCheats(void) {
                     for (int i = 0; i < cnt; i++) {
                         void* it = items[i]; if (!unityAlive(it)) continue;
                         // maximumSpeed float - runtime resolve
-                        void* c = i_class_from_name(NULL, "", "HR_TrafficCar");
+                        void* c = few1n_classAnyImage("", "HR_TrafficCar");
                         if (c && i_class_get_field_from_name) {
                             void* f = i_class_get_field_from_name(c, "maximumSpeed");
                             if (f && i_field_get_offset) {
@@ -2346,7 +2383,7 @@ static NSString* few1n_dumpClassFields(NSString *className) {
     void* klass = NULL;
     // Bilinen namespace'lerde dene
     NSArray *ns = @[@"", @"Photon.Realtime", @"Photon.Pun", @"UnityEngine", @"UnityEngine.UI", @"TMPro"];
-    for (NSString *n in ns) { klass = i_class_from_name(NULL, n.UTF8String, className.UTF8String); if (klass) break; }
+    for (NSString *n in ns) { klass = few1n_classAnyImage(n.UTF8String, className.UTF8String); if (klass) break; }
     if (!klass) return [NSString stringWithFormat:@"class '%@' bulunamadi", className];
     if (!i_class_get_fields || !i_field_get_name) return [NSString stringWithFormat:@"class %@ VAR (%p) ama field enum API yok", className, klass];
     NSMutableString *out = [NSMutableString stringWithFormat:@"[%@ @ %p]\n", className, klass];
@@ -2375,7 +2412,7 @@ static NSString* few1n_writeFieldOnAllOfClass(NSString *className, NSString *fie
         return @"API hazir degil";
     void* klass = NULL;
     NSArray *ns = @[@"", @"Photon.Realtime", @"Photon.Pun", @"UnityEngine", @"TMPro"];
-    for (NSString *n in ns) { klass = i_class_from_name(NULL, n.UTF8String, className.UTF8String); if (klass) break; }
+    for (NSString *n in ns) { klass = few1n_classAnyImage(n.UTF8String, className.UTF8String); if (klass) break; }
     if (!klass) return [NSString stringWithFormat:@"class %@ yok", className];
     void* f = i_class_get_field_from_name(klass, fieldName.UTF8String);
     if (!f) return [NSString stringWithFormat:@"%@.%@ field yok", className, fieldName];
@@ -2412,20 +2449,13 @@ static NSString* few1n_writeFieldOnAllOfClass(NSString *className, NSString *fie
     } @catch (...) { return @"exception"; }
 }
 
-// v109: Groq API entegrasyonu - GERCEK yer (v114.4: hackerAsk'ten once tanimlanmali)
+// v109: OpenAI-uyumlu AI API entegrasyonu (Groq, Grok/xAI veya custom).
+// API anahtari kaynak koda gomulmez; kullanici kendi anahtarini ilgili provider icin kaydeder.
 static NSString* g_groqApiKey = nil;
-static NSString* const kGroqApiKeyDefault = @"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";
 static NSString* g_groqModel = nil;  // v114.4: runtime degistirilebilir
 static NSString* const kGroqModelDefault = @"llama-3.3-70b-versatile";  // Groq ucretsiz, Turkce destekli (test edildi)
-static inline NSString* kGroqModel(void) {  // hackerAsk/groqAsk uyumlu (fonksiyon cagrisi gibi)
-    if (g_groqModel && g_groqModel.length > 0) return g_groqModel;
-    NSString *m = [[NSUserDefaults standardUserDefaults] stringForKey:@"few1n_groqModel"];
-    if (m && m.length > 0) { g_groqModel = m; return m; }
-    g_groqModel = kGroqModelDefault;
-    return g_groqModel;
-}
-static NSString* const kGroqEndpoint = @"https://api.groq.com/openai/v1/chat/completions";
-// v114: Provider secim - Groq (ucretsiz) veya Grok (xAI odemeli) veya Custom
+static NSString* const kGrokModelDefault = @"grok-4.5";
+// Provider secim - Groq (ucretsiz) veya Grok (xAI odemeli) veya Custom.
 static NSString* g_apiEndpoint = nil;
 static NSString* const kEndpointGroq = @"https://api.groq.com/openai/v1/chat/completions";
 static NSString* const kEndpointGrok = @"https://api.x.ai/v1/chat/completions";
@@ -2437,17 +2467,53 @@ static inline NSString* kApiEndpoint(void) {
     return g_apiEndpoint;
 }
 
+static inline BOOL few1n_isGrokProvider(void) {
+    return [kApiEndpoint().lowercaseString containsString:@"api.x.ai"];
+}
+static inline NSString* few1n_aiProviderName(void) {
+    NSString *endpoint = kApiEndpoint().lowercaseString;
+    if ([endpoint containsString:@"api.x.ai"]) return @"Grok";
+    if ([endpoint containsString:@"api.groq.com"]) return @"Groq";
+    return @"Ozel API";
+}
+static inline NSString* few1n_aiKeyStorageKey(void) {
+    if (few1n_isGrokProvider()) return @"few1n_grokKey";
+    if ([kApiEndpoint().lowercaseString containsString:@"api.groq.com"]) return @"few1n_groqKey";
+    return @"few1n_customAiKey";
+}
+static void few1n_setAiProvider(NSString *endpoint, NSString *model) {
+    if (endpoint.length == 0) return;
+    g_apiEndpoint = endpoint;
+    g_groqApiKey = nil;  // Her provider kendi API key'ini kullanir.
+    [[NSUserDefaults standardUserDefaults] setObject:endpoint forKey:@"few1n_apiEndpoint"];
+    if (model.length > 0) {
+        g_groqModel = model;
+        [[NSUserDefaults standardUserDefaults] setObject:model forKey:@"few1n_groqModel"];
+    }
+}
+static inline NSString* kGroqModel(void) {  // Eski isim korunuyor; secili provider'in modelini verir.
+    if (g_groqModel && g_groqModel.length > 0) return g_groqModel;
+    NSString *m = [[NSUserDefaults standardUserDefaults] stringForKey:@"few1n_groqModel"];
+    // Onceki surumde Grok endpoint'i seciliyken Groq varsayilan modeli kalmis olabilir.
+    if (few1n_isGrokProvider() && (!m || [m isEqualToString:kGroqModelDefault])) m = kGrokModelDefault;
+    if (m && m.length > 0) { g_groqModel = m; return m; }
+    g_groqModel = few1n_isGrokProvider() ? kGrokModelDefault : kGroqModelDefault;
+    return g_groqModel;
+}
+
 static inline NSString* few1n_groqApiKey(void) {
     if (g_groqApiKey && g_groqApiKey.length > 0) return g_groqApiKey;
-    NSString *k = [[NSUserDefaults standardUserDefaults] stringForKey:@"few1n_groqKey"];
+    NSString *k = [[NSUserDefaults standardUserDefaults] stringForKey:few1n_aiKeyStorageKey()];
     if (k && k.length > 0) { g_groqApiKey = k; return k; }
-    g_groqApiKey = kGroqApiKeyDefault;
-    return g_groqApiKey;
+    return nil;
 }
 
 static void few1n_groqAsk(NSString *prompt, void(^completion)(NSString*)) {
     NSString *key = few1n_groqApiKey();
-    if (!key || key.length == 0) { completion(nil); return; }
+    if (!key || key.length == 0) {
+        FLog([NSString stringWithFormat:@"🤖 %@ API key ayarlanmamis", few1n_aiProviderName()]);
+        completion(nil); return;
+    }
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:kApiEndpoint()]];
     req.HTTPMethod = @"POST";
     req.timeoutInterval = 8.0;
@@ -2467,11 +2533,17 @@ static void few1n_groqAsk(NSString *prompt, void(^completion)(NSString*)) {
     req.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:&jerr];
     if (jerr) { completion(nil); return; }
     [[[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
-        if (err || !data) { FLog([NSString stringWithFormat:@"🤖 Groq err: %@", err.localizedDescription ?: @"no data"]); completion(nil); return; }
+        if (err || !data) { FLog([NSString stringWithFormat:@"🤖 %@ err: %@", few1n_aiProviderName(), err.localizedDescription ?: @"no data"]); completion(nil); return; }
         NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        NSHTTPURLResponse *http = [resp isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse*)resp : nil;
+        if (http && (http.statusCode < 200 || http.statusCode >= 300)) {
+            NSDictionary *httpError = [json isKindOfClass:[NSDictionary class]] ? json[@"error"] : nil;
+            FLog([NSString stringWithFormat:@"🤖 %@ HTTP %ld: %@", few1n_aiProviderName(), (long)http.statusCode, httpError[@"message"] ?: @"API istegi basarisiz"]);
+            completion(nil); return;
+        }
         if (![json isKindOfClass:[NSDictionary class]]) { completion(nil); return; }
         NSDictionary *errObj = json[@"error"];
-        if ([errObj isKindOfClass:[NSDictionary class]]) { FLog([NSString stringWithFormat:@"🤖 Groq API error: %@", errObj[@"message"] ?: errObj]); completion(nil); return; }
+        if ([errObj isKindOfClass:[NSDictionary class]]) { FLog([NSString stringWithFormat:@"🤖 %@ API error: %@", few1n_aiProviderName(), errObj[@"message"] ?: errObj]); completion(nil); return; }
         NSArray *choices = json[@"choices"];
         if (![choices isKindOfClass:[NSArray class]] || choices.count == 0) { completion(nil); return; }
         NSDictionary *msg2 = choices[0][@"message"];
@@ -2611,6 +2683,83 @@ static NSString* few1n_aiReply(NSString *prompt) {
     return fallback[arc4random_uniform((uint32_t)fallback.count)];
 }
 
+// ===== OYUN SOHBETI AI (temiz /ai akisi) =====
+// /ai <soru> her oyuncunun mesaji icin tek bir oda cevabi uretir.
+// Cevaplar ve istekler rate-limitlidir; bot mesaji yeniden bota girdi olmaz.
+static const NSTimeInterval kAiRoomCooldown = 1.5;
+static BOOL g_aiRoomRequestPending = NO;
+static NSTimeInterval g_aiLastRoomRequestAt = 0;
+
+static NSString* few1n_chatSafeText(NSString *text, NSUInteger maxLength) {
+    if (![text isKindOfClass:[NSString class]]) return @"";
+    NSString *clean = [[text stringByReplacingOccurrencesOfString:@"\n" withString:@" "]
+        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (clean.length > maxLength) clean = [[clean substringToIndex:maxLength] stringByAppendingString:@"..."];
+    return clean;
+}
+
+static NSString* few1n_aiPromptFromChat(NSString *text) {
+    if (![text isKindOfClass:[NSString class]]) return nil;
+    NSRange marker = [text rangeOfString:@"/ai" options:NSCaseInsensitiveSearch];
+    if (marker.location == NSNotFound) return nil;
+    // /ai bir komut olmali; /air gibi kelimeleri yakalama.
+    NSUInteger after = marker.location + marker.length;
+    if (after < text.length) {
+        unichar next = [text characterAtIndex:after];
+        if (![[NSCharacterSet whitespaceAndNewlineCharacterSet] characterIsMember:next]) return nil;
+    }
+    NSString *prompt = after < text.length ? [text substringFromIndex:after] : @"";
+    prompt = few1n_chatSafeText(prompt, 300);
+    return prompt.length > 0 ? prompt : nil;
+}
+
+static void few1n_aiAsk(NSString *prompt, void(^completion)(NSString*, NSString*)) {
+    NSString *key = few1n_groqApiKey();
+    if (key.length == 0) {
+        completion(nil, [NSString stringWithFormat:@"%@ API key ayarlanmamis", few1n_aiProviderName()]);
+        return;
+    }
+    few1n_groqAsk(prompt, ^(NSString *reply) {
+        if (reply.length > 0) completion(few1n_chatSafeText(reply, 150), nil);
+        else completion(nil, [NSString stringWithFormat:@"%@ API yanit vermedi; logu kontrol et", few1n_aiProviderName()]);
+    });
+}
+
+static BOOL few1n_sendRoomChat(NSString *message) {
+    if (message.length == 0 || !chatGetInst || !chatSend) return NO;
+    @try {
+        void *manager = chatGetInst();
+        void *ilMessage = mkStr(message);
+        if (!manager || !ilMessage) return NO;
+        chatSend(manager, ilMessage);
+        return YES;
+    } @catch (...) { return NO; }
+}
+
+static void few1n_replyToRoomAiPrompt(NSString *prompt) {
+    prompt = few1n_chatSafeText(prompt, 300);
+    if (prompt.length == 0) return;
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if (g_aiRoomRequestPending || now - g_aiLastRoomRequestAt < kAiRoomCooldown) {
+        FLog(@"🤖 AI istek atlandi: onceki cevap bekleniyor veya cooldown aktif");
+        return;
+    }
+    g_aiRoomRequestPending = YES;
+    g_aiLastRoomRequestAt = now;
+    NSString *provider = few1n_aiProviderName();
+    FLog([NSString stringWithFormat:@"🤖 /ai istegi -> %@: %@", provider, prompt]);
+    few1n_aiAsk(prompt, ^(NSString *reply, NSString *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            g_aiRoomRequestPending = NO;
+            NSString *body = reply.length > 0 ? reply : few1n_chatSafeText(error, 150);
+            NSString *nameCol = [NSString stringWithUTF8String:g_aiNameColorHex];
+            NSString *replyCol = [NSString stringWithUTF8String:g_aiReplyColorHex];
+            NSString *finalMsg = [NSString stringWithFormat:@"<color=#%@><b>[AI %@]</b></color> <color=#%@>%@</color>", nameCol, provider, replyCol, body ?: @"Cevap alinamadi"];
+            if (!few1n_sendRoomChat(finalMsg)) FLog(@"🤖 AI cevabi odaya gonderilemedi: ChatManager hazir degil");
+        });
+    });
+}
+
 static void h_chatSend(void* self, void* msg) {
     fChat++;
     if (msg) {
@@ -2722,38 +2871,11 @@ static void h_chatSend(void* self, void* msg) {
                 });
                 return;
             }
-            // v109: /ai prefix intercept - Groq API async, fallback kural tabanli
-            if ([orig.lowercaseString hasPrefix:@"/ai "] || [orig.lowercaseString hasPrefix:@"/ai\n"] || [orig.lowercaseString isEqualToString:@"/ai"]) {
-                NSString *prompt = @"";
-                if (orig.length > 4) prompt = [orig substringFromIndex:4];
-                void* selfKept = self;   // async için sakla
-                FLog([NSString stringWithFormat:@"🤖 AI istek: '%@' (Groq)", prompt]);
-                // v114.4: Anında feedback - intercept çalıştığını göster
-                @try {
-                    NSString *loadingMsg = [NSString stringWithFormat:@"<color=#FFFF00><i>🔄 AI düşünüyor: %@</i></color>", prompt];
-                    void* loadStr = mkStr(loadingMsg);
-                    if (loadStr && o_chatSend) o_chatSend(selfKept, loadStr);
-                } @catch (...) {}
-                few1n_groqAsk(prompt, ^(NSString *reply) {
-                    NSString *finalReply = (reply && reply.length > 0) ? reply : few1n_aiReply(prompt);
-                    NSString *source = reply ? @"Groq✅" : @"fallback⚠️";
-                    NSString *nameCol = [NSString stringWithUTF8String:g_aiNameColorHex];
-                    NSString *replyCol = [NSString stringWithUTF8String:g_aiReplyColorHex];
-                    NSString *finalMsg = [NSString stringWithFormat:@"<color=#%@><b>[🤖 FEW1N AI %@]</b></color> <color=#%@>%@</color>", nameCol, source, replyCol, finalReply];
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        @try {
-                            void* ns = mkStr(finalMsg);
-                            void* mgr2 = chatGetInst ? chatGetInst() : NULL;
-                            if (mgr2 && ns && chatSend) {
-                                chatSend(mgr2, ns);
-                            } else if (ns && o_chatSend && selfKept) {
-                                o_chatSend(selfKept, ns);
-                            } else FLog(@"❌ AI cevap gonderemedi - mkStr/chatSend NULL");
-                        } @catch (...) { FLog(@"❌ AI cevap send exception"); }
-                    });
-                    FLog([NSString stringWithFormat:@"🤖 AI cevap: %@ (%@)", finalReply, source]);
-                });
-                return; // orijinal /ai mesajini chat'e gonderme
+            // Yerel /ai komutu: komut odaya dusmez; AI cevabi herkesin gorecegi chat mesaji olarak gonderilir.
+            NSString *aiPrompt = few1n_aiPromptFromChat(orig);
+            if (aiPrompt) {
+                few1n_replyToRoomAiPrompt(aiPrompt);
+                return;
             }
             // Eger gonderilen mesajda/nickte ham HTML/TMPro renk etiketleri varsa (<color=...>, <#FF0000>, <mark> vb.) temizle
             NSString *cleaned = stripRichTextTags(orig);
@@ -2776,56 +2898,35 @@ static void h_chatSend(void* self, void* msg) {
     if (o_chatSend) o_chatSend(self, msg);
 }
 
-// v114.4: h_chatFup GERCEK BODY (AI globalleri/fonksiyonlarindan sonra tanimli, compile hatasi bitti)
+// ChatManager.fup: odadaki diger oyuncularin mesajlari burada gorulur.
+// Bir oyuncu /ai <soru> yazdigi anda bu cihazdaki bot tek cevabi odaya gonderir.
 static void h_chatFup(void* self, void* msg) {
     if (msg) @try {
         NSString *received = readStr(msg);
-        if (received && received.length > 0) {
-            NSString *lower = received.lowercaseString;
-            NSRange r = [lower rangeOfString:@"/ai "];
-            BOOL isBotMsg = [received containsString:@"🤖"];
+        if (received.length > 0) {
+            BOOL isBotMsg = [received containsString:@"[AI "] || [received containsString:@"[🤖"];
             BOOL isMine = NO;
             if (g_recentlySentByMe) {
                 @synchronized(g_recentlySentByMe) {
-                    for (NSString *m in g_recentlySentByMe) {
-                        if ([received containsString:m] || [m containsString:received]) { isMine = YES; break; }
+                    for (NSString *sent in g_recentlySentByMe) {
+                        if ([received isEqualToString:sent]) { isMine = YES; break; }
                     }
                 }
             }
             if (!isBotMsg && !isMine) {
-                NSString *prompt = nil;
-                BOOL shouldReply = NO;
-                if (r.location != NSNotFound) { prompt = [received substringFromIndex:r.location + 4]; shouldReply = YES; }
-                else if (isAiChatModeEnabled) {
-                    NSString *lo = [received.lowercaseString stringByReplacingOccurrencesOfString:@"ı" withString:@"i"];
-                    BOOL isHitap = [lo containsString:@"bot"] || [lo containsString:@"ai "] || [lo containsString:@"few1n"] || [lo containsString:@" ai"] || [lo hasPrefix:@"ai "] || [lo hasSuffix:@" ai"];
-                    if (isHitap) { prompt = received; shouldReply = YES; }
-                    else if (arc4random_uniform(100) < 40) { prompt = received; shouldReply = YES; }
-                }
-                if (shouldReply && prompt) {
-                    prompt = [prompt stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                    if (prompt.length > 0 && prompt.length < 300) {
-                        FLog([NSString stringWithFormat:@"🤖 %@ cevabi: '%@'", r.location != NSNotFound ? @"/ai" : @"sohbet", prompt]);
-                        few1n_groqAsk(prompt, ^(NSString *reply) {
-                            NSString *finalReply = (reply && reply.length > 0) ? reply : few1n_aiReply(prompt);
-                            NSString *nameCol = [NSString stringWithUTF8String:g_aiNameColorHex];
-                            NSString *replyCol = [NSString stringWithUTF8String:g_aiReplyColorHex];
-                            NSString *finalMsg = [NSString stringWithFormat:@"<color=#%@><b>[🤖 FEW1N AI]</b></color> <color=#%@>%@</color>", nameCol, replyCol, finalReply];
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                @try {
-                                    if (chatGetInst && chatSend) {
-                                        void* mgr = chatGetInst();
-                                        void* ns = mkStr(finalMsg);
-                                        if (mgr && ns) chatSend(mgr, ns);
-                                    }
-                                } @catch (...) {}
-                            });
-                        });
-                    }
+                NSString *prompt = few1n_aiPromptFromChat(received);
+                if (prompt) {
+                    few1n_replyToRoomAiPrompt(prompt);
+                } else if (isAiChatModeEnabled) {
+                    NSString *lower = [received.lowercaseString stringByReplacingOccurrencesOfString:@"ı" withString:@"i"];
+                    BOOL mentioned = [lower containsString:@" ai"] || [lower hasPrefix:@"ai "] ||
+                                     [lower containsString:@"bot"] || [lower containsString:@"grok"] ||
+                                     [lower containsString:@"few1n ai"];
+                    if (mentioned) few1n_replyToRoomAiPrompt(received);
                 }
             }
         }
-    } @catch (...) {}
+    } @catch (...) { FLog(@"🤖 Gelen chat islenirken exception"); }
     if (o_chatFup) o_chatFup(self, msg);
 }
 
@@ -3103,6 +3204,11 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 @property (nonatomic, strong) UIView *favOverlay;
 @property (nonatomic, strong) UIView *nanOverlay;
 - (void)tapAdBlock;
+- (void)tapBrakeGlow;
+- (void)tapBrakeGlowDob;
+- (void)tapBrakeGlowMinTemp;
+- (void)restartBrakeGlowTimer;
+- (NSString*)brakeGlowModeDescription;
 - (void)tapNanCrash;
 - (void)tapNanCrashRemote;
 - (void)targetPlayerCrash;
@@ -3534,7 +3640,7 @@ static UIViewController* few1n_topVC(void) {
     title.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBlack];
     [header addSubview:title];
     UILabel *ver = [[UILabel alloc] initWithFrame:CGRectMake(42,37,pw-90,16)];
-    ver.text = [NSString stringWithFormat:@"v114.5  •  Base 0x%lX", (unsigned long)global_base];
+    ver.text = [NSString stringWithFormat:@"v114.8  •  Base 0x%lX", (unsigned long)global_base];
     ver.textColor = [UIColor colorWithWhite:1 alpha:0.82];
     ver.font = [UIFont fontWithName:@"Menlo-Bold" size:8] ?: [UIFont systemFontOfSize:8 weight:UIFontWeightBold];
     [header addSubview:ver];
@@ -3617,7 +3723,9 @@ static UIViewController* few1n_topVC(void) {
     y = [self toggle:@"🔥  Pop & Bangs (Egzoz Alev Patlatma)" sub:@"Vites veya gaz birakmada egzoz alev/patlama efekti" key:@"popbangs" atY:y action:@selector(tapPopBangs)];
     y = [self toggle:@"🔊  Otomatik Havali Korna" sub:@"Ritmik havalı korna calar (herkese duyulur)" key:@"autohorn" atY:y action:@selector(tapAutoHorn)];
     // v99: Yuksek Devir Kesici (Rev Limiter) SİLİNDİ (istek)
-    y = [self toggle:@"🔥  Balata Sicak Tut (Sari Glow)" sub:@"Fren yapmasan bile balata sari glow — v91'de il2cpp ile" key:@"brakeglow" atY:y action:@selector(tapBrakeGlow)];
+    y = [self toggle:@"🔥  Surekli Sari Balata" sub:@"Fren yapmadan sari glow: dob(1e9) + kalici esik birlikte" key:@"brakeglow" atY:y action:@selector(tapBrakeGlow)];
+    y = [self toggle:@"🧪  Balata Testi: Anlik Sicaklik" sub:@"Yalniz dob(1e9): minVisibleTemperature yazilmaz" key:@"brakeglowdob" atY:y action:@selector(tapBrakeGlowDob)];
+    y = [self toggle:@"🧪  Balata Testi: Kalici Esik" sub:@"Yalniz minVisibleTemperature yazilir; dob cagrilmaz" key:@"brakeglowmin" atY:y action:@selector(tapBrakeGlowMinTemp)];
     // v114.1: Debug buton SILINDI (i_class_from_name NULL image crash sebep)
     y = [self toggle:@"🛡️  Hasar Yok" sub:@"Arac hasar almaz — v91'de RCCP_Damage.Update hook ile" key:@"nodamage" atY:y action:@selector(tapNoDamage)];
     // v99: 2. Yuksek Devir/Kesici Ses Modu (duplicate revlimiter) SİLİNDİ
@@ -3649,8 +3757,8 @@ static UIViewController* few1n_topVC(void) {
 
     y = [self header:@"\U0001F4AC  CHAT" atY:y];
     y = [self actionRow:@"💬  AI'ye Dogrudan Soru Sor (Pencereden)" color:C_GOLD atY:y action:@selector(askAiDirect)];
-    y = [self actionRow:@"🤖  AI Bot: chat'e /ai <soru> yaz (Groq)" color:C_ON atY:y action:@selector(editAiApiKey)];
-    y = [self toggle:@"💬  AI Sohbet Modu" sub:@"AI'ye /ai yazmadan, tum mesajlara %40 + hitaplara cevap ver" key:@"aichat" atY:y action:@selector(tapAiChatMode)];
+    y = [self actionRow:@"🤖  AI Bot Kurulumu (Grok / Groq)" color:C_ON atY:y action:@selector(editAiApiKey)];
+    y = [self toggle:@"💬  AI Sohbet Modu" sub:@"/ai olmadan sadece 'AI', 'bot' veya 'Grok' hitaplarina cevap verir" key:@"aichat" atY:y action:@selector(tapAiChatMode)];
     y = [self actionRow:@"🎨  AI Cevap Renkleri Sec (isim + cevap)" color:C_GOLD atY:y action:@selector(pickAiColors)];
     y = [self actionRow:@"🔓  HACKER AI: chat'e /hack <istek> yaz" color:C_RED atY:y action:@selector(showHackerAiInfo)];
     y = [self toggle:@"\U0001F4E2  Chat Spam" sub:@"50ms araligla mesaj" key:@"chatspam" atY:y action:@selector(tapChatSpam)];
@@ -4092,7 +4200,9 @@ static UIViewController* few1n_topVC(void) {
     // v95 FIX: 4 buton EKSIK KALDI refreshUI'da — basınca iç state değişiyordu ama pill güncellenmiyordu
     // Kullanıcı "açılmıyor" sanıyordu. Şimdi eklendi.
     [self setToggle:@"automaster"     on:isAutoMasterEnabled];
-    [self setToggle:@"brakeglow"      on:isBrakeGlowEnabled];
+    [self setToggle:@"brakeglow"      on:isBrakeGlowEnabled];  // eski favori anahtari
+    [self setToggle:@"brakeglowdob"   on:isBrakeGlowDobEnabled];
+    [self setToggle:@"brakeglowmin"   on:isBrakeGlowMinTempEnabled];
     [self setToggle:@"nodamage"       on:isNoDamageEnabled];
     [self setToggle:@"colorroomforce" on:isColorRoomForce];
     [self setToggle:@"alwayslights"   on:isAlwaysLightsEnabled];
@@ -5884,66 +5994,115 @@ static NSString* rainbowWrap(NSString* text, int idx) {
 
 // v114.4 TEMIZ: SADECE Method 6 (WheelCollider slip = MAX, senin ipucu)
 // Init'te class + field offsetleri BIR KEZ resolve, safe try/catch, ultra null check.
+// BALATA TEST MODU (UnityFramework binary MAKINE KODU ile dogrulandi):
+// RCCP_WheelGlow.dob(float a) @ RVA 0x59EB634 disassemble edildi. Yaptigi:
+//   t = clamp01((a - minVisibleTemperature) / (maxTemperature - minVisibleTemperature));
+//   Color c = hxk.Evaluate(t);  float ints = hxl.Evaluate(t);  hxm.SetColor(nameID, c * ints);
+// => 'a' SICAKLIKTIR; renk VE yogunluk normalize t'den gelir (ham temp DEGIL). Bu yuzden _hxg/slip
+//    yazmak gereksizdir -> silindi. Iki kaldirac ayri ayri denenebilir:
+//   (1) minVisibleTemperature = -100000  -> oyunun kendi her-frame dob cagrilari da t~=1 verir (kalici sicak).
+//   (2) oyunun kendi dob(1e9) metodunu biz cagiririz -> t clamp 1 -> en sicak renk aninda (oyun idle olsa bile).
+// Dob'un tek float imzasi statik olarak dogrulandi. Runtime sonuc ve instance gecerliligi cihazda dogrulanmalidir.
+// exc yalniz managed exception'i bildirir; native fault garantisi vermez. Asagidaki kontroller riski azaltir.
 - (void)applyBrakeGlow {
-    static bool g_wcInited = false;
-    static void* g_wheelColType = NULL;
-    static int g_offTotalSlip = -1, g_offSlipSide = -1, g_offSlipFwd = -1, g_offIsSkidding = -1;
-    if (!g_wcInited) {
-        g_wcInited = true;
+    static bool g_bgInited = false;
+    static void* g_wgClass = NULL;     // RCCP_WheelGlow Il2CppClass* (kimlik kontrolu icin)
+    static void* g_wgType = NULL;      // typeof(RCCP_WheelGlow) - FindObjectsOfType icin
+    static void* g_mDob = NULL;        // RCCP_WheelGlow.dob(float) MethodInfo
+    static int g_offMinVisTemp = -1;   // minVisibleTemperature (dump 0x2C, isimle cozulur)
+    if (!g_bgInited) {
+        g_bgInited = true;
         @try {
-            if (i_class_from_name && i_class_get_field_from_name && i_field_get_offset) {
-                void* c = NULL;
-                // NULL image ile safe try
-                @try { c = i_class_from_name(NULL, "", "RCCP_WheelCollider"); } @catch (...) { c = NULL; }
-                if (c) {
-                    @try { void* t = few1n_typeObjOf(c); if (ptrOk(t)) g_wheelColType = t; } @catch (...) {}
-                    void* f;
-                    @try { f = i_class_get_field_from_name(c, "totalSlip");                if (f) g_offTotalSlip  = (int)i_field_get_offset(f); } @catch (...) {}
-                    @try { f = i_class_get_field_from_name(c, "wheelSlipAmountSideways"); if (f) g_offSlipSide   = (int)i_field_get_offset(f); } @catch (...) {}
-                    @try { f = i_class_get_field_from_name(c, "wheelSlipAmountForward");  if (f) g_offSlipFwd    = (int)i_field_get_offset(f); } @catch (...) {}
-                    @try { f = i_class_get_field_from_name(c, "isSkidding");              if (f) g_offIsSkidding = (int)i_field_get_offset(f); } @catch (...) {}
-                    FLog([NSString stringWithFormat:@"🔥 WheelCol: type=%p totalSlip@%d side@%d fwd@%d skid@%d", g_wheelColType, g_offTotalSlip, g_offSlipSide, g_offSlipFwd, g_offIsSkidding]);
-                }
+            void* g = NULL;
+            @try { g = few1n_classAnyImage("", "RCCP_WheelGlow"); } @catch (...) { g = NULL; }
+            if (g) {
+                g_wgClass = g;   // kimlik kontrolu: dob'u SADECE gercek WheelGlow instance'inda cagir
+                @try { void* t = few1n_typeObjOf(g); if (ptrOk(t)) g_wgType = t; } @catch (...) {}
+                @try { if (i_class_get_method_from_name) g_mDob = i_class_get_method_from_name(g, "dob", 1); } @catch (...) {}
+                @try {
+                    if (i_class_get_field_from_name && i_field_get_offset) {
+                        void* f = i_class_get_field_from_name(g, "minVisibleTemperature");
+                        if (f) g_offMinVisTemp = (int)i_field_get_offset(f);
+                    }
+                } @catch (...) {}
+                FLog([NSString stringWithFormat:@"🔥 WheelGlow: type=%p dob=%p minVisTemp@%d", g_wgType, g_mDob, g_offMinVisTemp]);
             }
         } @catch (...) {}
     }
-    if (!g_wheelColType || !g_mFindObjectsPlural || !i_runtime_invoke) return;
+    if (!isBrakeGlowDobEnabled && !isBrakeGlowMinTempEnabled) return;
+    if (!g_wgType || !g_mFindObjectsPlural || !i_runtime_invoke) return;
     @try {
-        void* a[1]; a[0] = g_wheelColType;
-        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        void* a1[1]; a1[0] = g_wgType;
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a1, NULL);
         if (!ptrOk(arr)) return;
         int cnt = (int)(*(uintptr_t*)((uintptr_t)arr + 0x18));
-        if (cnt <= 0 || cnt > 32) return;
-        void** wcs = (void**)((uintptr_t)arr + 0x20);
+        if (cnt <= 0 || cnt > 256) return;
+        void** gs = (void**)((uintptr_t)arr + 0x20);
+        float hot = 1000000000.0f;   // 1e9 -> dob icinde t clamp 1 (en sicak renk)
         for (int i = 0; i < cnt; i++) {
-            void* wc = wcs[i]; if (!ptrOk(wc) || !unityAlive(wc)) continue;
-            @try {
-                if (g_offTotalSlip  > 0x18 && g_offTotalSlip  < 0x400) *(float*)((uintptr_t)wc + g_offTotalSlip)  = 1.0f;
-                if (g_offSlipSide   > 0x18 && g_offSlipSide   < 0x400) *(float*)((uintptr_t)wc + g_offSlipSide)   = 1.0f;
-                if (g_offSlipFwd    > 0x18 && g_offSlipFwd    < 0x400) *(float*)((uintptr_t)wc + g_offSlipFwd)    = 1.0f;
-                if (g_offIsSkidding > 0x18 && g_offIsSkidding < 0x400) *(bool*)((uintptr_t)wc + g_offIsSkidding) = true;
-            } @catch (...) {}
+            void* wg = gs[i]; if (!ptrOk(wg) || !unityAlive(wg)) continue;
+            // Kimlik kontrolu: wg gercekten RCCP_WheelGlow mu? (obj[0] = Il2CppClass*).
+            // Bu ve unityAlive kontrolleri yanlis/stale this riskini azaltir; @try native SIGSEGV yakalamaz.
+            @try { if (g_wgClass && *(void**)wg != g_wgClass) continue; } @catch (...) { continue; }
+            // (1) Kalici-esik modu: oyunun kendi dob cagrilari da t~=1 versin.
+            if (isBrakeGlowMinTempEnabled) {
+                @try {
+                    if (g_offMinVisTemp > 0x10 && g_offMinVisTemp < 0x400) *(float*)((uintptr_t)wg + g_offMinVisTemp) = -100000.0f;
+                } @catch (...) {}
+            }
+            // (2) Anlik-sicaklik modu: oyunun dob(float) metodunu yuksek sicaklikla cagir.
+            if (isBrakeGlowDobEnabled) {
+                @try {
+                    if (g_mDob) { void* exc = NULL; void* p[1]; p[0] = &hot; i_runtime_invoke(g_mDob, wg, p, &exc); }
+                } @catch (...) {}
+            }
         }
     } @catch (...) {}
 }
 
-- (void)tapBrakeGlow {
-    isBrakeGlowEnabled = !isBrakeGlowEnabled;
-    saveBool(@"brakeglow", isBrakeGlowEnabled);
-    [self refreshUI];
+- (void)restartBrakeGlowTimer {
+    isBrakeGlowEnabled = isBrakeGlowDobEnabled || isBrakeGlowMinTempEnabled;
     if (brakeGlowTimer) { [brakeGlowTimer invalidate]; brakeGlowTimer = nil; }
-    if (!isBrakeGlowEnabled) { FLog(@"🔥 Balata KAPALI"); return; }
-    // v96 DIAGNOZ: neden calismiyor kontrolu
-    NSMutableString *diag = [NSMutableString stringWithString:@"🔥 Balata AKTIF - "];
-    if (!g_wheelGlowTypeObj)  [diag appendString:@"WheelGlow tipi YOK "];
-    if (!g_mFindObjectsPlural)[diag appendString:@"FindObjects API YOK "];
-    if (!g_mRendGetMat)       [diag appendString:@"Renderer.GetMat YOK "];
-    if (!g_mMatSetColor)      [diag appendString:@"Material.SetColor YOK "];
-    if (g_wheelGlowTypeObj && g_mFindObjectsPlural && g_mRendGetMat && g_mMatSetColor)
-        [diag appendString:@"HAZIR (2sn timer basladi, araba sahnedeyken calisir)"];
-    FLog(diag);
+    if (!isBrakeGlowEnabled) return;
     [self applyBrakeGlow];
+    // Yeni arac/instance olusunca ayari tekrar uygula; her iki mod da ayni taramayi kullanir.
     brakeGlowTimer = [NSTimer scheduledTimerWithTimeInterval:2.0 target:self selector:@selector(applyBrakeGlow) userInfo:nil repeats:YES];
+}
+
+- (NSString*)brakeGlowModeDescription {
+    if (isBrakeGlowDobEnabled && isBrakeGlowMinTempEnabled) return @"dob(1e9) + minVisibleTemperature";
+    if (isBrakeGlowDobEnabled) return @"yalniz dob(1e9)";
+    if (isBrakeGlowMinTempEnabled) return @"yalniz minVisibleTemperature";
+    return @"kapali";
+}
+
+// Eski favori/selector yolu: iki deneyi birlikte acip kapatir.
+- (void)tapBrakeGlow {
+    BOOL enableBoth = !isBrakeGlowEnabled;
+    isBrakeGlowDobEnabled = enableBoth;
+    isBrakeGlowMinTempEnabled = enableBoth;
+    saveBool(@"brakeglow", enableBoth);
+    saveBool(@"brakeglowdob", enableBoth);
+    saveBool(@"brakeglowmin", enableBoth);
+    [self restartBrakeGlowTimer];
+    FLog([NSString stringWithFormat:@"🔥 Balata test modu: %@", [self brakeGlowModeDescription]]);
+    [self refreshUI];
+}
+
+- (void)tapBrakeGlowDob {
+    isBrakeGlowDobEnabled = !isBrakeGlowDobEnabled;
+    saveBool(@"brakeglowdob", isBrakeGlowDobEnabled);
+    [self restartBrakeGlowTimer];
+    FLog([NSString stringWithFormat:@"🔥 Balata test modu: %@", [self brakeGlowModeDescription]]);
+    [self refreshUI];
+}
+
+- (void)tapBrakeGlowMinTemp {
+    isBrakeGlowMinTempEnabled = !isBrakeGlowMinTempEnabled;
+    saveBool(@"brakeglowmin", isBrakeGlowMinTempEnabled);
+    [self restartBrakeGlowTimer];
+    FLog([NSString stringWithFormat:@"🔥 Balata test modu: %@", [self brakeGlowModeDescription]]);
+    [self refreshUI];
 }
 - (void)tapAlwaysLights {   // v97: GERI GELDI - RCCP_Lights offset 0x40/0x41 (Selektor ile ayni)
     isAlwaysLightsEnabled = !isAlwaysLightsEnabled;
@@ -6157,19 +6316,20 @@ static NSString* rainbowWrap(NSString* text, int idx) {
 - (void)tapAiChatMode {
     isAiChatModeEnabled = !isAiChatModeEnabled;
     saveBool(@"aichat", isAiChatModeEnabled);
-    FLog(isAiChatModeEnabled ? @"💬 AI Sohbet Modu AKTIF - her mesaja %40 + hitap kelimelerine %100 cevap" : @"💬 AI Sohbet kapali - sadece /ai prefix");
+    FLog(isAiChatModeEnabled ? @"💬 AI Sohbet Modu AKTIF - AI/bot/Grok hitaplarina cevap verir" : @"💬 AI Sohbet kapali - sadece /ai <soru> komutu");
     [self refreshUI];
 }
 
-// v109: Groq API key ayarla + AI bot kullanim bilgisi
+// AI bot kurulumu: provider, model ve provider'a ait API key ayri tutulur.
 - (void)editAiApiKey {
     NSString *cur = few1n_groqApiKey();
     NSString *masked = cur.length > 12 ? [NSString stringWithFormat:@"%@...%@", [cur substringToIndex:8], [cur substringFromIndex:cur.length - 4]] : cur;
-    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🤖 AI Bot (Groq)"
-        message:[NSString stringWithFormat:@"Kullanim: chat'e '/ai naber' gibi yaz, bot cevap versin.\n\nAktif API key: %@\nAktif Model: %@\n\nKey degistirmek istersen asagi yaz. Model degistirmek icin '🔧 Model Sec' butonuna bas.", masked, kGroqModel()]
+    NSString *hookState = o_chatSend ? @"hazir" : @"HAZIR DEGIL";
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🤖 Oyun Sohbeti AI"
+        message:[NSString stringWithFormat:@"Kullanim: odada /ai <soru> yaz. Bot cevabi herkesin gorecegi chat mesaji olarak gonderir.\n\nProvider: %@\nModel: %@\nAPI key: %@\nChat hook: %@\n\nGrok icin önce Provider Sec > Grok, sonra kendi xAI API key'ini gir.", few1n_aiProviderName(), kGroqModel(), masked.length ? masked : @"ayarlanmamis", hookState]
         preferredStyle:UIAlertControllerStyleAlert];
     [ac addTextFieldWithConfigurationHandler:^(UITextField *tf){
-        tf.placeholder = @"gsk_...";
+        tf.placeholder = few1n_isGrokProvider() ? @"xAI API key" : @"API key";
         tf.text = cur;
         tf.clearButtonMode = UITextFieldViewModeAlways;
         tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
@@ -6179,30 +6339,27 @@ static NSString* rainbowWrap(NSString* text, int idx) {
     [ac addAction:[UIAlertAction actionWithTitle:@"Kaydet" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
         NSString *k = w.textFields.firstObject.text;
         if (k && k.length > 10) {
-            [[NSUserDefaults standardUserDefaults] setObject:k forKey:@"few1n_groqKey"];
+            [[NSUserDefaults standardUserDefaults] setObject:k forKey:few1n_aiKeyStorageKey()];
             g_groqApiKey = k;
-            FLog([NSString stringWithFormat:@"🤖 Groq API key guncellendi: %@...", [k substringToIndex:8]]);
+            FLog([NSString stringWithFormat:@"🤖 %@ API key kaydedildi", few1n_aiProviderName()]);
         }
     }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"🌐 Provider Seç (Groq / Grok / Custom)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *aa){
         UIAlertController *pp = [UIAlertController alertControllerWithTitle:@"🌐 API Provider" message:[NSString stringWithFormat:@"Aktif: %@\n\nDegistir:", kApiEndpoint()] preferredStyle:UIAlertControllerStyleAlert];
         [pp addAction:[UIAlertAction actionWithTitle:@"🆓 Groq (api.groq.com) - ucretsiz" style:UIAlertActionStyleDefault handler:^(UIAlertAction *b){
-            g_apiEndpoint = kEndpointGroq;
-            [[NSUserDefaults standardUserDefaults] setObject:kEndpointGroq forKey:@"few1n_apiEndpoint"];
-            FLog(@"🌐 Endpoint: Groq");
+            few1n_setAiProvider(kEndpointGroq, kGroqModelDefault);
+            FLog(@"🌐 Provider: Groq. Groq API key girip Test Et'e bas.");
         }]];
         [pp addAction:[UIAlertAction actionWithTitle:@"💰 Grok (api.x.ai) - odemeli xAI" style:UIAlertActionStyleDefault handler:^(UIAlertAction *b){
-            g_apiEndpoint = kEndpointGrok;
-            [[NSUserDefaults standardUserDefaults] setObject:kEndpointGrok forKey:@"few1n_apiEndpoint"];
-            FLog(@"🌐 Endpoint: Grok xAI");
+            few1n_setAiProvider(kEndpointGrok, kGrokModelDefault);
+            FLog(@"🌐 Provider: Grok (xAI), model: grok-4.5. xAI API key girip Test Et'e bas.");
         }]];
         [pp addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.placeholder = @"custom endpoint URL"; tf.text = kApiEndpoint(); tf.autocapitalizationType = UITextAutocapitalizationTypeNone; tf.autocorrectionType = UITextAutocorrectionTypeNo; }];
         __weak UIAlertController *wp = pp;
         [pp addAction:[UIAlertAction actionWithTitle:@"✅ Custom URL" style:UIAlertActionStyleDefault handler:^(UIAlertAction *b){
             NSString *u = wp.textFields.firstObject.text;
             if (u.length > 10) {
-                g_apiEndpoint = u;
-                [[NSUserDefaults standardUserDefaults] setObject:u forKey:@"few1n_apiEndpoint"];
+                few1n_setAiProvider(u, nil);
                 FLog([NSString stringWithFormat:@"🌐 Custom endpoint: %@", u]);
             }
         }]];
@@ -6210,23 +6367,18 @@ static NSString* rainbowWrap(NSString* text, int idx) {
         [self present:pp];
     }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"🔧 Model Seç (preset veya custom)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *aa){
-        UIAlertController *mp = [UIAlertController alertControllerWithTitle:@"🔧 Groq Model Seç" message:[NSString stringWithFormat:@"Aktif: %@\n\nGroq'ta ÇALIŞAN native modeller:", kGroqModel()] preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertController *mp = [UIAlertController alertControllerWithTitle:@"🔧 AI Model Seç" message:[NSString stringWithFormat:@"Aktif: %@ (%@)", kGroqModel(), few1n_aiProviderName()] preferredStyle:UIAlertControllerStyleAlert];
         NSArray *presets = @[
-            @[@"🆓 llama-3.3-70b (Groq ucretsiz - EN IYI)", @"llama-3.3-70b-versatile"],
-            @[@"🆓 gpt-oss-120b (Groq)", @"openai/gpt-oss-120b"],
-            @[@"🆓 gpt-oss-20b (Groq mini)", @"openai/gpt-oss-20b"],
-            @[@"🆓 qwen3-32b (Groq)", @"qwen/qwen3-32b"],
-            @[@"💰 grok-4.5 (xAI en yeni)", @"grok-4.5"],
-            @[@"💰 grok-4-latest (xAI)", @"grok-4-latest"],
-            @[@"💰 grok-2-1212 (xAI)", @"grok-2-1212"],
-            @[@"💰 grok-beta (xAI)", @"grok-beta"],
+            @[@"💰 Grok 4.5 (xAI)", @"grok-4.5", kEndpointGrok],
+            @[@"💰 Grok latest (xAI)", @"latest", kEndpointGrok],
+            @[@"🆓 Llama 3.3 70B (Groq)", @"llama-3.3-70b-versatile", kEndpointGroq],
+            @[@"🆓 GPT-OSS 20B (Groq)", @"openai/gpt-oss-20b", kEndpointGroq],
         ];
         for (NSArray *p in presets) {
-            NSString *lbl = p[0]; NSString *mn = p[1];
+            NSString *lbl = p[0]; NSString *mn = p[1]; NSString *endpoint = p[2];
             [mp addAction:[UIAlertAction actionWithTitle:lbl style:UIAlertActionStyleDefault handler:^(UIAlertAction *b){
-                g_groqModel = mn;
-                [[NSUserDefaults standardUserDefaults] setObject:mn forKey:@"few1n_groqModel"];
-                FLog([NSString stringWithFormat:@"🔧 Model: %@", mn]);
+                few1n_setAiProvider(endpoint, mn);
+                FLog([NSString stringWithFormat:@"🔧 Provider: %@, model: %@", few1n_aiProviderName(), mn]);
             }]];
         }
         [mp addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.placeholder = @"custom model adi (ornek: qwen/qwen3-32b)"; tf.autocapitalizationType = UITextAutocapitalizationTypeNone; tf.autocorrectionType = UITextAutocorrectionTypeNo; }];
@@ -6243,10 +6395,11 @@ static NSString* rainbowWrap(NSString* text, int idx) {
         [self present:mp];
     }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"🧪 Test Et" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        few1n_groqAsk(@"selam bir cumleyle kendini tanit", ^(NSString *reply) {
+        NSString *provider = few1n_aiProviderName();
+        few1n_aiAsk(@"Selam. Bir cumleyle kendini tanit.", ^(NSString *reply, NSString *error) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 UIAlertController *r = [UIAlertController alertControllerWithTitle:@"🤖 Test Sonucu"
-                    message:reply.length > 0 ? [NSString stringWithFormat:@"✅ Groq calisiyor!\n\nCevap:\n%@", reply] : @"❌ Groq basarisiz - API key/network kontrol et. Fallback kural tabanli kullanilir."
+                    message:reply.length > 0 ? [NSString stringWithFormat:@"✅ %@ calisiyor!\n\nCevap:\n%@", provider, reply] : [NSString stringWithFormat:@"❌ %@", error ?: @"API istegi basarisiz; logu kontrol et."]
                     preferredStyle:UIAlertControllerStyleAlert];
                 [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
                 [self present:r];
@@ -6258,7 +6411,7 @@ static NSString* rainbowWrap(NSString* text, int idx) {
 }
 
 - (void)askAiDirect {
-    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🤖 AI'ye Soru Sor (Groq)"
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🤖 AI'ye Soru Sor"
         message:@"Sormak istedigin soruyu yaz. Cevap hem ekranda gorunecek hem de odaya gonderilecek:"
         preferredStyle:UIAlertControllerStyleAlert];
     [ac addTextFieldWithConfigurationHandler:^(UITextField *tf){
@@ -6271,11 +6424,11 @@ static NSString* rainbowWrap(NSString* text, int idx) {
         NSString *prompt = w.textFields.firstObject.text;
         if (!prompt || prompt.length == 0) return;
         FLog([NSString stringWithFormat:@"🤖 Direct AI soruldu: '%@'", prompt]);
-        few1n_groqAsk(prompt, ^(NSString *reply) {
-            NSString *finalReply = (reply && reply.length > 0) ? reply : few1n_aiReply(prompt);
+        few1n_aiAsk(prompt, ^(NSString *reply, NSString *error) {
+            NSString *finalReply = reply.length > 0 ? reply : (error ?: @"AI cevap veremedi");
             NSString *nameCol = [NSString stringWithUTF8String:g_aiNameColorHex];
             NSString *replyCol = [NSString stringWithUTF8String:g_aiReplyColorHex];
-            NSString *finalMsg = [NSString stringWithFormat:@"<color=#%@><b>[🤖 FEW1N AI]</b></color> <color=#%@>%@</color>", nameCol, replyCol, finalReply];
+            NSString *finalMsg = [NSString stringWithFormat:@"<color=#%@><b>[AI %@]</b></color> <color=#%@>%@</color>", nameCol, few1n_aiProviderName(), replyCol, finalReply];
             dispatch_async(dispatch_get_main_queue(), ^{
                 @try {
                     // 1. Chat'e gonder (il2cpp chatSend ile)
@@ -7956,64 +8109,112 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
 }
 
 // ===== ODA ŞİFRESİ KOY / KALDIR =====
-// Oyun şifreyi lobbyGetInst()->passwordInput TMP alanında tutar.
-// Odadayken şifreyi değiştirmek için passwordOnConnectInput'a yazıyoruz.
+// HR_PhotonLobbyManager.CreateRoomButton disassembly'sinde şifre, oda özelliği
+// "pWd" olarak yazılıyor. Eski kodun "pwd" anahtarı oyunun EnterPassword
+// metoduyla eşleşmediği için oda kartı şifreli görünmüyor ve girişte kontrol edilmiyordu.
+static NSString* few1n_roomPasswordPropertyKey(void) {
+    // Bu slot, CreateRoomButton'ın kullandığı il2cpp string literalidir. Oyun bu
+    // sürümde henüz başlatmadıysa boş olur; dump ile doğrulanmış sabite döneriz.
+    if (global_base) {
+        void *keyObject = *(void **)(global_base + 0x8B1FE78);
+        if (ptrOk(keyObject)) {
+            NSString *key = readStr(keyObject);
+            if ([key isEqualToString:@"pWd"]) return key;
+        }
+    }
+    return @"pWd";
+}
+
 - (void)tapRoomPassword {
     if (!pn_getInRoom || !pn_getInRoom()) {
         UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🔑 Oda Şifresi"
-            message:@"Bu özellik için bir odada olmalısın." preferredStyle:UIAlertControllerStyleAlert];
+            message:@"Önce kendi odanı kurup odaya gir." preferredStyle:UIAlertControllerStyleAlert];
         [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
         [self present:e]; return;
     }
+
+    // Sunucu oda özelliklerini yalnızca mevcut Master Client'tan kabul eder.
+    BOOL amMaster = NO;
+    @try {
+        void *me = pn_getLocalPlayer ? pn_getLocalPlayer() : NULL;
+        amMaster = ptrOk(me) && ply_getIsMaster && ply_getIsMaster(me);
+    } @catch (...) {}
+    if (!amMaster) {
+        UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🔑 Oda Şifresi"
+            message:@"Şifreyi yalnızca odanın sahibi (Master Client) değiştirebilir. Kendi kurduğun odada tekrar dene."
+            preferredStyle:UIAlertControllerStyleAlert];
+        [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:e]; return;
+    }
+    if (!pn_getCurrentRoom || !room_setCustomProperties || !g_hashtableClass) {
+        UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🔑 Oda Şifresi"
+            message:@"Photon oda işlevleri henüz hazır değil. Lobiye dönüp tekrar dene."
+            preferredStyle:UIAlertControllerStyleAlert];
+        [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:e]; return;
+    }
+
     UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🔑 Oda Şifresi Koy / Kaldır"
-        message:@"Yeni şifre gir. Boş bırakırsan şifre kaldırılır."
+        message:@"Yeni şifreyi gir. Boş bırakırsan oda şifresiz olur."
         preferredStyle:UIAlertControllerStyleAlert];
     [ac addTextFieldWithConfigurationHandler:^(UITextField *tf){
         tf.placeholder = @"Şifre (boş = şifresiz)";
-        tf.secureTextEntry = NO;
+        tf.secureTextEntry = YES;
     }];
     [ac addAction:[UIAlertAction actionWithTitle:@"Uygula" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        NSString *pwd = ac.textFields.firstObject.text;
-        // Master Client ol — 1.2s bekle master onayi icin
-        few1n_claimMaster();
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            @try {
-                // v85: GERCEK SUNUCU SYNC — CurrentRoom.SetCustomProperties({"pwd": pass}, NULL, NULL)
-                // expected=NULL sayesinde CAS bypass yapilir — sunucu direkt kabul eder
-                if (pn_getCurrentRoom && room_setCustomProperties && g_hashtableClass) {
-                    void* room = pn_getCurrentRoom();
-                    NSDictionary *dict = @{ @"pwd": (pwd ?: @"") };
-                    void* ht = mkPhotonHashtable(dict);
-                    if (room && ht) {
-                        bool ok = room_setCustomProperties(room, ht, NULL, NULL);
-                        FLog([NSString stringWithFormat:@"🔑 [v85] SetCustomProperties pwd='%@' → %s", pwd ?: @"(bos)", ok?"OK":"FAIL"]);
-                    } else {
-                        FLog(@"❌ [v85] room/ht NULL — Hashtable yaratilamadi");
+        NSString *pwd = [ac.textFields.firstObject.text ?: @"" copy];
+        @try {
+            void *room = pn_getCurrentRoom();
+            NSString *key = few1n_roomPasswordPropertyKey();
+            void *ht = ptrOk(room) ? mkPhotonHashtable(@{ key : pwd }) : NULL;
+            bool accepted = (ht != NULL) && room_setCustomProperties(room, ht, NULL, NULL);
+            FLog([NSString stringWithFormat:@"🔑 Oda şifre isteği: key=%@, uzunluk=%lu → %s",
+                  key, (unsigned long)pwd.length, accepted ? "KABUL" : "RED"]);
+
+            if (!accepted) {
+                UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🔑 Oda Şifresi"
+                    message:@"Şifre isteği sunucuya gönderilemedi. Odada hâlâ Master Client olduğundan emin olup tekrar dene."
+                    preferredStyle:UIAlertControllerStyleAlert];
+                [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+                [self present:e];
+                return;
+            }
+
+            // Menünün sonraki açılışında da son ayarı hatırlat; yalnızca başarılı
+            // sunucu isteğinden sonra güncellenir.
+            strncpy(roomPasswordText, pwd.UTF8String ?: "", sizeof(roomPasswordText) - 1);
+            roomPasswordText[sizeof(roomPasswordText) - 1] = '\0';
+            saveStr(@"roomPass", pwd);
+
+            // Oyunun iki TMP alanını da eşitle; bu, lobi panelinin doğru durumu
+            // göstermesini sağlar fakat asıl koruma yukarıdaki sunucu özelliğidir.
+            if (lobbyGetInst && tmp_set_text) {
+                void *lobby = lobbyGetInst();
+                if (ptrOk(lobby)) {
+                    void *pwdInput = *(void **)((uintptr_t)lobby + 0x50);
+                    void *pwdOnConnect = *(void **)((uintptr_t)lobby + 0x60);
+                    void *pwdStr = mkStr(pwd);
+                    if (ptrOk(pwdStr)) {
+                        if (ptrOk(pwdInput)) tmp_set_text(pwdInput, pwdStr);
+                        if (ptrOk(pwdOnConnect)) tmp_set_text(pwdOnConnect, pwdStr);
                     }
                 }
-                // v84 fallback: TMP input yazmak (gorsel — oyunun kendi menusu)
-                if (lobbyGetInst && tmp_set_text) {
-                    void* lobby = lobbyGetInst();
-                    if (ptrOk(lobby)) {
-                        void* pwdInput        = *(void**)((uintptr_t)lobby + 0x50);  // passwordInput
-                        void* pwdOnConnect    = *(void**)((uintptr_t)lobby + 0x60);  // passwordOnConnectInput
-                        void* pwdStr = (pwd && pwd.length > 0) ? mkStr(pwd) : mkStr(@"");
-                        if (pwdStr) {
-                            if (ptrOk(pwdInput))     tmp_set_text(pwdInput, pwdStr);
-                            if (ptrOk(pwdOnConnect)) tmp_set_text(pwdOnConnect, pwdStr);
-                        }
-                    }
-                }
-                NSString *msg = (pwd && pwd.length > 0)
-                    ? [NSString stringWithFormat:@"🔑 Şifre '%@' olarak ayarlandı.\nYeni girecekler bu şifreyi girmelidir.", pwd]
-                    : @"🔓 Şifre kaldırıldı. Oda şimdi şifresiz.";
-                UIAlertController *r = [UIAlertController alertControllerWithTitle:@"🔑 Oda Şifresi"
-                    message:msg preferredStyle:UIAlertControllerStyleAlert];
-                [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
-                [self present:r];
-                FLog([NSString stringWithFormat:@"🔑 Oda sifresi degistirildi: '%@'", pwd ?: @"(bos)"]);
-            } @catch (...) { FLog(@"tapRoomPassword exception"); }
-        });
+            }
+
+            NSString *msg = pwd.length > 0
+                ? @"Şifre ayarlandı. Odaya sonradan girecek kişilerden oyun şifre isteyecek."
+                : @"Şifre kaldırıldı. Oda artık şifresiz.";
+            UIAlertController *r = [UIAlertController alertControllerWithTitle:@"🔑 Oda Şifresi"
+                message:msg preferredStyle:UIAlertControllerStyleAlert];
+            [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+            [self present:r];
+        } @catch (...) {
+            FLog(@"❌ tapRoomPassword exception");
+            UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🔑 Oda Şifresi"
+                message:@"Şifre ayarlanırken beklenmeyen bir hata oluştu." preferredStyle:UIAlertControllerStyleAlert];
+            [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+            [self present:e];
+        }
     }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
     [self present:ac];
@@ -10001,7 +10202,9 @@ static void restoreSettings(void) {
     isCustomPlateEnabled   = loadBool(@"plateEnabled", false);
     isMasterClaimDisabled  = loadBool(@"masterClaimOff", false);   // v70 modu tercihi
     // v90: RCCP toggle'lar crash sebep oluyor — HEPSI ZORLA KAPALI (offset uyumsuzluğu memory corruption)
-    isBrakeGlowEnabled     = false;   saveBool(@"brakeglow", false);
+    isBrakeGlowEnabled        = false; saveBool(@"brakeglow", false);
+    isBrakeGlowDobEnabled     = false; saveBool(@"brakeglowdob", false);
+    isBrakeGlowMinTempEnabled = false; saveBool(@"brakeglowmin", false);
     // v90: Farlar/Yakit/NOS kaldirildi, Hasar Yok + Balata Glow KALDI (placeholder — v91'de il2cpp ile gercek fix)
     isNoDamageEnabled      = loadBool(@"nodamage", false);
     isAutoMoneyEnabled     = loadBool(@"automoney", false);
@@ -10154,7 +10357,7 @@ static void few1n_poll(void) {
 
 %ctor {
     few1n_setupCrashGuard();
-    FLog(@"v114.5 basladi, UnityFramework araniyor...");
+    FLog(@"v114.8 basladi, UnityFramework araniyor...");
     restoreSettings();
 
     // ===== REKLAM BOZUCU: TUM reklam SDK'larini engelle (Obj-C runtime swizzle) =====
@@ -10308,4 +10511,3 @@ static void few1n_poll(void) {
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ few1n_poll(); });
 }
-
