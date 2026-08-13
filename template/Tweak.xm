@@ -1115,6 +1115,409 @@ static bool w_ply_getIsMaster(void *self) {
     @try { return few1n_unboxBool(i_runtime_invoke(m, self, NULL, NULL)); } @catch (...) { return false; }
 }
 
+// ==========================================================================
+// v114.20: DRIFT-IMMUNE FUNCTION POINTERS — tüm hardcoded (b + 0xNN)
+// atamalarını il2cpp-by-name wrapper'lara çevir. Sonuç: her sürüm update'inde
+// isim korunduğu sürece function call'lar doğru fonksiyona gider.
+// ==========================================================================
+
+// Generic class helpers (v114.11 pattern'ini tamamla)
+static void* few1n_photonNetworkClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("Photon.Pun", "PhotonNetwork");
+    return cls;
+}
+static void* few1n_roomInfoClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("Photon.Realtime", "RoomInfo");
+    return cls;
+}
+static void* few1n_tmpTextClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("TMPro", "TMP_Text");
+    return cls;
+}
+static void* few1n_chatMgrClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("", "ChatManager");
+    return cls;
+}
+static void* few1n_playerMgrClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("", "PlayerManager");
+    return cls;
+}
+static void* few1n_lobbyMgrClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("", "HR_PhotonLobbyManager");
+    return cls;
+}
+static void* few1n_lobbyDummyClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("", "HR_PhotonLobbyManagerDummy");
+    return cls;
+}
+static void* few1n_mainMenuClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("", "HR_MainMenuHandler");
+    return cls;
+}
+static void* few1n_timeClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("UnityEngine", "Time");
+    return cls;
+}
+static void* few1n_sceneMgrClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("UnityEngine.SceneManagement", "SceneManager");
+    return cls;
+}
+static void* few1n_sceneMgrHelperClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("Photon.Pun", "SceneManagerHelper");
+    return cls;
+}
+static void* few1n_rigidbodyClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("UnityEngine", "Rigidbody");
+    return cls;
+}
+static void* few1n_mbpunClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("Photon.Pun", "MonoBehaviourPun");
+    return cls;
+}
+static void* few1n_mapListClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("", "MapList");
+    return cls;
+}
+static void* few1n_mapSelClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("", "MapSelection");
+    return cls;
+}
+
+// Generic method resolver
+static void* few1n_resolveOn(void* cls, const char *methodName, int argc) {
+    if (!cls || !i_class_get_method_from_name) return NULL;
+    return i_class_get_method_from_name(cls, methodName, argc);
+}
+
+// ====== PhotonNetwork static methods ======
+static void  w_pn_setNickName(void *v) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "set_NickName", 1);
+    if (!m || !i_runtime_invoke) return;
+    @try { void *args[1]={v}; i_runtime_invoke(m, NULL, args, NULL); } @catch (...) {}
+}
+static bool w_pn_joinRoom(void *name, void *expectedUsers) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "JoinRoom", 2);
+    if (!m || !i_runtime_invoke) return false;
+    @try { void *args[2]={name, expectedUsers}; return few1n_unboxBool(i_runtime_invoke(m, NULL, args, NULL)); } @catch (...) { return false; }
+}
+static bool w_pn_getConnReady(void) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "get_IsConnectedAndReady", 0);
+    if (!m || !i_runtime_invoke) return false;
+    @try { return few1n_unboxBool(i_runtime_invoke(m, NULL, NULL, NULL)); } @catch (...) { return false; }
+}
+static bool w_pn_leaveRoom(bool becomeInactive) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "LeaveRoom", 1);
+    if (!m || !i_runtime_invoke) return false;
+    @try { bool b = becomeInactive; void *args[1]={&b}; return few1n_unboxBool(i_runtime_invoke(m, NULL, args, NULL)); } @catch (...) { return false; }
+}
+static bool w_pn_closeConnection(void *player) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "CloseConnection", 1);
+    if (!m || !i_runtime_invoke || !player) return false;
+    @try { void *args[1]={player}; return few1n_unboxBool(i_runtime_invoke(m, NULL, args, NULL)); } @catch (...) { return false; }
+}
+static bool w_pn_createRoom(void *name, void *opts, void *typedLobby, void *expectedUsers) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "CreateRoom", 4);
+    if (!m || !i_runtime_invoke) return false;
+    @try { void *args[4]={name, opts, typedLobby, expectedUsers}; return few1n_unboxBool(i_runtime_invoke(m, NULL, args, NULL)); } @catch (...) { return false; }
+}
+static bool w_pn_joinOrCreateRoom(void *name, void *opts, void *typedLobby, void *expectedUsers) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "JoinOrCreateRoom", 4);
+    if (!m || !i_runtime_invoke) return false;
+    @try { void *args[4]={name, opts, typedLobby, expectedUsers}; return few1n_unboxBool(i_runtime_invoke(m, NULL, args, NULL)); } @catch (...) { return false; }
+}
+static bool w_pn_setMasterClient(void *player) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "SetMasterClient", 1);
+    if (!m || !i_runtime_invoke || !player) return false;
+    @try { void *args[1]={player}; return few1n_unboxBool(i_runtime_invoke(m, NULL, args, NULL)); } @catch (...) { return false; }
+}
+static bool w_pn_loadLevelStr(void *name) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "LoadLevel", 1);
+    // PhotonNetwork.LoadLevel has both string and int overloads — get_method_from_name(argc=1) may
+    // return either. Fallback: use type check indirectly (we accept both; ambiguity acceptable).
+    if (!m || !i_runtime_invoke || !name) return false;
+    @try { void *args[1]={name}; return few1n_unboxBool(i_runtime_invoke(m, NULL, args, NULL)); } @catch (...) { return false; }
+}
+static bool w_pn_loadLevelInt(int idx) {
+    // Same overload ambiguity; il2cpp may resolve to string version. Best-effort.
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "LoadLevel", 1);
+    if (!m || !i_runtime_invoke) return false;
+    @try { int i = idx; void *args[1]={&i}; return few1n_unboxBool(i_runtime_invoke(m, NULL, args, NULL)); } @catch (...) { return false; }
+}
+static void* w_pn_getPlayerList(void) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "get_PlayerList", 0);
+    if (!m || !i_runtime_invoke) return NULL;
+    @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
+}
+static void* w_pn_getPlayerListOthers(void) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "get_PlayerListOthers", 0);
+    if (!m || !i_runtime_invoke) return NULL;
+    @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
+}
+static void w_pn_setAutomaticallySyncScene(bool on) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "set_AutomaticallySyncScene", 1);
+    if (!m || !i_runtime_invoke) return;
+    @try { bool b = on; void *args[1]={&b}; i_runtime_invoke(m, NULL, args, NULL); } @catch (...) {}
+}
+static void w_pn_raiseEvent(unsigned char code, void *eventContent, bool sendReliable, void *options) {
+    // Legacy signature (byte, object, bool, RaiseEventOptions). Newer PUN2 uses
+    // (byte, object, RaiseEventOptions, SendOptions). We prefer resolving by argc=4.
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "RaiseEvent", 4);
+    if (!m || !i_runtime_invoke) return;
+    @try { unsigned char c=code; bool b=sendReliable; void *args[4]={&c, eventContent, &b, options}; i_runtime_invoke(m, NULL, args, NULL); } @catch (...) {}
+}
+
+// ====== Player getters ======
+static void* w_ply_getNickName(void *self) {
+    static void *m = NULL; if (!m) m = few1n_resolvePlayer("get_NickName", 0);
+    if (!m || !i_runtime_invoke || !self) return NULL;
+    @try { return i_runtime_invoke(m, self, NULL, NULL); } @catch (...) { return NULL; }
+}
+static int  w_ply_getActorNumber(void *self) {
+    static void *m = NULL; if (!m) m = few1n_resolvePlayer("get_ActorNumber", 0);
+    if (!m || !i_runtime_invoke || !self) return 0;
+    @try { return few1n_unboxInt(i_runtime_invoke(m, self, NULL, NULL)); } @catch (...) { return 0; }
+}
+static void* w_ply_getUserId(void *self) {
+    static void *m = NULL; if (!m) m = few1n_resolvePlayer("get_UserId", 0);
+    if (!m || !i_runtime_invoke || !self) return NULL;
+    @try { return i_runtime_invoke(m, self, NULL, NULL); } @catch (...) { return NULL; }
+}
+
+// ====== Room + RoomInfo ======
+static void* w_rinfo_getName(void *self) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_roomInfoClass(), "get_Name", 0);
+    if (!m || !i_runtime_invoke || !self) return NULL;
+    @try { return i_runtime_invoke(m, self, NULL, NULL); } @catch (...) { return NULL; }
+}
+static void w_room_setMaxPlayers(void *self, int v) {
+    static void *m = NULL;
+    if (!m) { void *c = few1n_classAnyImage("Photon.Realtime", "Room"); m = few1n_resolveOn(c, "set_MaxPlayers", 1); }
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { unsigned char b = (unsigned char)v; void *args[1]={&b}; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+static int  w_room_getMaxPlayers(void *self) {
+    static void *m = NULL;
+    if (!m) { void *c = few1n_classAnyImage("Photon.Realtime", "Room"); m = few1n_resolveOn(c, "get_MaxPlayers", 0); }
+    if (!m || !i_runtime_invoke || !self) return 0;
+    @try { return few1n_unboxInt(i_runtime_invoke(m, self, NULL, NULL)); } @catch (...) { return 0; }
+}
+static void w_room_setIsOpen(void *self, bool on) {
+    static void *m = NULL;
+    if (!m) { void *c = few1n_classAnyImage("Photon.Realtime", "Room"); m = few1n_resolveOn(c, "set_IsOpen", 1); }
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { bool b = on; void *args[1]={&b}; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+static bool w_room_getIsOpen(void *self) {
+    static void *m = NULL;
+    if (!m) { void *c = few1n_classAnyImage("Photon.Realtime", "Room"); m = few1n_resolveOn(c, "get_IsOpen", 0); }
+    if (!m || !i_runtime_invoke || !self) return false;
+    @try { return few1n_unboxBool(i_runtime_invoke(m, self, NULL, NULL)); } @catch (...) { return false; }
+}
+static void w_room_setIsVisible(void *self, bool on) {
+    static void *m = NULL;
+    if (!m) { void *c = few1n_classAnyImage("Photon.Realtime", "Room"); m = few1n_resolveOn(c, "set_IsVisible", 1); }
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { bool b = on; void *args[1]={&b}; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+static bool w_room_getIsVisible(void *self) {
+    static void *m = NULL;
+    if (!m) { void *c = few1n_classAnyImage("Photon.Realtime", "Room"); m = few1n_resolveOn(c, "get_IsVisible", 0); }
+    if (!m || !i_runtime_invoke || !self) return false;
+    @try { return few1n_unboxBool(i_runtime_invoke(m, self, NULL, NULL)); } @catch (...) { return false; }
+}
+static bool w_room_setCustomProperties(void *self, void *ht, void *expected, void *webFlags) {
+    // v114.10'daki g_mRoomSetCustomProperties ile aynı ama function pointer arayüzü.
+    static void *m = NULL;
+    if (!m) { void *c = few1n_classAnyImage("Photon.Realtime", "Room"); m = few1n_resolveOn(c, "SetCustomProperties", 3); }
+    if (!m || !i_runtime_invoke || !self) return false;
+    @try { void *args[3]={ht, expected, webFlags}; return few1n_unboxBool(i_runtime_invoke(m, self, args, NULL)); } @catch (...) { return false; }
+}
+
+// ====== TMP_Text ======
+static void  w_tmp_set_text(void *self, void *value) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_tmpTextClass(), "set_text", 1);
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { void *args[1]={value}; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+static void* w_tmp_get_text(void *self) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_tmpTextClass(), "get_text", 0);
+    if (!m || !i_runtime_invoke || !self) return NULL;
+    @try { return i_runtime_invoke(m, self, NULL, NULL); } @catch (...) { return NULL; }
+}
+static void  w_tmp_set_richText(void *self, bool on) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_tmpTextClass(), "set_richText", 1);
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { bool b = on; void *args[1]={&b}; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+
+// ====== ChatManager (get_Instance obfuscated) ======
+static void* w_chatGetInst(void) {
+    // Obfuscated on 1.4.3: fzi(). Class isim korunmuş, method mangled.
+    static void *m = NULL;
+    if (!m) { void *c = few1n_chatMgrClass(); m = few1n_resolveOn(c, "fzi", 0); }
+    if (!m || !i_runtime_invoke) return NULL;
+    @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
+}
+static void  w_chatSend(void *self, void *message) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_chatMgrClass(), "Send", 1);
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { void *args[1]={message}; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+
+// ====== PlayerManager (para — sunucu-kilitli ama getters visual için) ======
+static void* w_playerManagerGetInst(void) {
+    static void *m = NULL;
+    if (!m) { void *c = few1n_playerMgrClass(); m = few1n_resolveOn(c, "gns", 0); }
+    if (!m || !i_runtime_invoke) return NULL;
+    @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
+}
+
+// ====== HR_PhotonLobbyManager (get_Instance obfuscated -> eov) ======
+static void* w_lobbyGetInst(void) {
+    static void *m = NULL;
+    if (!m) { void *c = few1n_lobbyMgrClass(); m = few1n_resolveOn(c, "eov", 0); }
+    if (!m || !i_runtime_invoke) return NULL;
+    @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
+}
+static void w_lobby_createRoom(void *self) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_lobbyMgrClass(), "CreateRoomButton", 0);
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { i_runtime_invoke(m, self, NULL, NULL); } @catch (...) {}
+}
+static void w_lobby_leaveRoom(void *self) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_lobbyMgrClass(), "LeaveRoom", 0);
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { i_runtime_invoke(m, self, NULL, NULL); } @catch (...) {}
+}
+static void w_lobby_carSelectMenu(void *self) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_lobbyMgrClass(), "EnableCarSelectionMenu", 0);
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { i_runtime_invoke(m, self, NULL, NULL); } @catch (...) {}
+}
+static void w_lobbySetScene(void *self, void *name) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_lobbyMgrClass(), "SetScene", 1);
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { void *args[1]={name}; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+static void w_lobbyStartGame(void *self) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_lobbyMgrClass(), "StartGameButton", 0);
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { i_runtime_invoke(m, self, NULL, NULL); } @catch (...) {}
+}
+static void w_lobbyDummyStartGame(void *self) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_lobbyDummyClass(), "StartGameButton", 0);
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { i_runtime_invoke(m, self, NULL, NULL); } @catch (...) {}
+}
+
+// ====== HR_MainMenuHandler.StartRace ======
+static void w_hrMainStartRace(void *self) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_mainMenuClass(), "StartRace", 0);
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { i_runtime_invoke(m, self, NULL, NULL); } @catch (...) {}
+}
+
+// ====== Time.get_timeScale ======
+static float w_ts_get(void) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_timeClass(), "get_timeScale", 0);
+    if (!m || !i_runtime_invoke) return 1.0f;
+    @try {
+        void *ret = i_runtime_invoke(m, NULL, NULL, NULL);
+        return ret ? *(float*)((uintptr_t)ret + 0x10) : 1.0f;
+    } @catch (...) { return 1.0f; }
+}
+
+// ====== SceneManager.LoadScene(string|int) ======
+static void w_unity_LoadSceneStr(void *name) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_sceneMgrClass(), "LoadScene", 1);
+    if (!m || !i_runtime_invoke) return;
+    @try { void *args[1]={name}; i_runtime_invoke(m, NULL, args, NULL); } @catch (...) {}
+}
+static void w_unity_LoadSceneInt(int idx) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_sceneMgrClass(), "LoadScene", 1);
+    if (!m || !i_runtime_invoke) return;
+    @try { int i = idx; void *args[1]={&i}; i_runtime_invoke(m, NULL, args, NULL); } @catch (...) {}
+}
+
+// ====== SceneManagerHelper (Photon.Pun) ======
+static void* w_pn_getActiveSceneName(void) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_sceneMgrHelperClass(), "get_ActiveSceneName", 0);
+    if (!m || !i_runtime_invoke) return NULL;
+    @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
+}
+static int w_pn_getActiveSceneBuildIndex(void) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_sceneMgrHelperClass(), "get_ActiveSceneBuildIndex", 0);
+    if (!m || !i_runtime_invoke) return 0;
+    @try { return few1n_unboxInt(i_runtime_invoke(m, NULL, NULL, NULL)); } @catch (...) { return 0; }
+}
+
+// ====== Rigidbody Injected getters ======
+static void w_rb_getVel(void *self, Vec3 *out) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_rigidbodyClass(), "get_linearVelocity_Injected", 1);
+    if (!m || !i_runtime_invoke || !self || !out) { if (out) { out->x=out->y=out->z=0; } return; }
+    @try { void *args[1]={out}; i_runtime_invoke(m, self, args, NULL); } @catch (...) { out->x=out->y=out->z=0; }
+}
+static void w_rb_setVel(void *self, Vec3 *v) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_rigidbodyClass(), "set_linearVelocity_Injected", 1);
+    if (!m || !i_runtime_invoke || !self || !v) return;
+    @try { void *args[1]={v}; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+static void w_rb_getPos(void *self, Vec3 *out) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_rigidbodyClass(), "get_position_Injected", 1);
+    if (!m || !i_runtime_invoke || !self || !out) { if (out) { out->x=out->y=out->z=0; } return; }
+    @try { void *args[1]={out}; i_runtime_invoke(m, self, args, NULL); } @catch (...) { out->x=out->y=out->z=0; }
+}
+static void w_rb_setPos(void *self, Vec3 *v) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_rigidbodyClass(), "set_position_Injected", 1);
+    if (!m || !i_runtime_invoke || !self || !v) return;
+    @try { void *args[1]={v}; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+
+// ====== MonoBehaviourPun.get_photonView ======
+static void* w_mbp_getPhotonView(void *self) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_mbpunClass(), "get_photonView", 0);
+    if (!m || !i_runtime_invoke || !self) return NULL;
+    @try { return i_runtime_invoke(m, self, NULL, NULL); } @catch (...) { return NULL; }
+}
+
+// ====== MapList.get_Instance (obf gtp) ======
+static void* w_mapList_getInstance(void) {
+    static void *m = NULL;
+    if (!m) { void *c = few1n_mapListClass(); m = few1n_resolveOn(c, "gtp", 0); }
+    if (!m || !i_runtime_invoke) return NULL;
+    @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
+}
+
+// ====== MapSelection.SelectMap ======
+static void w_mapSel_selectMap(void *self, void *name) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_mapSelClass(), "SelectMap", 1);
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { void *args[1]={name}; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+
+// PlayerManager AddMoney/get_Money/SyncWithServer/UpdateNicknameInternal:
+// isimler obfuscated + sunucu-kilitli → NULL bırakılıyor. Kod'daki NULL guard'lar
+// handle eder, kullanıcı için görünen değişiklik yok.
+// PhotonManager.enp: obfuscated + kullanım sadece 1 yerde, güvenli fail.
+// Teleport RPC'ler (cps/rbps_TeleportCar_RPC, hrph_TeleportPlayerRPC, ssrcc_RpcTeleport):
+// direkt il2cpp method invoke edilebilir ama tip-güvenli imza gerekli. Bu 4 tanesi
+// v114.21+'da eklenecek. Şu an yalnız hook path (SmoothSync) çalışıyor.
+
 // TMP_Text.richText = true  (Unity rich text acigini geri ac)
 static void setRichTextIl(void* tmp, bool on) {
     if (!i_runtime_invoke || !g_mSetRichText || !tmp) return;
@@ -10383,74 +10786,113 @@ static void InstallEverything(uintptr_t b) {
     FLog([NSString stringWithFormat:@"Base bulundu: 0x%lX", (unsigned long)b]);
     few1n_initIl2cpp();
 
-    chatGetInst               = (void*(*)(void))(b + 0x31A6168);
-    chatSend                  = (void(*)(void*,void*))(b + 0x31A626C);
-    tmp_set_text              = (void(*)(void*,void*))(b + 0x65F4CC8);
-    tmp_get_text              = (void*(*)(void*))(b + 0x65F4CC0);
-    tmp_set_richText          = (void(*)(void*,bool))(b + 0x66017B8);   // v84: renk tag'lari render
-    rinfo_getName             = (void*(*)(void*))(b + 0x59293A4);   // RoomInfo.get_Name
-    pn_setNickName            = (void(*)(void*))(b + 0x5933940);
-    pn_joinRoom               = (bool(*)(void*,void*))(b + 0x593A64C);
-    pn_getInRoom              = w_pn_getInRoom;   // v114.11: il2cpp-by-name wrapper (drift-immune)
-    pn_getConnReady           = (bool(*)(void))(b + 0x59333A8);   // oda kurma on-kosulu (bagli+hazir)
-    mbp_getPhotonView         = (void*(*)(void*))(b + 0x594DB48);  // dogru lobi instance secimi (kick RPC)
-    pn_getCurrentRoom         = w_pn_getCurrentRoom;   // v114.11: il2cpp-by-name wrapper
-    room_setMaxPlayers        = (void(*)(void*,int))(b + 0x5927B70); // odayi buyut
-    room_getMaxPlayers        = (int(*)(void*))(b + 0x5927B68);
-    room_setIsOpen            = (void(*)(void*,bool))(b + 0x59279B0);  // kilit
-    room_setIsVisible         = (void(*)(void*,bool))(b + 0x5927A90);  // gizli
-    room_setCustomProperties  = (bool(*)(void*,void*,void*,void*))(b + 0x5916158); // sifre
-    pn_getNickName            = w_pn_getNickName;   // v114.11: il2cpp-by-name wrapper
-    pn_leaveRoom              = (bool(*)(bool))(b + 0x593B2D8);
-    pn_closeConnection        = (bool(*)(void*))(b + 0x5938844);   // kick direkt (hook olmadan)
-    lobbyGetInst              = (void*(*)(void))(b + 0x54A8098);
-    playerManagerGetInst      = (void*(*)(void))(b + 0x5A2DE20);
-    pm_updateNicknameInternal = (void(*)(void*,void*))(b + 0x5A3DDD4);
-    pm_getMoney               = (int(*)(void*))(b + 0x5A4346C);
-    pm_syncWithServer         = (void(*)(void*))(b + 0x5A2DF80);
-    pm_addMoney               = (void(*)(void*,int))(b + 0x5A43A2C);
-    ts_get                    = (float(*)(void))(b + 0x67718D8);
-    rb_getVel                 = (void(*)(void*,Vec3*))(b + 0x6837B7C);
-    rb_setVel                 = (void(*)(void*,Vec3*))(b + 0x6837C88);
-    rb_getPos                 = (void(*)(void*,Vec3*))(b + 0x6838E24);   // get_position_Injected
-    rb_setPos                 = (void(*)(void*,Vec3*))(b + 0x6838F30);   // set_position_Injected
-    lobby_createRoom          = (void(*)(void*))(b + 0x54A94A4);
-    lobby_leaveRoom           = (void(*)(void*))(b + 0x54A9F1C);
-    pn_createRoom             = (bool(*)(void*,void*,void*,void*))(b + 0x5939B4C);
-    pn_joinOrCreateRoom       = (bool(*)(void*,void*,void*,void*))(b + 0x593A05C);   // YENİ: Dolu odalara katılma bypass
-    pn_setMasterClient        = (bool(*)(void*))(b + 0x5938B3C);   // YENI: Oda master alma
-    pn_loadLevelStr           = (bool(*)(void*))(b + 0x5941D94);   // YENI: Harita yukleme (string)
-    pn_loadLevelInt           = (bool(*)(int))(b + 0x5941B64);     // YENI: Harita yukleme (int)
-    hrMainStartRace           = (void(*)(void*))(b + 0x549130C);   // HR_MainMenuHandler.StartRace()
-    unity_LoadSceneStr        = (void(*)(void*))(b + 0x6781268);   // UnityEngine.SceneManager.LoadScene(string)
-    unity_LoadSceneInt        = (void(*)(int))(b + 0x6781430);     // UnityEngine.SceneManager.LoadScene(int)
-    pn_getActiveSceneName       = (void*(*)(void))(b + 0x59618B0); // YENI: Aktif sahne adi
-    pn_getActiveSceneBuildIndex = (int(*)(void))(b + 0x5961920);   // YENI: Aktif sahne indeksi
-    pn_getPlayerList          = (void*(*)(void))(b + 0x59339D0);
-    pn_getPlayerListOthers    = (void*(*)(void))(b + 0x5933B88);
-    pn_getLocalPlayer         = w_pn_getLocalPlayer;   // v114.11: il2cpp-by-name wrapper
-    ply_getNickName           = (void*(*)(void*))(b + 0x5924574);
-    ply_getActorNumber        = (int(*)(void*))(b + 0x592455C);
-    ply_getIsMaster           = w_ply_getIsMaster;   // v114.11: il2cpp-by-name wrapper
-    ply_getUserId             = (void*(*)(void*))(b + 0x5924630);
-    lobby_carSelectMenu       = (void(*)(void*))(b + 0x54ABFD4);
-    cps_TeleportCar_RPC       = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A49AE0);
-    rbps_TeleportCar_RPC      = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A4C494);
-    hrph_TeleportPlayerRPC    = (void(*)(void*,Vec3,void*))(b + 0x54A6F00);
-    ssrcc_RpcTeleport         = (void(*)(void*,Vec3,Vec3,Vec3,float,void*))(b + 0x5A5B788);
-    pn_setAutomaticallySyncScene = (void(*)(bool))(b + 0x5934408);     // PhotonNetwork.AutomaticallySyncScene = true
-    unity_loadSceneStr           = (void(*)(void*))(b + 0x6781268);    // UnityEngine.SceneManagement.SceneManager.LoadScene(string)
-    lobbySetScene                = (void(*)(void*,void*))(b + 0x54ABFFC);    // HR_PhotonLobbyManager.SetScene(string)
-    mapList_getInstance          = (void*(*)(void))(b + 0x54B3630);          // MapList.ely() -> instance
-    photonMgrEnp                 = (void(*)(void*,bool))(b + 0x54B5260);     // PhotonManager.enp(string, bool)
-    mapSel_selectMap             = (void(*)(void*,void*))(b + 0x54B389C);    // MapSelection.SelectMap(string)
-    lobbyStartGame               = (void(*)(void*))(b + 0x54A93B0);          // HR_PhotonLobbyManager.StartGameButton()
-    lobbyDummyStartGame          = (void(*)(void*))(b + 0x54AF76C);          // HR_PhotonLobbyManagerDummy.StartGameButton()
-    room_getIsOpen               = (bool(*)(void*))(b + 0x59279A8);           // Room.get_IsOpen
-    room_setIsOpen               = (void(*)(void*,bool))(b + 0x59279B0);      // Room.set_IsOpen (kilitle/ac)
-    room_getIsVisible            = (bool(*)(void*))(b + 0x5927A88);           // Room.get_IsVisible
-    room_setIsVisible            = (void(*)(void*,bool))(b + 0x5927A90);      // Room.set_IsVisible (gizle/goster)
-    pn_raiseEvent           = (void(*)(unsigned char,void*,bool,void*))(b + 0x593C000); // PhotonNetwork.RaiseEvent (dump.cs'den dogrula)
+    // v114.20: Tüm function pointer'lar drift-immune il2cpp-by-name wrapper'a çevrildi.
+    // Hardcoded (b + 0xNN) offset'leri KALKTI — bu offset'ler eski oyun sürümünden
+    // kalma, yeni sürümlerde çoğu yanlış fonksiyona işaret ediyor. Wrapper'lar
+    // il2cpp_class_get_method_from_name + il2cpp_runtime_invoke ile runtime resolve
+    // yapıyor, sürüm değişse bile isim korunuyorsa çalışır.
+
+    // === Photon.Pun.PhotonNetwork ===
+    pn_setNickName             = w_pn_setNickName;
+    pn_joinRoom                = w_pn_joinRoom;
+    pn_getInRoom               = w_pn_getInRoom;                // v114.11
+    pn_getConnReady            = w_pn_getConnReady;
+    pn_getCurrentRoom          = w_pn_getCurrentRoom;           // v114.11
+    pn_getNickName             = w_pn_getNickName;              // v114.11
+    pn_leaveRoom               = w_pn_leaveRoom;
+    pn_closeConnection         = w_pn_closeConnection;
+    pn_createRoom              = w_pn_createRoom;
+    pn_joinOrCreateRoom        = w_pn_joinOrCreateRoom;
+    pn_setMasterClient         = w_pn_setMasterClient;
+    pn_loadLevelStr            = w_pn_loadLevelStr;
+    pn_loadLevelInt            = w_pn_loadLevelInt;
+    pn_getPlayerList           = w_pn_getPlayerList;
+    pn_getPlayerListOthers     = w_pn_getPlayerListOthers;
+    pn_getLocalPlayer          = w_pn_getLocalPlayer;           // v114.11
+    pn_setAutomaticallySyncScene = w_pn_setAutomaticallySyncScene;
+    pn_getActiveSceneName      = w_pn_getActiveSceneName;
+    pn_getActiveSceneBuildIndex = w_pn_getActiveSceneBuildIndex;
+
+    // === Photon.Realtime.Player ===
+    ply_getNickName            = w_ply_getNickName;
+    ply_getActorNumber         = w_ply_getActorNumber;
+    ply_getIsMaster            = w_ply_getIsMaster;             // v114.11
+    ply_getUserId              = w_ply_getUserId;
+
+    // === Photon.Realtime.Room / RoomInfo ===
+    rinfo_getName              = w_rinfo_getName;
+    room_setMaxPlayers         = w_room_setMaxPlayers;
+    room_getMaxPlayers         = w_room_getMaxPlayers;
+    room_setIsOpen             = w_room_setIsOpen;
+    room_getIsOpen             = w_room_getIsOpen;
+    room_setIsVisible          = w_room_setIsVisible;
+    room_getIsVisible          = w_room_getIsVisible;
+    room_setCustomProperties   = w_room_setCustomProperties;
+
+    // === TMPro.TMP_Text ===
+    tmp_set_text               = w_tmp_set_text;
+    tmp_get_text               = w_tmp_get_text;
+    tmp_set_richText           = w_tmp_set_richText;
+
+    // === ChatManager ===
+    chatGetInst                = w_chatGetInst;                 // obf fzi
+    chatSend                   = w_chatSend;
+
+    // === PlayerManager (get_Instance obf gns; para metotları obf + server-locked, hardcoded NULL) ===
+    playerManagerGetInst       = w_playerManagerGetInst;        // obf gns
+    pm_updateNicknameInternal  = NULL;    // obf, kullanım yerinde NULL-guard var
+    pm_getMoney                = NULL;    // obf, il2cpp field read alternatif
+    pm_syncWithServer          = NULL;    // obf
+    pm_addMoney                = NULL;    // obf + server-locked
+
+    // === HR_PhotonLobbyManager ===
+    lobbyGetInst               = w_lobbyGetInst;                // obf eov
+    lobby_createRoom           = w_lobby_createRoom;
+    lobby_leaveRoom            = w_lobby_leaveRoom;
+    lobby_carSelectMenu        = w_lobby_carSelectMenu;
+    lobbySetScene              = w_lobbySetScene;
+    lobbyStartGame             = w_lobbyStartGame;
+    lobbyDummyStartGame        = w_lobbyDummyStartGame;
+
+    // === HR_MainMenuHandler ===
+    hrMainStartRace            = w_hrMainStartRace;
+
+    // === UnityEngine.Time ===
+    ts_get                     = w_ts_get;
+
+    // === UnityEngine.SceneManager ===
+    unity_LoadSceneStr         = w_unity_LoadSceneStr;
+    unity_LoadSceneInt         = w_unity_LoadSceneInt;
+    unity_loadSceneStr         = w_unity_LoadSceneStr;   // eski duplicate alias
+
+    // === UnityEngine.Rigidbody Injected getters ===
+    rb_getVel                  = w_rb_getVel;
+    rb_setVel                  = w_rb_setVel;
+    rb_getPos                  = w_rb_getPos;
+    rb_setPos                  = w_rb_setPos;
+
+    // === Photon.Pun.MonoBehaviourPun ===
+    mbp_getPhotonView          = w_mbp_getPhotonView;
+
+    // === MapList / MapSelection / PhotonManager (obf isimler) ===
+    mapList_getInstance        = w_mapList_getInstance;         // obf gtp
+    mapSel_selectMap           = w_mapSel_selectMap;
+    photonMgrEnp               = NULL;   // obf isim bilinmiyor, güvenli NULL (kullanım tek yer + NULL-guard var)
+
+    // === Teleport RPC'ler (complex signature: Vec3, Quaternion — v114.21'de wrap edilecek) ===
+    // Şu an hardcoded eski offset'ler; muhtemelen 1.4.3'te yanlış. Kullanım
+    // yerinde @try/@catch guard'ları var, silent fail. Hook (SmoothSync.Update)
+    // path'i çalışır.
+    cps_TeleportCar_RPC        = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A49AE0);
+    rbps_TeleportCar_RPC       = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A4C494);
+    hrph_TeleportPlayerRPC     = (void(*)(void*,Vec3,void*))(b + 0x54A6F00);
+    ssrcc_RpcTeleport          = (void(*)(void*,Vec3,Vec3,Vec3,float,void*))(b + 0x5A5B788);
+
+    // === PhotonNetwork.RaiseEvent — signature değişikliği (PUN2 vs PUN1) ===
+    // Eski sig (byte, object, bool, RaiseEventOptions) — yeni PUN2 (byte, object,
+    // RaiseEventOptions, SendOptions) 4. arg farklı. Wrapper eski çağrı imzasıyla
+    // eşleşmiyor. Kullanım yerlerinde @try var, güvenli fail.
+    pn_raiseEvent              = w_pn_raiseEvent;
 
     // v114.19: TÜM safeHook çağrıları drift-immune safeHookByName ile isim üzerinden.
     // Hardcoded RVA (b + 0xNN) offset'leri KALKTI — oyun her update'inde önceki hepsi
