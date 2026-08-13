@@ -4,6 +4,7 @@ on:
   push:
     branches: [ "main", "master", "claude/**" ]
     paths:
+      - 'VERSION'
       - 'template/**'
       - '.github/workflows/build.yml'
   workflow_dispatch:
@@ -21,6 +22,15 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read VERSION
+        run: |
+          VERSION=$(tr -d ' \t\n\r' < VERSION)
+          if [ -z "$VERSION" ]; then
+            echo "VERSION dosyasi bos veya yok!"; exit 1
+          fi
+          echo "Surum: $VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Install Dependencies
         run: |
@@ -40,26 +50,12 @@ jobs:
           fi
           ls -la Tweak.xm || true
 
-          # v114.8: control template/ altindan gelir; yoksa fallback
-          if [ ! -f control ] && [ -f template/control ]; then
-            cp template/control ./control
+          # control: template/control __VERSION__ placeholder ile gelir, VERSION ile doldurulur.
+          if [ ! -f template/control ]; then
+            echo "template/control YOK - repo bozuk"; exit 1
           fi
-          if [ ! -f control ]; then
-            echo "control yok - fallback olusturuluyor (v114.8)"
-            cat > control << 'EOF'
-          Package: com.few1n.dreamroadmod114
-          Name: FEW1N Mod Menu
-          Depends: mobilesubstrate, firmware (>= 14.0)
-          Version: 114.8
-          Architecture: iphoneos-arm64
-          Description: FEW1N Mod Menu v114.8
-          Maintainer: few1n
-          Author: few1n
-          Section: Tweaks
-          EOF
-          else
-            echo "control kullaniliyor:"
-          fi
+          cp template/control ./control
+          sed -i.bak "s/__VERSION__/${VERSION}/g" control && rm -f control.bak
 
           if [ ! -f Makefile ]; then
             cat > Makefile << 'EOF'
@@ -99,11 +95,18 @@ jobs:
       - name: Prepare Output
         run: |
           mkdir -p output
-          cp packages/*.deb output/FEW1NMod_114.8_${{ github.run_number }}.deb
+          cp packages/*.deb "output/FEW1NMod_${VERSION}_${{ github.run_number }}.deb"
           DYLIB=$(find .theos/obj -name "*.dylib" | head -1)
-          if [ -z "$DYLIB" ]; then
+          if [ -n "$DYLIB" ]; then
+            echo "dylib .theos/obj icinde bulundu: $DYLIB"
+          else
+            echo "dylib .theos/obj icinde YOK - .deb icinden cikariliyor"
             dpkg -x packages/*.deb extracted
             DYLIB=$(find extracted -name "*.dylib" | head -1)
+            if [ -z "$DYLIB" ]; then
+              echo "HATA: .deb icinde de dylib bulunamadi"; exit 1
+            fi
+            echo "dylib .deb icinden cikarildi: $DYLIB"
           fi
           cp "$DYLIB" output/FEW1NMod.dylib
           echo "==> Output:"
@@ -112,13 +115,13 @@ jobs:
       - name: Upload .deb
         uses: actions/upload-artifact@v4
         with:
-          name: FEW1N-ModMenu-v114.8-deb-${{ github.run_number }}
+          name: FEW1N-ModMenu-v${{ env.VERSION }}-deb-${{ github.run_number }}
           path: output/*.deb
 
       - name: Upload .dylib
         uses: actions/upload-artifact@v4
         with:
-          name: FEW1N-ModMenu-v114.8-dylib-${{ github.run_number }}
+          name: FEW1N-ModMenu-v${{ env.VERSION }}-dylib-${{ github.run_number }}
           path: output/FEW1NMod.dylib
 
       - name: Create GitHub Release
@@ -127,15 +130,15 @@ jobs:
           files: |
             output/*.deb
             output/*.dylib
-          tag_name: v114.8-build${{ github.run_number }}
-          name: FEW1N Mod Menu v114.8 (Build #${{ github.run_number }})
+          tag_name: v${{ env.VERSION }}-build${{ github.run_number }}
+          name: FEW1N Mod Menu v${{ env.VERSION }} (Build #${{ github.run_number }})
           body: |
             🚀 **FEW1N Mod Menu Otomatik Derleme**
-            
-            - **Sürüm:** v114.8
+
+            - **Sürüm:** v${{ env.VERSION }}
             - **Build:** #${{ github.run_number }}
             - **Commit:** ${{ github.sha }}
-            
+
             `.deb` → Jailbreak (Filza/Sileo)
             `.dylib` → Sideload (ESign/TrollStore)
         env:
