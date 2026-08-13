@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "main", "master", "claude/**" ]
     paths:
-      - 'VERSION'
+      - 'VERSION.txt'
       - 'template/**'
       - '.github/workflows/build.yml'
   workflow_dispatch:
@@ -40,9 +40,11 @@ jobs:
 
       - name: Read VERSION
         run: |
-          VERSION=$(tr -d ' \t\n\r' < VERSION)
+          # NOT: dosya ismi VERSION.txt — macOS case-insensitive FS'de duz
+          # 'VERSION' ismi libc++'in #include <version> baslgi ile catisiyor.
+          VERSION=$(tr -d ' \t\n\r' < VERSION.txt)
           if [ -z "$VERSION" ]; then
-            echo "VERSION dosyasi bos veya yok!"; exit 1
+            echo "VERSION.txt dosyasi bos veya yok!"; exit 1
           fi
           echo "Surum: $VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV

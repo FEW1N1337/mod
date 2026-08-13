@@ -2,7 +2,7 @@
 
 iOS tweak for **DreamRoadMultiplayer** (Unity 6, metadata v39). Ships as a Substrate `.dylib` — install as a `.deb` on jailbroken iOS 14+ or sideload the `.dylib` with ESign/TrollStore.
 
-Latest release version lives in [`VERSION`](VERSION); every push to `template/**` or the workflow rebuilds and drops a fresh `.deb` + `.dylib` under [Releases](../../releases).
+Latest release version lives in [`VERSION.txt`](VERSION.txt); every push to `VERSION.txt` / `template/**` or the workflow rebuilds and drops a fresh `.deb` + `.dylib` under [Releases](../../releases). (Dosya adı `.txt` uzantılı; macOS case-insensitive filesystem'de bare `VERSION` C++ standart `<version>` başlığıyla çakışıyor ve iOS SDK derlemesini kırıyor.)
 
 ## Özellikler
 
@@ -58,11 +58,11 @@ Model ve endpoint ayarları da aynı menuden değiştirilir. Varsayılan: Groq `
 
 ## Sürüm bump
 
-Tek adım — repo kökündeki `VERSION` dosyasını güncelle:
+Tek adım — repo kökündeki `VERSION.txt` dosyasını güncelle:
 
 ```
-echo 114.10 > VERSION
-git add VERSION
+echo 114.10 > VERSION.txt
+git add VERSION.txt
 git commit -m "Bump to 114.10"
 git push
 ```
@@ -76,7 +76,7 @@ Named offset'ler [`template/Offsets.h`](template/Offsets.h) altında toplandı. 
 1. Yeni `dump.cs`'ten ilgili class'ların field offset'lerini oku (HR_PlayerHandler, HR_UI_RoomListLine, HR_PhotonLobbyManager, string header'ı, m_CachedPtr)
 2. `template/Offsets.h`'daki `#define`'ları güncelle
 3. `Tweak.xm` başındaki OFFSET TABLE yorumundaki fonksiyon offset'lerini de güncelle (bunlar hâlâ inline hex — hook adresleri)
-4. `VERSION`'u bump'la, CI derler
+4. `VERSION.txt`'i bump'la, CI derler
 
 `Tweak.xm` içindeki raw hex offset'lerin çoğu generic il2cpp offset'i (0x18 array count, 0x20 array data, 0x10 string header vs.) — hepsini isimlendirmek doğru olmadığından adopt selektiftir. Yeni sınıf için offset ekliyorsan `Offsets.h`'a name'li bir `#define` eklemek yerinde olur.
 
