@@ -1055,6 +1055,62 @@ static void* mkStringArray1(NSString *value) {
     return arr;
 }
 
+// v114.11: Boxed primitive'lerden C degerine cevir. il2cpp_runtime_invoke value type
+// donderirse Il2CppObject header (0x10) + degerin kendisi. Wrapper'larda tekrar edecek.
+static inline bool few1n_unboxBool(void *r) { return r && *(unsigned char*)((uintptr_t)r + 0x10) != 0; }
+static inline int  few1n_unboxInt (void *r) { return r ? *(int*)((uintptr_t)r + 0x10) : 0; }
+
+// v114.11 Faz 1a: Photon.Pun.PhotonNetwork / Photon.Realtime.Player class'larini
+// isim ile bul (hardcoded offset drift'e karsi). Fonksiyon pointer'larimizi bu
+// wrapper'larin adresine InstallEverything'te bind ediyoruz -> tum call site'lar
+// hic degismeden calisir, sadece implementasyon degisir.
+static void* few1n_pnClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("Photon.Pun", "PhotonNetwork");
+    return cls;
+}
+static void* few1n_playerClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("Photon.Realtime", "Player");
+    return cls;
+}
+static void* few1n_resolvePn(const char *methodName, int argc) {
+    void *c = few1n_pnClass();
+    if (!c || !i_class_get_method_from_name) return NULL;
+    return i_class_get_method_from_name(c, methodName, argc);
+}
+static void* few1n_resolvePlayer(const char *methodName, int argc) {
+    void *c = few1n_playerClass();
+    if (!c || !i_class_get_method_from_name) return NULL;
+    return i_class_get_method_from_name(c, methodName, argc);
+}
+
+static void* w_pn_getLocalPlayer(void) {
+    static void *m = NULL; if (!m) m = few1n_resolvePn("get_LocalPlayer", 0);
+    if (!m || !i_runtime_invoke) return NULL;
+    @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
+}
+static void* w_pn_getCurrentRoom(void) {
+    static void *m = NULL; if (!m) m = few1n_resolvePn("get_CurrentRoom", 0);
+    if (!m || !i_runtime_invoke) return NULL;
+    @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
+}
+static bool w_pn_getInRoom(void) {
+    static void *m = NULL; if (!m) m = few1n_resolvePn("get_InRoom", 0);
+    if (!m || !i_runtime_invoke) return false;
+    @try { return few1n_unboxBool(i_runtime_invoke(m, NULL, NULL, NULL)); } @catch (...) { return false; }
+}
+static void* w_pn_getNickName(void) {
+    static void *m = NULL; if (!m) m = few1n_resolvePn("get_NickName", 0);
+    if (!m || !i_runtime_invoke) return NULL;
+    @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
+}
+static bool w_ply_getIsMaster(void *self) {
+    static void *m = NULL; if (!m) m = few1n_resolvePlayer("get_IsMasterClient", 0);
+    if (!m || !i_runtime_invoke || !self) return false;
+    @try { return few1n_unboxBool(i_runtime_invoke(m, self, NULL, NULL)); } @catch (...) { return false; }
+}
+
 // TMP_Text.richText = true  (Unity rich text acigini geri ac)
 static void setRichTextIl(void* tmp, bool on) {
     if (!i_runtime_invoke || !g_mSetRichText || !tmp) return;
@@ -3237,6 +3293,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)tapRoomLock;
 - (void)tapRoomHide;
 - (void)tapRoomPassword;
+- (void)completeAllDailyTasks;
 - (void)tapAutoMaster;
 - (void)tapGameSpeed;
 - (void)tapFakeOnline;
@@ -3877,6 +3934,7 @@ static UIViewController* few1n_topVC(void) {
     self.moneyBtn = [self actionButtonRow:&y];
     [self.moneyBtn addTarget:self action:@selector(addMoneyTap) forControlEvents:UIControlEventTouchUpInside];
     y = [self actionRow:@"✏️  Para Miktarini Ayarla" color:C_CYAN atY:y action:@selector(editMoneyAmount)];
+    y = [self actionRow:@"🎯  Tum Daily Task'leri Tamamla (Claim'e sen bas)" color:C_GOLD atY:y action:@selector(completeAllDailyTasks)];
 
     UIView *sc = [[UIView alloc] initWithFrame:CGRectMake(12,y,pw-24,38)];
     UILabel *sl = [[UILabel alloc] initWithFrame:CGRectMake(0,0,pw-24,38)];
@@ -7808,19 +7866,21 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
                         } @catch (...) { FLog(@"✗ Metod 2 Room.set_Name exception"); }
                     } else FLog(@"- Metod 2 g_mRoomSetName YOK");
 
-                    // 2) v87: SUNUCU-TARAFLI SYNC — CustomProperties["customName"] = newName
-                    // Hashtable helper ile gerçek Photon property gönder → diğer client'lar da (mod'suz dahil) uygun kodla okursa görebilir
-                    // few1n_claimMaster + Hashtable + room_setCustomProperties(expected=NULL, CAS bypass)
+                    // 2) SUNUCU-TARAFLI SYNC — CustomProperties["customName"] = newName
+                    // v114.11: hardcoded room_setCustomProperties bug'ini paylasiyordu (0x5916158
+                    // yeni build'lerde get_NickName'e sapiyor). Ayni il2cpp-by-name yolu.
                     few1n_claimMaster();
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                        if (room_setCustomProperties && g_hashtableClass) {
+                    few1n_after(1.2, ^{
+                        if (few1n_ensureRoomApi() && g_hashtableClass) {
                             NSDictionary *dict = @{ @"customName": newName };
                             void* ht = mkPhotonHashtable(dict);
-                            if (ht) {
+                            if (ht && ptrOk(room) && g_mRoomSetCustomProperties && i_runtime_invoke) {
                                 @try {
-                                    bool ok = room_setCustomProperties(room, ht, NULL, NULL);
-                                    FLog([NSString stringWithFormat:@"🎨 [v87] Oda ismi server sync: SetCustomProperties(customName='%@') → %s", newName, ok?"OK":"FAIL"]);
-                                } @catch (...) { FLog(@"🎨 [v87] SetCustomProperties exception"); }
+                                    void *args[3] = { ht, NULL, NULL };
+                                    void *ret = i_runtime_invoke(g_mRoomSetCustomProperties, room, args, NULL);
+                                    bool ok = few1n_unboxBool(ret);
+                                    FLog([NSString stringWithFormat:@"🎨 Oda ismi server sync: SetCustomProperties(customName='%@') → %s", newName, ok?"OK":"FAIL"]);
+                                } @catch (...) { FLog(@"🎨 SetCustomProperties exception"); }
                             }
                         }
                     });
@@ -9644,6 +9704,67 @@ static void few1n_joinTargetRoom(NSString *nm) {
     [self present:ac];
 }
 
+// v114.11: DailyTaskManager.activeTasks listesindeki her DailyTask'in progress'ini
+// target'a esitler + isCompleted = true. Kullanici oyunda "Claim" butonuna basip
+// odul alir. Obfuscated method isimleri (gbs, gbc, gbd) yerine il2cpp field API
+// ile direkt yaziyoruz - drift immune. List<T> layout: _items @0x10 (T[]), _size @0x18.
+- (void)completeAllDailyTasks {
+    NSString *(^err)(NSString*) = ^NSString*(NSString *reason){
+        UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🎯 Daily Tasks" message:reason preferredStyle:UIAlertControllerStyleAlert];
+        [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:e];
+        return nil;
+    };
+    if (!i_class_from_name || !i_class_get_field_from_name || !i_field_get_offset || !i_runtime_invoke) { err(@"il2cpp API hazir degil"); return; }
+
+    void *dtmCls = few1n_classAnyImage("", "DailyTaskManager");
+    if (!dtmCls) { err(@"DailyTaskManager class bulunamadi (oyun eski surumde mi?)"); return; }
+    void *dtCls  = few1n_classAnyImage("", "DailyTask");
+    if (!dtCls)  { err(@"DailyTask class bulunamadi"); return; }
+
+    void *fActive    = i_class_get_field_from_name(dtmCls, "activeTasks");
+    void *fProgress  = i_class_get_field_from_name(dtCls,  "currentProgress");
+    void *fTarget    = i_class_get_field_from_name(dtCls,  "targetValue");
+    void *fCompleted = i_class_get_field_from_name(dtCls,  "isCompleted");
+    if (!fActive || !fProgress || !fTarget || !fCompleted) { err(@"DailyTask field'lari bulunamadi (obfuscation degismis olabilir)"); return; }
+    int offActive    = (int)i_field_get_offset(fActive);
+    int offProgress  = (int)i_field_get_offset(fProgress);
+    int offTarget    = (int)i_field_get_offset(fTarget);
+    int offCompleted = (int)i_field_get_offset(fCompleted);
+
+    void *typeObj = few1n_typeObjOf(dtmCls);
+    if (!typeObj) { err(@"DailyTaskManager typeObj alinamadi"); return; }
+    void *mgr = few1n_findByType(typeObj);
+    if (!ptrOk(mgr)) { err(@"Sahnede DailyTaskManager instance yok (once daily task menusune gir)"); return; }
+
+    void *list = *(void**)((uintptr_t)mgr + offActive);
+    if (!ptrOk(list)) { err(@"activeTasks null - once daily task menusunu ac"); return; }
+
+    // List<T> layout (mscorlib): _items T[] @0x10, _size int @0x18
+    void *items = *(void**)((uintptr_t)list + 0x10);
+    int size = *(int*)((uintptr_t)list + 0x18);
+    if (!ptrOk(items) || size <= 0 || size > 100) { err([NSString stringWithFormat:@"Liste bos veya anormal boyut (%d)", size]); return; }
+
+    int done = 0;
+    for (int i = 0; i < size; i++) {
+        void *task = *(void**)((uintptr_t)items + 0x20 + i * 8);
+        if (!ptrOk(task)) continue;
+        @try {
+            int target = *(int*)((uintptr_t)task + offTarget);
+            *(float*)((uintptr_t)task + offProgress) = (float)target;
+            *(unsigned char*)((uintptr_t)task + offCompleted) = 1;
+            done++;
+        } @catch (...) {}
+    }
+
+    FLog([NSString stringWithFormat:@"🎯 Daily Tasks: %d/%d tamamlandi (progress=%d, target=%d, completed=1)", done, size, offProgress, offTarget]);
+    UIAlertController *ok = [UIAlertController alertControllerWithTitle:@"🎯 Daily Tasks"
+        message:[NSString stringWithFormat:@"✅ %d/%d task tamamlandi.\n\nOyun icindeki Daily Task menusunu ac, her tamamlanmis task'in yaninda 'Claim' butonuna bas, paran gelsin.", done, size]
+        preferredStyle:UIAlertControllerStyleAlert];
+    [ok addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+    [self present:ok];
+}
+
 - (void)editPlate {
     UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"\U0001F522 Ozel Plaka" message:@"Plakada gorunecek yazi:" preferredStyle:UIAlertControllerStyleAlert];
     [ac addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.placeholder = @"FEW1N"; if (isCustomPlateEnabled) tf.text = [NSString stringWithUTF8String:customPlateText]; tf.clearButtonMode = UITextFieldViewModeAlways; }];
@@ -10232,16 +10353,16 @@ static void InstallEverything(uintptr_t b) {
     rinfo_getName             = (void*(*)(void*))(b + 0x59293A4);   // RoomInfo.get_Name
     pn_setNickName            = (void(*)(void*))(b + 0x5933940);
     pn_joinRoom               = (bool(*)(void*,void*))(b + 0x593A64C);
-    pn_getInRoom              = (bool(*)(void))(b + 0x5934FA4);   // oda tespiti (otomatik karsilama)
+    pn_getInRoom              = w_pn_getInRoom;   // v114.11: il2cpp-by-name wrapper (drift-immune)
     pn_getConnReady           = (bool(*)(void))(b + 0x59333A8);   // oda kurma on-kosulu (bagli+hazir)
     mbp_getPhotonView         = (void*(*)(void*))(b + 0x594DB48);  // dogru lobi instance secimi (kick RPC)
-    pn_getCurrentRoom         = (void*(*)(void))(b + 0x592DA0C);   // mevcut oda
+    pn_getCurrentRoom         = w_pn_getCurrentRoom;   // v114.11: il2cpp-by-name wrapper
     room_setMaxPlayers        = (void(*)(void*,int))(b + 0x5927B70); // odayi buyut
     room_getMaxPlayers        = (int(*)(void*))(b + 0x5927B68);
     room_setIsOpen            = (void(*)(void*,bool))(b + 0x59279B0);  // kilit
     room_setIsVisible         = (void(*)(void*,bool))(b + 0x5927A90);  // gizli
     room_setCustomProperties  = (bool(*)(void*,void*,void*,void*))(b + 0x5916158); // sifre
-    pn_getNickName            = (void*(*)(void))(b + 0x59338C0);
+    pn_getNickName            = w_pn_getNickName;   // v114.11: il2cpp-by-name wrapper
     pn_leaveRoom              = (bool(*)(bool))(b + 0x593B2D8);
     pn_closeConnection        = (bool(*)(void*))(b + 0x5938844);   // kick direkt (hook olmadan)
     lobbyGetInst              = (void*(*)(void))(b + 0x54A8098);
@@ -10269,10 +10390,10 @@ static void InstallEverything(uintptr_t b) {
     pn_getActiveSceneBuildIndex = (int(*)(void))(b + 0x5961920);   // YENI: Aktif sahne indeksi
     pn_getPlayerList          = (void*(*)(void))(b + 0x59339D0);
     pn_getPlayerListOthers    = (void*(*)(void))(b + 0x5933B88);
-    pn_getLocalPlayer         = (void*(*)(void))(b + 0x5933814);   // master miyim kontrolu
+    pn_getLocalPlayer         = w_pn_getLocalPlayer;   // v114.11: il2cpp-by-name wrapper
     ply_getNickName           = (void*(*)(void*))(b + 0x5924574);
     ply_getActorNumber        = (int(*)(void*))(b + 0x592455C);
-    ply_getIsMaster           = (bool(*)(void*))(b + 0x5924640);
+    ply_getIsMaster           = w_ply_getIsMaster;   // v114.11: il2cpp-by-name wrapper
     ply_getUserId             = (void*(*)(void*))(b + 0x5924630);
     lobby_carSelectMenu       = (void(*)(void*))(b + 0x54ABFD4);
     cps_TeleportCar_RPC       = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A49AE0);
