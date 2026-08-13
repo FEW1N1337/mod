@@ -10,6 +10,7 @@
 #include <dlfcn.h>
 #include <math.h>
 #import <objc/runtime.h>
+#import "Offsets.h"
 
 // ============================================================
 //  v114.8 - FEW1N MOD MENU  (derlemeye hazir guncel surum)
@@ -1093,9 +1094,9 @@ static float getTimeScaleVal(void) {
 static NSString* readStr(void* il2s) {
     if (!il2s || (uintptr_t)il2s < 0x1000) return @"";
     @try {
-        int32_t len = *(int32_t*)((uintptr_t)il2s + 0x10);
+        int32_t len = *(int32_t*)((uintptr_t)il2s + OFF_IL2CPP_STRING_LEN);
         if (len <= 0 || len > 4096) return @"";
-        return [NSString stringWithCharacters:(unichar*)((uintptr_t)il2s + 0x14) length:len];
+        return [NSString stringWithCharacters:(unichar*)((uintptr_t)il2s + OFF_IL2CPP_STRING_CHARS) length:len];
     } @catch (...) { return @""; }
 }
 #include <signal.h>
@@ -1606,7 +1607,7 @@ static inline bool ptrOk(void* p) {
 // Bir Unity nesnesi hala canli mi? Yok edilince m_CachedPtr (+0x10) NULL olur.
 static inline bool unityAlive(void* obj) {
     if (!ptrOk(obj)) return false;
-    @try { return *(void**)((uintptr_t)obj + 0x10) != NULL; } @catch (...) { return false; }
+    @try { return *(void**)((uintptr_t)obj + OFF_UNITY_CACHED_PTR) != NULL; } @catch (...) { return false; }
 }
 // Bir tipi 3 farkli Unity API'siyle aramayi dener (aktif olmayanlar dahil)
 static void* few1n_findByType(void* typeObj) {
@@ -2062,7 +2063,7 @@ static void few1n_applyGodmode(void) {
             void** hs = (void**)((uintptr_t)arr + 0x20);
             for (int i = 0; i < cnt; i++) {
                 void* h = hs[i]; if (!unityAlive(h)) continue;
-                void* pv = *(void**)((uintptr_t)h + 0xB8);   // HR_PlayerHandler.PhotonView
+                void* pv = *(void**)((uintptr_t)h + OFF_PLAYERHANDLER_PHOTONVIEW);
                 bool mine = unityAlive(pv) ? *(bool*)((uintptr_t)pv + g_isMineOff) : false;
                 if (mine) { g_myPlayerHandler = h; g_myRccp = *(void**)((uintptr_t)h + 0x20); break; }
             }
@@ -2070,8 +2071,8 @@ static void few1n_applyGodmode(void) {
         return;
     }
     if (isGodmode) { @try {
-        *(unsigned char*)((uintptr_t)g_myPlayerHandler + 0x38) = 0;   // canCrash = false
-        *(float*)((uintptr_t)g_myPlayerHandler + 0x3C) = 0.0f;        // damage = 0
+        *(unsigned char*)((uintptr_t)g_myPlayerHandler + OFF_PLAYERHANDLER_CANCRASH) = 0;
+        *(float*)((uintptr_t)g_myPlayerHandler + OFF_PLAYERHANDLER_DAMAGE) = 0.0f;
     } @catch (...) {} }
 }
 
@@ -2877,13 +2878,13 @@ static void (*o_roomConnect)(void*) = NULL;
 static void h_roomConnect(void* self) {
     if (isBypassPasswordEnabled && self) {
         @try {
-            void* roomPwd = *(void**)((uintptr_t)self + 0x50);   // RoomListLine.password
+            void* roomPwd = *(void**)((uintptr_t)self + OFF_ROOMLINE_PASSWORD);
             if (lobbyGetInst && roomPwd) {
                 void* lobby = lobbyGetInst();
                 if (lobby && tmp_set_text) {
-                    void* pOnConnect = *(void**)((uintptr_t)lobby + 0x60);
+                    void* pOnConnect = *(void**)((uintptr_t)lobby + OFF_LOBBY_PWD_ON_CONN_INPUT);
                     if (pOnConnect) tmp_set_text(pOnConnect, roomPwd);
-                    void* pInput = *(void**)((uintptr_t)lobby + 0x50);
+                    void* pInput = *(void**)((uintptr_t)lobby + OFF_LOBBY_PWD_INPUT);
                     if (pInput) tmp_set_text(pInput, roomPwd);
                 }
             }
@@ -8116,8 +8117,8 @@ static NSString* few1n_roomPasswordPropertyKey(void) {
             if (lobbyGetInst && tmp_set_text) {
                 void *lobby = lobbyGetInst();
                 if (ptrOk(lobby)) {
-                    void *pwdInput = *(void **)((uintptr_t)lobby + 0x50);
-                    void *pwdOnConnect = *(void **)((uintptr_t)lobby + 0x60);
+                    void *pwdInput = *(void **)((uintptr_t)lobby + OFF_LOBBY_PWD_INPUT);
+                    void *pwdOnConnect = *(void **)((uintptr_t)lobby + OFF_LOBBY_PWD_ON_CONN_INPUT);
                     void *pwdStr = mkStr(pwd);
                     if (ptrOk(pwdStr)) {
                         if (ptrOk(pwdInput)) tmp_set_text(pwdInput, pwdStr);
@@ -10041,22 +10042,26 @@ static void few1n_joinTargetRoom(NSString *nm) {
 
 @end
 
+// restoreSettings — %ctor'dan bir kere cagrilir. Iki grup kullanilir:
+//   loadBool/loadInt/loadFloat/loadStr(..., default) -> KALICI: NSUserDefaults'tan gelir
+//   = false / = 0 sabiti + `[SESSION_ONLY]` yorumu -> OTURUMLUK: her tweak yuklenmesinde sifirlanir
+// Oturumluk toggle'lara UI'da "(oturumluk)" etiketi eklendi.
 static void restoreSettings(void) {
     speedMode              = loadInt(@"speedMode", 1);
     speedMult              = ((float)loadInt(@"speedMult10", 10)) / 10.0f;
     if (speedMult < 0.1f || speedMult > 10.0f) speedMult = 1.0f;
-    isRoomLocked           = false;   // her ac/kapatta sifir (odadan cikinca anlamsiz)
-    isRoomInvisible        = false;
+    isRoomLocked           = false;   // [SESSION_ONLY] odadan cikinca zaten anlamsiz
+    isRoomInvisible        = false;   // [SESSION_ONLY]
     { NSString *rp = loadStr(@"roomPass", @""); if (rp.length) { strncpy(roomPasswordText, rp.UTF8String, sizeof(roomPasswordText)-1); roomPasswordText[sizeof(roomPasswordText)-1]='\0'; } }
-    isInfiniteNitroEnabled = false;   // ozellik kaldirildi (kalici kapali)
+    isInfiniteNitroEnabled = false;   // [SESSION_ONLY] ozellik kaldirildi, kalici kapali
     isCarPanelEnabled      = loadBool(@"carpanel", false);
-    isEspEnabled           = false;   // ESP her aciliste kapali baslar (overlay guvenligi)
-    isSpeedHud             = false;   // HUD da kapali baslar
+    isEspEnabled           = false;   // [SESSION_ONLY] ESP overlay her aciliste kapali (guvenlik)
+    isSpeedHud             = false;   // [SESSION_ONLY]
     isNoClip               = loadBool(@"noclip", false);
     isAntiGrav             = loadBool(@"antigrav", false);
-    isCarSizeEnabled       = false;   // boyut her aciliste kapali baslar
+    isCarSizeEnabled       = false;   // [SESSION_ONLY]
     carSizeVal             = loadFloat(@"carSize", 1.0f);
-    isCarColorEnabled      = false;   // renk her aciliste kapali (materyal onbellegi bos)
+    isCarColorEnabled      = false;   // [SESSION_ONLY] materyal onbellegi bos aciliste
     carColorRainbow        = loadBool(@"carrainbow", true);
     g_carColor             = (Color4){ loadFloat(@"carR",1.0f), loadFloat(@"carG",0.0f), loadFloat(@"carB",0.0f), 1.0f };
     isCarPaintActive       = loadBool(@"carPaintActive", false);
@@ -10068,11 +10073,11 @@ static void restoreSettings(void) {
     { NSString *lt = loadStr(@"lyricsText", @"");
       if (lt.length) { g_lyrics = [[NSMutableArray alloc] init];
         for (NSString *l in [lt componentsSeparatedByString:@"\n"]) [g_lyrics addObject:[l stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]]; } }
-    isAnnounceEnabled      = false;
-    isGodmode              = false;   // godmode her aciliste kapali (guvenlik)
-    isSelektor             = false;   // selektor her aciliste kapali
+    isAnnounceEnabled      = false;   // [SESSION_ONLY]
+    isGodmode              = false;   // [SESSION_ONLY] guvenlik icin her aciliste kapali
+    isSelektor             = false;   // [SESSION_ONLY]
     isAlwaysLightsEnabled  = loadBool(@"alwayslights", false);
-    // v100 gizli ozellikler her aciliste KAPALI (guvenlik)
+    // [SESSION_ONLY] Gizli il2cpp ozellikleri her aciliste kapali (guvenlik)
     isInfiniteNosEnabled    = false;
     isInfiniteFuelEnabled   = false;
     isMaxRpmEnabled         = false;
@@ -10094,19 +10099,19 @@ static void restoreSettings(void) {
     carAccelPower          = loadFloat(@"caraccel", 3.0f);
     carSteerPower          = loadFloat(@"carsteer", 1.0f);
     carTopSpeed            = loadFloat(@"cartop",   300.0f);
-    isColorChatEnabled     = false;   // ozellik kaldirildi (kalici kapali)
+    isColorChatEnabled     = false;   // [SESSION_ONLY] ozellik kaldirildi, kalici kapali
     isSpamEnabled          = loadBool(@"chatspam", false);
     isBypassPasswordEnabled= loadBool(@"bypass", true);
     isFlyEnabled           = loadBool(@"fly", false);
     flyAutoThrust          = loadBool(@"flyauto", false);
-    isFlyPadShown          = false;   // D-pad her aciliste kapali (ekrani kapamasin)
+    isFlyPadShown          = false;   // [SESSION_ONLY] D-pad ekrani kapamasin
     isLowGravEnabled       = loadBool(@"lowgrav", false);
     isAsciiAnimEnabled     = loadBool(@"asciianim", false);
     g_gifColored           = loadBool(@"gifColored", false);
     g_gifCols              = loadInt(@"gifCols", 24);
     loadFavorites();
     asciiAnimIndex         = loadInt(@"asciiIdx", 0);
-    isRoomSpamEnabled      = false;   // spam her acilista kapali baslasin (guvenlik)
+    isRoomSpamEnabled      = false;   // [SESSION_ONLY] spam kapali baslasin (guvenlik)
     roomSpamMaxCount       = loadInt(@"roomMax", 0);
     roomMaxPlayers         = loadInt(@"roomMaxP", 31);
     roomSpamTTL            = loadInt(@"roomTTL", 300000);

@@ -69,7 +69,11 @@ jobs:
           if [ ! -f Tweak.xm ] && [ -f template/Tweak.xm ]; then
             cp template/Tweak.xm ./Tweak.xm
           fi
-          ls -la Tweak.xm || true
+          # Named offset header — Tweak.xm ile ayni dizinde olmasi lazim
+          if [ -f template/Offsets.h ]; then
+            cp template/Offsets.h ./Offsets.h
+          fi
+          ls -la Tweak.xm Offsets.h 2>/dev/null || true
 
           # control: template/control __VERSION__ placeholder ile gelir, VERSION ile doldurulur.
           if [ ! -f template/control ]; then
