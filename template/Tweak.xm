@@ -1130,6 +1130,16 @@ static void few1n_setupCrashGuard(void) {
     sigaction(SIGBUS, &sa, NULL);
 }
 
+// Main-queue'ya X saniye sonra block gonder — dispatch_after boilerplate'ini kisalt.
+static inline void few1n_after(double seconds, dispatch_block_t block) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), block);
+}
+
+// @try/@catch(...) wrap'ini tek statement icin kisalt. Multi-statement veya
+// ozel exception yakalamak icin manuel @try/@catch yaz.
+#define FEW1N_SAFE(expr) do { @try { expr; } @catch (...) {} } while(0)
+
 // Bir pointer okunabilir mi test et (crash-safe)
 static inline bool few1n_memOk(void* p) {
     if ((uintptr_t)p < 0x1000) return false;
@@ -9767,9 +9777,7 @@ static void few1n_joinTargetRoom(NSString *nm) {
 
 - (void)tapRoomCrash {
     [self fireRoomCrash];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (pn_leaveRoom) pn_leaveRoom(false);
-    });
+    few1n_after(0.5, ^{ if (pn_leaveRoom) pn_leaveRoom(false); });
 }
 
 - (void)fireRoomCrash {
@@ -9870,9 +9878,7 @@ static void few1n_joinTargetRoom(NSString *nm) {
             pn_createRoom(ns, opts, NULL, NULL);
             FLog(@"MaxPlayer=INT_MAX overflow denendi");
         }
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            if (unityAlive(g_rb)) rbSetPosIl(g_rb, &savedPos);
-        });
+        few1n_after(0.2, ^{ if (unityAlive(g_rb)) rbSetPosIl(g_rb, &savedPos); });
     } @catch (...) { FLog(@"Overflow hatası"); }
 }
 
@@ -10024,9 +10030,7 @@ static void few1n_joinTargetRoom(NSString *nm) {
             }
 
             if (top.isBeingPresented || top.isBeingDismissed) {
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    [self present:ac];
-                });
+                few1n_after(0.15, ^{ [self present:ac]; });
                 return;
             }
 
@@ -10261,7 +10265,7 @@ static void few1n_poll(void) {
     uintptr_t b = GetUnityFrameworkBase();
     if (b != 0) { InstallEverything(b); return; }
     if (few1n_attempts >= 80) { FLog(@"UnityFramework BULUNAMADI (80 deneme)"); [[FEW1NMenu shared] build]; return; }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ few1n_poll(); });
+    few1n_after(0.5, ^{ few1n_poll(); });
 }
 
 
@@ -10383,7 +10387,7 @@ static void few1n_poll(void) {
 
         // ===== UIView TABANLI BANNER TEMIZLIGI =====
         // GADBannerView, MAAdView, FBAdView gibi banner'lari gomulunce otomatik gizle
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        few1n_after(5.0, ^{
             // Banner siniflarinin instance'larini gizle (varsa)
             NSArray *bannerClasses = @[@"GADBannerView", @"MAAdView", @"FBAdView", @"IMBanner", @"CASBannerView"];
             for (NSString *clsName in bannerClasses) {
@@ -10408,5 +10412,5 @@ static void few1n_poll(void) {
         FLog(@"\U0001F6AB Reklam bozucu: tum SDK'lar engellendi (AdMob/AppLovin/CAS/Unity/IronSource/FB/InMobi/Vungle/Chartboost/Mintegral/Pangle/Yandex)");
     }
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ few1n_poll(); });
+    few1n_after(3.0, ^{ few1n_poll(); });
 }
