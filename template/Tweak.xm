@@ -433,6 +433,8 @@ static void* g_mRbGetPos = NULL; // Rigidbody.get_position MethodInfo*  (isinlan
 static void* g_mRbSetPos = NULL; // Rigidbody.set_position MethodInfo*
 static void* g_mSetRichText = NULL; // TMP_Text.set_richText MethodInfo* (oda ismi rich text acigi)
 static void* (*i_object_new)(void*) = NULL;   // il2cpp_object_new
+// v114.19: safeHookByName icin - metodun C fonksiyon adresini isim ile bul
+static void* (*i_method_get_pointer)(void*) = NULL;   // il2cpp_method_get_pointer
 static void* g_roomOptionsClass = NULL;       // Photon.Realtime.RoomOptions Il2CppClass*
 static void* g_roomClass = NULL;              // Photon.Realtime.Room Il2CppClass*
 static void* g_mRoomSetName = NULL;           // Photon.Realtime.Room.set_Name(string) — sunucuya push umulur
@@ -612,6 +614,8 @@ static void few1n_initIl2cpp(void) {
     i_thread_attach             = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_thread_attach");
     i_object_new                = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_object_new");
     i_array_new                 = (void*(*)(void*,unsigned long))dlsym(RTLD_DEFAULT, "il2cpp_array_new");
+    // v114.19: safeHookByName icin gerekli
+    i_method_get_pointer        = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_method_get_pointer");
     i_class_get_field_from_name = (void*(*)(void*,const char*))dlsym(RTLD_DEFAULT, "il2cpp_class_get_field_from_name");
     i_field_static_get_value    = (void(*)(void*,void*))dlsym(RTLD_DEFAULT, "il2cpp_field_static_get_value");
     i_field_static_set_value    = (void(*)(void*,void*))dlsym(RTLD_DEFAULT, "il2cpp_field_static_set_value");
@@ -1307,6 +1311,38 @@ static void safeHook(void* target, void* replacement, void** original, const cha
     FLog([NSString stringWithFormat:@"OK  %@", nm]);
     hookSuccessCount++;
 }
+
+// v114.19: Drift-immune safeHook — hedef adresi il2cpp isim ile bul.
+// Hardcoded RVA yerine class+method lookup + il2cpp_method_get_pointer kullanir.
+// Oyun her sürüm update'inde offset'ler kaysa bile isim korunuyorsa çalışır.
+// Namespace bos "" ise tum image'lardan class taranir.
+static void safeHookByName(const char* ns, const char* class_name, const char* method_name, int argc,
+                            void* replacement, void** original, const char* label) {
+    char logbuf[256];
+    snprintf(logbuf, sizeof(logbuf), "%s [%s.%s(%d args)]",
+             label ?: "", class_name ?: "?", method_name ?: "?", argc);
+    if (!i_class_from_name || !i_class_get_method_from_name || !i_method_get_pointer) {
+        FLog([NSString stringWithFormat:@"SKIP (il2cpp API yok) %s", logbuf]);
+        hookFailCount++; return;
+    }
+    void* c = few1n_classAnyImage(ns ?: "", class_name);
+    if (!c) {
+        FLog([NSString stringWithFormat:@"SKIP (class YOK) %s", logbuf]);
+        hookFailCount++; return;
+    }
+    void* m = i_class_get_method_from_name(c, method_name, argc);
+    if (!m) {
+        FLog([NSString stringWithFormat:@"SKIP (method YOK) %s", logbuf]);
+        hookFailCount++; return;
+    }
+    void* addr = i_method_get_pointer(m);
+    if (!addr) {
+        FLog([NSString stringWithFormat:@"SKIP (code addr NULL) %s", logbuf]);
+        hookFailCount++; return;
+    }
+    safeHook(addr, replacement, original, logbuf);
+}
+
 static UIWindow* getKeyWindow(void) {
     if (@available(iOS 15.0, *)) {
         for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
@@ -10416,36 +10452,53 @@ static void InstallEverything(uintptr_t b) {
     room_setIsVisible            = (void(*)(void*,bool))(b + 0x5927A90);      // Room.set_IsVisible (gizle/goster)
     pn_raiseEvent           = (void(*)(unsigned char,void*,bool,void*))(b + 0x593C000); // PhotonNetwork.RaiseEvent (dump.cs'den dogrula)
 
-    safeHook((void*)(b + 0x54AA35C), (void*)h_onRoomListUpdate,(void**)&o_onRoomListUpdate,"HR_PhotonLobbyManager.OnRoomListUpdate");
-    safeHook((void*)(b + 0x54A9BF4), (void*)h_onMasterClientSwitched,(void**)&o_onMasterClientSwitched,"HR_PhotonLobbyManager.OnMasterClientSwitched");
-    safeHook((void*)(b + 0x6771918), (void*)h_setTimeScale,  (void**)&o_setTimeScale,     "set_timeScale");
-    safeHook((void*)(b + 0x5938844), (void*)h_closeConnection,(void**)&o_closeConnection, "CloseConnection");
-    safeHook((void*)(b + 0x54CFE14), (void*)h_getNitro,       (void**)&o_getNitro,        "get_nitroAmount");
-    safeHook((void*)(b + 0x54CFE1C), (void*)h_setNitro,       (void**)&o_setNitro,        "set_nitroAmount");
-    safeHook((void*)(b + 0x54CCAA0), (void*)h_driveMove,      (void**)&o_driveMove,       "CarDriveSystem.Move");
-    safeHook((void*)(b + 0x54D0BC0), (void*)h_playerInputFixed,(void**)&o_playerInputFixed,"CarPlayerInput.FixedUpdate *ANA*");
-    safeHook((void*)(b + 0x59C4BCC), (void*)h_rccpUpdate,     (void**)&o_rccpUpdate,      "RCCP.Update(rb yakala)");
-    // v92: RCCP_Damage.Update hook KALDIRILDI (dokunmatik bug sebep)
-    safeHook((void*)(b + 0x5A57390), (void*)h_smRCC,          (void**)&o_smRCC,           "SmoothSyncRCC.Update(rb!)");
-    safeHook((void*)(b + 0x5A4F72C), (void*)h_smPUN,          (void**)&o_smPUN,           "SmoothSyncPUN2.Update");
-    safeHook((void*)(b + 0x54EA1FC), (void*)h_plateChange,    (void**)&o_plateChange,     "PlateVariant.Change");
-    safeHook((void*)(b + 0x31A626C), (void*)h_chatSend,       (void**)&o_chatSend,        "ChatManager.Send");
-    safeHook((void*)(b + 0x31A6208), (void*)h_chatFup,        (void**)&o_chatFup,         "ChatManager.fup (gelen chat)");
-    safeHook((void*)(b + 0x65F4CC8), (void*)h_tmpSetText,     (void**)&o_tmpSetText,      "TMPro.TMP_Text.set_text(richtext)");
-    safeHook((void*)(b + 0x54B32F4), (void*)h_roomConnect,    (void**)&o_roomConnect,     "RoomListLine.Connect");
-    safeHook((void*)(b + 0x54B33E0), (void*)h_roomLineSetup,  (void**)&o_roomLineSetup,   "RoomListLine.Setup(richtext)");
-    safeHook((void*)(b + 0x54A9A30), (void*)h_onCreateFail,   (void**)&o_onCreateFail,    "OnCreateRoomFailed(teshis)");
-    safeHook((void*)(b + 0x54A9498), (void*)h_onJoinFail,     (void**)&o_onJoinFail,      "OnJoinRoomFailed(teshis)");
-    safeHook((void*)(b + 0x54A94A4), (void*)h_createRoomBtn,  (void**)&o_createRoomBtn,   "CreateRoomButton(richtext)");
-    safeHook((void*)(b + 0x5A43A2C), (void*)h_addMoney,       (void**)&o_addMoney,        "PlayerManager.AddMoney");
-    safeHook((void*)(b + 0x3211FC0), (void*)h_casShowAd,        (void**)&o_casShowAd,        "CAS_CASManagerBase.ShowAd");
-    safeHook((void*)(b + 0x3217B18), (void*)h_casClientShowAd,  (void**)&o_casClientShowAd,  "CAS_iOS_CASManagerClient.ShowAd");
-    safeHook((void*)(b + 0x3217AF0), (void*)h_casIsReadyAd,     (void**)&o_casIsReadyAd,     "CAS_iOS_CASManagerClient.IsReadyAd");
-    safeHook((void*)(b + 0x32160C8), (void*)h_casExternsShowAd, (void**)&o_casExternsShowAd, "CAS_iOS_CASExterns.CASUShowAd");
-    safeHook((void*)(b + 0x31A3E38), (void*)h_casAdCount,       (void**)&o_casAdCount,       "CASAd_AdIntervalCounter.Count");
-    safeHook((void*)(b + 0x31A4508), (void*)h_casInterGin,      (void**)&o_casInterGin,      "CASAd_InterstitialAd.gin");
-    safeHook((void*)(b + 0x31A4514), (void*)h_casInterGio,      (void**)&o_casInterGio,      "CASAd_InterstitialAd.gio");
-    safeHook((void*)(b + 0x31A4BE4), (void*)h_casRewardPresent, (void**)&o_casRewardPresent, "CASAd_RewardedAd.Present");
+    // v114.19: TÜM safeHook çağrıları drift-immune safeHookByName ile isim üzerinden.
+    // Hardcoded RVA (b + 0xNN) offset'leri KALKTI — oyun her update'inde önceki hepsi
+    // yanlış yere kuruluyor, per-frame hook'lar sessizce garbage adrese giriyor ve
+    // 1.4.3'te DR splash sonrası crash yapıyordu. il2cpp_method_get_pointer runtime'da
+    // her metodun gerçek code address'ini döndürür — sürüm değişse bile isim aynıysa çalışır.
+    // Obfuscate edilmiş metotlar 1.4.3 dump.cs'ten kısa mangled ismiyle geçirildi (fzk, ghs,
+    // fgp, eqm, eqn). Bir sonraki oyun sürümü obfuscation seed'i değişirse bunlar kırılır,
+    // o zaman signature-based lookup eklenir (v114.20+).
+
+    // Photon PUN callback'leri (isim korunmuş)
+    safeHookByName("", "HR_PhotonLobbyManager",  "OnRoomListUpdate",       1, (void*)h_onRoomListUpdate,       (void**)&o_onRoomListUpdate,      "HR_PhotonLobbyManager.OnRoomListUpdate");
+    safeHookByName("", "HR_PhotonLobbyManager",  "OnMasterClientSwitched", 1, (void*)h_onMasterClientSwitched, (void**)&o_onMasterClientSwitched,"HR_PhotonLobbyManager.OnMasterClientSwitched");
+    safeHookByName("", "HR_PhotonLobbyManager",  "OnCreateRoomFailed",     2, (void*)h_onCreateFail,           (void**)&o_onCreateFail,          "HR_PhotonLobbyManager.OnCreateRoomFailed");
+    safeHookByName("", "HR_PhotonLobbyManager",  "OnJoinRoomFailed",       2, (void*)h_onJoinFail,             (void**)&o_onJoinFail,            "HR_PhotonLobbyManager.OnJoinRoomFailed");
+    safeHookByName("", "HR_PhotonLobbyManager",  "CreateRoomButton",       0, (void*)h_createRoomBtn,          (void**)&o_createRoomBtn,         "HR_PhotonLobbyManager.CreateRoomButton");
+
+    // Unity / Photon / TMP core (isim korunmuş)
+    safeHookByName("UnityEngine",     "Time",           "set_timeScale",   1, (void*)h_setTimeScale,    (void**)&o_setTimeScale,    "Time.set_timeScale");
+    safeHookByName("Photon.Pun",      "PhotonNetwork",  "CloseConnection", 1, (void*)h_closeConnection, (void**)&o_closeConnection, "PhotonNetwork.CloseConnection");
+    safeHookByName("TMPro",           "TMP_Text",       "set_text",        1, (void*)h_tmpSetText,      (void**)&o_tmpSetText,      "TMP_Text.set_text");
+    safeHookByName("",                "ChatManager",    "Send",            1, (void*)h_chatSend,        (void**)&o_chatSend,        "ChatManager.Send");
+
+    // CarPlayerInput.FixedUpdate ismi korunmuş (Unity engine method)
+    safeHookByName("", "CarPlayerInput", "FixedUpdate", 0, (void*)h_playerInputFixed, (void**)&o_playerInputFixed, "CarPlayerInput.FixedUpdate *ANA*");
+
+    // SmoothSync classes — Update ismi Unity engine metotu, korunmuş
+    safeHookByName("", "SmoothSyncRCC",  "Update", 0, (void*)h_smRCC, (void**)&o_smRCC, "SmoothSyncRCC.Update");
+    safeHookByName("", "SmoothSyncPUN2", "Update", 0, (void*)h_smPUN, (void**)&o_smPUN, "SmoothSyncPUN2.Update");
+
+    // RCCP_CarController.Update — eski "RCCP.Update" adlandırması
+    safeHookByName("", "RCCP_CarController", "Update", 0, (void*)h_rccpUpdate, (void**)&o_rccpUpdate, "RCCP_CarController.Update (rb yakala)");
+
+    // Obfuscated metotlar (1.4.3 dump'tan mangled name)
+    safeHookByName("", "CarDriveSystem",       "fgp", 4, (void*)h_driveMove,     (void**)&o_driveMove,     "CarDriveSystem.Move (obf fgp)");
+    safeHookByName("", "PlateVariant",         "ghs", 1, (void*)h_plateChange,   (void**)&o_plateChange,   "PlateVariant.Change (obf ghs)");
+    safeHookByName("", "ChatManager",          "fzk", 1, (void*)h_chatFup,       (void**)&o_chatFup,       "ChatManager.fup (obf fzk — gelen chat)");
+    safeHookByName("", "HR_UI_RoomListLine",   "eqm", 0, (void*)h_roomConnect,   (void**)&o_roomConnect,   "HR_UI_RoomListLine.Connect (obf eqm)");
+    safeHookByName("", "HR_UI_RoomListLine",   "eqn", 6, (void*)h_roomLineSetup, (void**)&o_roomLineSetup, "HR_UI_RoomListLine.Setup (obf eqn)");
+
+    // Nitro getterlari: RCCP_Nos.get/set_amount — obfuscated. Eski hardcoded offset (0x54CFE14/1C)
+    // hâlâ 1.4.3'te bozuk olabilir. Skip — SONSUZ NOS özelliği zaten il2cpp field write ile de çalışıyor.
+    // safeHookByName("", "RCCP_Nos", "?", 0, (void*)h_getNitro, (void**)&o_getNitro, "RCCP_Nos.get_nitroAmount");
+
+    // PlayerManager.AddMoney — obfuscated + sunucu-kilitli. Skip.
+    // CAS reklam hookları — obj-c swizzle zaten yapıyor (%ctor içinde). Skip.
+
+    FLog([NSString stringWithFormat:@"v114.19 hook by-name: %d OK, %d fail (obfuscated seed değişirse fail sayısı artar)", hookSuccessCount, hookFailCount]);
 
     FLog([NSString stringWithFormat:@"Bitti: %d hook OK, %d fail", hookSuccessCount, hookFailCount]);
     [[FEW1NMenu shared] build];
