@@ -102,8 +102,7 @@ static bool isAlwaysLightsEnabled = false;   // v97: Farlar Surekli Acik geri ge
 static void* g_wheelGlowTypeObj = NULL;    // typeof(RCCP_WheelGlow)
 // v91: Hasar Yok — RCCP_Damage.Update hook ile
 static bool isNoDamageEnabled = false;
-// v85: RCCP visual/state toggle'lar
-// v90: 4 RCCP toggle SİLİNDİ (Farlar, Yakıt, Hasar Yok, NOS) — offset uyumsuzluğu crash sebep
+// RCCP visual/state toggle'lar
 static bool isAutoHornEnabled = false;
 static bool isRevLimiterEnabled = false;
 static bool isCruiseEnabled = false;    // hiz sabitleyici (cruise control)
@@ -978,9 +977,7 @@ static void few1n_initIl2cpp(void) {
             }
             if (!g_wheelGlowTypeObj) FLog(@"🔥 Balata: HICBIR WheelGlow class'i bulunamadi bu build'de");
         }
-        // v85: Diger RCCP componentleri
-        // v90: RCCP_Lights/FuelTank/Damage/Nos class lookup SILINDI (toggle'lar kaldirildi)
-        // v85: Photon.Hashtable — sifre + custom property icin
+        // Photon.Hashtable — sifre + custom property icin
         if (!g_hashtableClass) {
             void* ht = i_class_from_name(img, "ExitGames.Client.Photon", "Hashtable");
             if (ht) {
@@ -2337,11 +2334,10 @@ static NSString* stripRichTextTags(NSString *text) {
 // v114.4 BUILD FIX: gercek body AI globalleri/fonksiyonlarından SONRA tanımlı (asagida)
 static void (*o_chatFup)(void*, void*) = NULL;
 static void h_chatFup(void* self, void* msg);   // forward decl - body aşağıda
-// v114.4: FEW1NMenu forward decl SILINDI - @interface'i golgeleyip present: hatalari cikartiyordu.
-// h_chatSend NSClassFromString+performSelector kullaniyor, forward decl'e gerek yok.
+// h_chatSend NSClassFromString+performSelector kullaniyor; forward decl gerekmiyor.
 
 static void (*o_chatSend)(void*, void*) = NULL;
-// v111: AI Sohbet Modu - /ai olmadan aktif konusma
+// AI Sohbet Modu: /ai prefix'i olmadan aktif konusma
 static bool isAiChatModeEnabled = false;
 static NSMutableArray<NSString*> *g_recentlySentByMe = nil;  // son 10 mesaj (kendi mesajlarima cevap vermemek icin)
 // v114.4: AI cevap renkleri (kullanici NSUserDefaults'tan sec)
@@ -2933,8 +2929,6 @@ static bool isMapTextOverrideEnabled = false;
 static char customMapTextOverride[128] = "<#FF0000><b>[ADMIN]</b></color>";
 static NSMutableArray<NSString*> *g_lobbyRoomNames = nil;
 static int g_lastRoomLineFrame = 0;
-// v85: client-side toplu oda gizleme — bu listedeki odalari lobiden gorunmez yap (SADECE senin ekraninda)
-// v91: g_hiddenRoomNames SILINDI (client-side hide artik yok)
 
 static void(*lobbySetScene)(void*, void*) = NULL;
 static void(*pn_setAutomaticallySyncScene)(bool) = NULL;
@@ -3014,8 +3008,6 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
     }
 
     if (o_roomLineSetup) o_roomLineSetup(self, a, b, c, d, e, f);
-
-    // v91: client-side hide SILINDI (sadece kendi ekraninda gizliyordu — anlamsizdi)
 
     if (self) {
         @try {
@@ -3214,7 +3206,6 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)pickAiColorFor:(BOOL)forName;
 - (void)showHackerAiInfo;
 - (void)tapBrakeGlow;
-// v114.1: debugBrakeGlow SILINDI (crash sebep)
 - (void)tapDetachParts;
 - (void)tapTeleportAllToMe;
 - (void)tapHijackCar;
@@ -3643,7 +3634,6 @@ static UIViewController* few1n_topVC(void) {
     y += 22;
 
     y = [self header:@"\U0001F3CE  ARAC" atY:y];
-    // v99: Rainbow Araç Boyası SİLİNDİ (istek)
     y = [self toggle:@"🧊  Drift Modu (Kusursuz Kayma)" sub:@"il2cpp fizik ile yan kayma koruması" key:@"drift" atY:y action:@selector(tapDrift)];
     y = [self toggle:@"🚗  Hız Sabitleyici (Cruise Control)" sub:@"Gaza basmadan belirlenen hızda git" key:@"cruise" atY:y action:@selector(tapCruise)];
     y = [self actionRow:@"✏️  Sabit Hız Ayarla (km/h)" color:C_CYAN atY:y action:@selector(editCruiseSpeed)];
@@ -3655,18 +3645,14 @@ static UIViewController* few1n_topVC(void) {
     y = [self toggle:@"\U0001F47B  No-Clip (Araclardan Gec)" sub:@"Trafikten/duvardan gec - godmode gibi ama fiziksel gecis" key:@"noclip" atY:y action:@selector(tapNoClip)];
     y = [self toggle:@"\U0001F6E1  GODMODE (Kaza Yapma)" sub:@"Trafige carpsan bile olmezsin" key:@"godmode" atY:y action:@selector(tapGodmode)];
     y = [self toggle:@"\U0001F4A1  Hizli Selektor (far cakma)" sub:@"On farlari hizli ac/kapat (RCCP)" key:@"selektor" atY:y action:@selector(tapSelektor)];
-    // v99: Farlar Surekli Acik SİLİNDİ (istek)
     y = [self toggle:@"🔥  Pop & Bangs (Egzoz Alev Patlatma)" sub:@"Vites veya gaz birakmada egzoz alev/patlama efekti" key:@"popbangs" atY:y action:@selector(tapPopBangs)];
     y = [self toggle:@"🔊  Otomatik Havali Korna" sub:@"Ritmik havalı korna calar (herkese duyulur)" key:@"autohorn" atY:y action:@selector(tapAutoHorn)];
-    // v99: Yuksek Devir Kesici (Rev Limiter) SİLİNDİ (istek)
     y = [self toggle:@"🔥  Surekli Sari Balata" sub:@"Fren yapmadan sari glow: dob(1e9) + kalici esik birlikte" key:@"brakeglow" atY:y action:@selector(tapBrakeGlow)];
     y = [self toggle:@"🧪  Balata Testi: Anlik Sicaklik" sub:@"Yalniz dob(1e9): minVisibleTemperature yazilmaz" key:@"brakeglowdob" atY:y action:@selector(tapBrakeGlowDob)];
     y = [self toggle:@"🧪  Balata Testi: Kalici Esik" sub:@"Yalniz minVisibleTemperature yazilir; dob cagrilmaz" key:@"brakeglowmin" atY:y action:@selector(tapBrakeGlowMinTemp)];
-    // v114.1: Debug buton SILINDI (i_class_from_name NULL image crash sebep)
-    y = [self toggle:@"🛡️  Hasar Yok" sub:@"Arac hasar almaz — v91'de RCCP_Damage.Update hook ile" key:@"nodamage" atY:y action:@selector(tapNoDamage)];
-    // v99: 2. Yuksek Devir/Kesici Ses Modu (duplicate revlimiter) SİLİNDİ
+    y = [self toggle:@"🛡️  Hasar Yok" sub:@"Arac hasar almaz — RCCP_Damage.Update hook ile" key:@"nodamage" atY:y action:@selector(tapNoDamage)];
 
-    // v100: Yeni gizli özellikler (il2cpp field API - versiyon-dayanikli)
+    // Gizli il2cpp özellikleri (field API - versiyon-dayanikli)
     y = [self toggle:@"💨  SONSUZ NOS" sub:@"RCCP_Nos.amount = 100 sürekli" key:@"infnos" atY:y action:@selector(tapInfNos)];
     y = [self toggle:@"⛽  SONSUZ YAKIT" sub:@"RCCP_FuelTank fill=999 + consumption=0" key:@"inffuel" atY:y action:@selector(tapInfFuel)];
     y = [self toggle:@"🚀  MAX RPM (Turbo)" sub:@"RCCP_Engine override + engineRPM=9000" key:@"maxrpm" atY:y action:@selector(tapMaxRpm)];
@@ -3771,8 +3757,6 @@ static UIViewController* few1n_topVC(void) {
     y = [self toggle:@"\U0001F501  Bitince Basa Sar" sub:@"Sarki sozunu tekrarla" key:@"lyricsLoop" atY:y action:@selector(tapLyricsLoop)];
 
 
-    // v96: EXPLOIT / CRASH bolumu tamamen SILINDI (kullanici istegi - hicbiri calismiyordu)
-
     y = [self header:@"\U0001F4DB  OYUNCU" atY:y];
     self.nameBtn = [self actionButtonRow:&y];
     [self.nameBtn setTitle:@"\U0001F4DB  Isim Degistir" forState:UIControlStateNormal];
@@ -3782,16 +3766,13 @@ static UIViewController* few1n_topVC(void) {
 
     y = [self header:@"\U0001F511  ODA" atY:y];
     y = [self actionRow:@"🚪  Canlı Odalara Gir (Dolu Oda Bypass & Liste)" color:C_ON atY:y action:@selector(joinRoomByName)];
-    // v91: client-side toplu gizle SILINDI — sadece kendi ekraninda gizliyordu, işe yaramazdı
     y = [self actionRow:@"🌐  TOPLU SUNUCU GİZLE (gir→master→gizle→çık)" color:C_RED atY:y action:@selector(pickRoomsServerHide)];
-    // v91: client-side unhide de SILINDI
     y = [self actionRow:@"🏡  Gelişmiş Özel Oda Kur (Çöl, Saat, Drift, 31 Kişi)" color:C_ON atY:y action:@selector(createAdvancedCustomRoom)];
     y = [self actionRow:@"🏠  Normal Oda Kur (isim yaz — deneysel)" color:C_ON atY:y action:@selector(createNormalRoom)];
     y = [self actionRow:@"📈  Bu Odayı Büyüt (önce normal oda kur→gir→bas)" color:C_ON atY:y action:@selector(setRoomMax)];
     y = [self actionRow:@"🔒  Odayı Kilitle/Aç (IsOpen)" color:C_ON atY:y action:@selector(tapRoomLock)];
     y = [self actionRow:@"👻  Görünmez/Görünür (IsVisible)" color:C_ON atY:y action:@selector(tapRoomHide)];
     y = [self actionRow:@"🔑  Oda Şifresi Belirle" color:C_ON atY:y action:@selector(tapRoomPassword)];
-    // v83: Y1-Y8 test butonlari + hepsini dener kaldirildi (v77 gibi tek buton yeter)
     {
         UIView *rmrow = [[UIView alloc] initWithFrame:CGRectMake(12,y,pw-24,44)];
         rmrow.backgroundColor = C_CARD; rmrow.layer.cornerRadius = 12;
@@ -3805,7 +3786,6 @@ static UIViewController* few1n_topVC(void) {
         [self.contentView addSubview:rmrow];
         y += 52;
     }
-    // v99: Zorla Renkli Oda (Client-Side) SİLİNDİ (istek)
     y = [self actionRow:@"\U0001F513  Oda Sifrelerini Goster (il2cpp)" color:C_ON atY:y action:@selector(showRoomPasswords)];
     y = [self actionRow:@"\U0001F465  Odadaki Oyuncular (isim kopyala)" color:C_CYAN atY:y action:@selector(showPlayers)];
     y = [self actionRow:@"\U0001F441  Odaya Goz At (isimsiz anlik gir-cik)" color:C_GOLD atY:y action:@selector(peekRoom)];
@@ -3817,8 +3797,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"🗺️  Odadayken Harita Değiştir (v233 minimal + master zorla)" color:C_ON atY:y action:@selector(changeMapInRoom)];
     y = [self actionRow:@"🚗  Kişi Aracı Klonla (deneysel race glitch)" color:C_GOLD atY:y action:@selector(cloneCarPicker)];
     y = [self actionRow:@"🌤️  Hava Durumu & Zaman Seç (Aktarmasız Canlı)" color:C_ON atY:y action:@selector(changeWeatherOnly)];
-    // v114.4: "Odadayken Oda İsmini Değiştir" SİLİNDİ (client-side + CustomProperties + set_Name calismiyordu - mod'suzlar goremiyordu)
-    // Tek gercek yol: 🔄 Odayi Yeniden Olustur (asagida)
+    // Oda ismi degistirmek icin tek gercek yol: 🔄 Odayi Yeniden Olustur (asagida)
     y = [self actionRow:@"👥  Odadayken Max Oyuncu Değiştir (2-100)" color:C_GOLD atY:y action:@selector(changeMaxPlayersInRoom)];
     y = [self actionRow:@"🔄  Odayı YENİDEN OLUŞTUR (herkeste değişir)" color:C_RED atY:y action:@selector(recreateRoomWithNewName)];
     y = [self actionRow:@"🏷️  Harita Metnini Değiştir (Kişi Sayısı Yanı - ADMIN vb.)" color:C_GOLD atY:y action:@selector(changeCustomMapLabel)];
@@ -9324,9 +9303,8 @@ static void few1n_joinTargetRoom(NSString *nm) {
 }
 
 // ===== BELİRLİ İSİM/ID İLE ODAYA GİR (DOLU ODA BYPASS & TIKLANABİLİR LİSTE) =====
-// v91: pickRoomsToHide + unhideAllRooms SILINDI (client-side hide anlamsizdi)
 
-// v85: TOPLU SUNUCU GİZLE — her odaya gir, master ol, IsVisible=false yap, cik
+// TOPLU SUNUCU GİZLE — her odaya gir, master ol, IsVisible=false yap, cik
 - (void)pickRoomsServerHide {
     // v96: g_lobbyRoomNames GUVENILMEZ (hook dolduramiyor bazi kez). showRoomPasswords'un
     // CANLI RoomLine scan metodunu kullan - il2cpp FindObjectsOfType<RoomLine>().
@@ -9500,8 +9478,6 @@ static void few1n_joinTargetRoom(NSString *nm) {
         });
     });
 }
-
-// v91: unhideAllRooms SILINDI
 
 - (void)joinRoomByName {
     if (!pn_joinRoom) { FLog(@"JoinRoom hazir degil (lobiye gir)"); return; }
@@ -10302,39 +10278,26 @@ static void few1n_poll(void) {
     if (isAdBlockEnabled) {
         FLog(@"\U0001F6AB Reklam bozucu AKTIF - tum SDK'lar engelleniyor");
 
-        // Yardimci: bir sinifin belirtilen instance metodunu NOP'la (nil/false/0 dondur)
+        // Reklam SDK metodlarini NOP'la. Tek helper + yon parametresi:
+        //   'i' = instance metod (nil dondur), 'c' = class metod (nil dondur),
+        //   'b' = bool (instance ya da class - hangisi varsa) NO dondur.
         // Not: block variadic '...' ObjC block ABI'sinde tanimsiz; fazla arg'lar
         // ARM64 caller-cleanup ile zaten yok sayilir, block sadece self alsin.
-        void (^swizzleToNop)(NSString*, NSString*) = ^(NSString* cls, NSString* sel) {
+        void (^adNop)(NSString*, NSString*, char) = ^(NSString* cls, NSString* sel, char kind) {
             Class c = NSClassFromString(cls);
             if (!c) return;
             SEL s = NSSelectorFromString(sel);
-            Method m = class_getInstanceMethod(c, s);
+            Method m = (kind == 'c') ? class_getClassMethod(c, s) : class_getInstanceMethod(c, s);
+            if (!m && kind == 'b') m = class_getClassMethod(c, s);
             if (!m) return;
-            IMP nop = imp_implementationWithBlock(^id(id _self){ (void)_self; return nil; });
+            IMP nop = (kind == 'b')
+                ? imp_implementationWithBlock(^BOOL(id _self){ (void)_self; return NO; })
+                : imp_implementationWithBlock(^id  (id _self){ (void)_self; return nil; });
             method_setImplementation(m, nop);
         };
-        // Class metodlari icin ayni desen
-        void (^swizzleClassToNop)(NSString*, NSString*) = ^(NSString* cls, NSString* sel) {
-            Class c = NSClassFromString(cls);
-            if (!c) return;
-            SEL s = NSSelectorFromString(sel);
-            Method m = class_getClassMethod(c, s);
-            if (!m) return;
-            IMP nop = imp_implementationWithBlock(^id(id _self){ (void)_self; return nil; });
-            method_setImplementation(m, nop);
-        };
-        // Bool false donduren NOP
-        void (^swizzleToBoolFalse)(NSString*, NSString*) = ^(NSString* cls, NSString* sel) {
-            Class c = NSClassFromString(cls);
-            if (!c) return;
-            SEL s = NSSelectorFromString(sel);
-            Method m = class_getInstanceMethod(c, s);
-            if (!m) m = class_getClassMethod(c, s);
-            if (!m) return;
-            IMP nop = imp_implementationWithBlock(^BOOL(id _self){ (void)_self; return NO; });
-            method_setImplementation(m, nop);
-        };
+        void (^swizzleToNop)(NSString*, NSString*)      = ^(NSString* cls, NSString* sel){ adNop(cls, sel, 'i'); };
+        void (^swizzleClassToNop)(NSString*, NSString*) = ^(NSString* cls, NSString* sel){ adNop(cls, sel, 'c'); };
+        void (^swizzleToBoolFalse)(NSString*, NSString*) = ^(NSString* cls, NSString* sel){ adNop(cls, sel, 'b'); };
 
         // ===== GOOGLE ADMOB (GAD) =====
         swizzleToNop(@"GADInterstitialAd", @"presentFromRootViewController:");
