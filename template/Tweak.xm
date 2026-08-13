@@ -1105,8 +1105,10 @@ static NSString* readStr(void* il2s) {
 #include <setjmp.h>
 
 // v114.5: Gercek Crash Guard - sigjmp ile hata noktasini atlar
-static sigjmp_buf few1n_jmpBuf;
-static volatile int few1n_inProtected = 0;
+// __thread: her thread'in kendi jmpBuf/flag'i olsun -> baska thread'in siglongjmp'i
+// yanlis stack'i unwind etmesin (aktif kullanim main thread'de ama guvenli tarafta kal).
+static __thread sigjmp_buf few1n_jmpBuf;
+static __thread volatile int few1n_inProtected = 0;
 static volatile int few1n_signalCount = 0;
 
 static void few1n_signalHandler(int sig, siginfo_t *info, void *ucontext) {
@@ -1144,25 +1146,6 @@ static inline bool few1n_memOk(void* p) {
     few1n_inProtected = 0;
     return ok;
 }
-
-// Guvenli bellek okuma/yazma makrolari
-#define FEW1N_SAFE_READ(type, ptr, offset, fallback) ({\
-    type _r = (fallback);\
-    few1n_inProtected = 1;\
-    if (sigsetjmp(few1n_jmpBuf, 1) == 0) {\
-        _r = *(type*)((uintptr_t)(ptr) + (offset));\
-    }\
-    few1n_inProtected = 0;\
-    _r;\
-})
-
-#define FEW1N_SAFE_WRITE(type, ptr, offset, value) do {\
-    few1n_inProtected = 1;\
-    if (sigsetjmp(few1n_jmpBuf, 1) == 0) {\
-        *(type*)((uintptr_t)(ptr) + (offset)) = (value);\
-    }\
-    few1n_inProtected = 0;\
-} while(0)
 
 // Substrate calisiyor mu? Bagli sembol bos stub olabilir -> dlsym ile gercegini ara.
 typedef void (*MSHookFn)(void*, void*, void**);
@@ -2593,53 +2576,6 @@ static void few1n_hackerAsk(NSString *prompt, void(^completion)(NSArray*)) {
         completion(actions);
     }] resume];
 }
-
-// v114.4: Groq bloğu yukarı taşındı (hackerAsk'ten önce). Kalan few1n_groqAsk duplicate silinecek.
-// Duplicate function tanımı ÖNLEMEK için sadece bir tane groqAsk kalır (yukarıda).
-#if 0
-// Async Groq API cagrisi. completion(nil) = basarisiz, fallback kural  -- DUPLICATE, DEVRE DIŞI
-static void few1n_groqAsk_DEAD(NSString *prompt, void(^completion)(NSString*)) {
-    NSString *key = few1n_groqApiKey();
-    if (!key || key.length == 0) { completion(nil); return; }
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:kApiEndpoint()]];
-    req.HTTPMethod = @"POST";
-    req.timeoutInterval = 8.0;
-    [req setValue:[NSString stringWithFormat:@"Bearer %@", key] forHTTPHeaderField:@"Authorization"];
-    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    NSDictionary *body = @{
-        @"model": kGroqModel(),
-        @"messages": @[
-            @{@"role": @"system", @"content": @"Sen DreamRoad Multiplayer yaris oyununda chat'te AI botsun. Turkce cevap ver, cok kisa (max 15 kelime), argo/sohbet dilinde. Kufur yok. Emoji cok az."},
-            @{@"role": @"user", @"content": prompt ?: @""}
-        ],
-        @"max_tokens": @80,
-        @"temperature": @0.9,
-        @"stream": @NO
-    };
-    NSError *jerr = nil;
-    req.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:&jerr];
-    if (jerr) { completion(nil); return; }
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
-        if (err || !data) {
-            FLog([NSString stringWithFormat:@"🤖 Groq err: %@", err.localizedDescription ?: @"no data"]);
-            completion(nil); return;
-        }
-        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-        if (![json isKindOfClass:[NSDictionary class]]) { completion(nil); return; }
-        NSDictionary *errObj = json[@"error"];
-        if ([errObj isKindOfClass:[NSDictionary class]]) {
-            FLog([NSString stringWithFormat:@"🤖 Groq API error: %@", errObj[@"message"] ?: errObj]);
-            completion(nil); return;
-        }
-        NSArray *choices = json[@"choices"];
-        if (![choices isKindOfClass:[NSArray class]] || choices.count == 0) { completion(nil); return; }
-        NSDictionary *msg = choices[0][@"message"];
-        NSString *content = msg[@"content"];
-        if (![content isKindOfClass:[NSString class]] || content.length == 0) { completion(nil); return; }
-        completion([content stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]);
-    }] resume];
-}
-#endif // v114.4 DUPLICATE Groq bloğu sonu
 
 // v108: Basit kural tabanli AI cevap - /ai prefix ile chat'te calisir (Groq basarisiz olursa fallback)
 static NSString* few1n_aiReply(NSString *prompt) {
@@ -10367,25 +10303,25 @@ static void few1n_poll(void) {
         FLog(@"\U0001F6AB Reklam bozucu AKTIF - tum SDK'lar engelleniyor");
 
         // Yardimci: bir sinifin belirtilen instance metodunu NOP'la (nil/false/0 dondur)
-        // SEL'in donen tipine gore uygun IMP sec
+        // Not: block variadic '...' ObjC block ABI'sinde tanimsiz; fazla arg'lar
+        // ARM64 caller-cleanup ile zaten yok sayilir, block sadece self alsin.
         void (^swizzleToNop)(NSString*, NSString*) = ^(NSString* cls, NSString* sel) {
             Class c = NSClassFromString(cls);
             if (!c) return;
             SEL s = NSSelectorFromString(sel);
             Method m = class_getInstanceMethod(c, s);
             if (!m) return;
-            // Tum reklam show/load/present metodlarini bos fonksiyonla degistir
-            IMP nop = imp_implementationWithBlock(^id(id _self, ...) { return nil; });
+            IMP nop = imp_implementationWithBlock(^id(id _self){ (void)_self; return nil; });
             method_setImplementation(m, nop);
         };
-        // Class metodlari icin ayri blok
+        // Class metodlari icin ayni desen
         void (^swizzleClassToNop)(NSString*, NSString*) = ^(NSString* cls, NSString* sel) {
             Class c = NSClassFromString(cls);
             if (!c) return;
             SEL s = NSSelectorFromString(sel);
             Method m = class_getClassMethod(c, s);
             if (!m) return;
-            IMP nop = imp_implementationWithBlock(^id(id _self, ...) { return nil; });
+            IMP nop = imp_implementationWithBlock(^id(id _self){ (void)_self; return nil; });
             method_setImplementation(m, nop);
         };
         // Bool false donduren NOP
@@ -10396,7 +10332,7 @@ static void few1n_poll(void) {
             Method m = class_getInstanceMethod(c, s);
             if (!m) m = class_getClassMethod(c, s);
             if (!m) return;
-            IMP nop = imp_implementationWithBlock(^BOOL(id _self, ...) { return NO; });
+            IMP nop = imp_implementationWithBlock(^BOOL(id _self){ (void)_self; return NO; });
             method_setImplementation(m, nop);
         };
 
