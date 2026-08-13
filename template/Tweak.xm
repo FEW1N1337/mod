@@ -436,6 +436,11 @@ static void* (*i_object_new)(void*) = NULL;   // il2cpp_object_new
 static void* g_roomOptionsClass = NULL;       // Photon.Realtime.RoomOptions Il2CppClass*
 static void* g_roomClass = NULL;              // Photon.Realtime.Room Il2CppClass*
 static void* g_mRoomSetName = NULL;           // Photon.Realtime.Room.set_Name(string) — sunucuya push umulur
+// v114.10: SetCustomProperties + SetPropertiesListedInLobby'yi isim ile bul (hardcoded offset drift'e dayaniksiz)
+static void* g_mRoomSetCustomProperties = NULL;         // Room.SetCustomProperties(Hashtable, Hashtable, WebFlags)
+static void* g_mRoomSetPropertiesListedInLobby = NULL;  // Room.SetPropertiesListedInLobby(string[])
+static void* g_stringClass = NULL;                      // System.String — string[] arg'i icin
+static void* (*i_array_new)(void*, unsigned long) = NULL;  // il2cpp_array_new
 static bool  g_il2cppReady = false;
 // v85: Photon Hashtable helper — sifre ve custom oda property'leri icin
 static void* g_hashtableClass = NULL;
@@ -606,6 +611,7 @@ static void few1n_initIl2cpp(void) {
     i_runtime_invoke            = (void*(*)(void*,void*,void**,void**))dlsym(RTLD_DEFAULT, "il2cpp_runtime_invoke");
     i_thread_attach             = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_thread_attach");
     i_object_new                = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_object_new");
+    i_array_new                 = (void*(*)(void*,unsigned long))dlsym(RTLD_DEFAULT, "il2cpp_array_new");
     i_class_get_field_from_name = (void*(*)(void*,const char*))dlsym(RTLD_DEFAULT, "il2cpp_class_get_field_from_name");
     i_field_static_get_value    = (void(*)(void*,void*))dlsym(RTLD_DEFAULT, "il2cpp_field_static_get_value");
     i_field_static_set_value    = (void(*)(void*,void*))dlsym(RTLD_DEFAULT, "il2cpp_field_static_set_value");
@@ -1016,6 +1022,37 @@ static void* mkPhotonHashtable(NSDictionary<NSString*, NSString*> *dict) {
         }
         return ht;
     } @catch (...) { return NULL; }
+}
+
+// v114.10: Photon.Realtime.Room API'sini isim ile bul (offset drift'e dayanikli).
+// Hardcoded room_setCustomProperties offset'i (0x5916158) yeni Unity build'lerde
+// PhotonNetwork.get_NickName'e sapiyor ve sifre yollamayi sessizce fail ediyor.
+// Bu helper isim ile bulur, cached'ler.
+static bool few1n_ensureRoomApi(void) {
+    if (g_mRoomSetCustomProperties) return true;
+    if (!i_class_from_name || !i_class_get_method_from_name) return false;
+    if (!g_roomClass) g_roomClass = few1n_classAnyImage("Photon.Realtime", "Room");
+    if (!g_roomClass) { FLog(@"⚠️ Photon.Realtime.Room class bulunamadi"); return false; }
+    g_mRoomSetCustomProperties        = i_class_get_method_from_name(g_roomClass, "SetCustomProperties", 3);
+    g_mRoomSetPropertiesListedInLobby = i_class_get_method_from_name(g_roomClass, "SetPropertiesListedInLobby", 1);
+    if (!g_stringClass) g_stringClass = few1n_classAnyImage("System", "String");
+    FLog([NSString stringWithFormat:@"🔑 Room API: cls=%p SetCP=%p SetPLIL=%p strCls=%p",
+          g_roomClass, g_mRoomSetCustomProperties, g_mRoomSetPropertiesListedInLobby, g_stringClass]);
+    return g_mRoomSetCustomProperties != NULL;
+}
+
+// il2cpp string[] uzunlugu 1, tek eleman = value. SetPropertiesListedInLobby(["pWd"]) icin.
+// Array layout: header 0x10 + bounds 0x08 + max_length 0x08 = elemanlar 0x20'de baslar.
+// Not: ptrOk() burada tanimli degil (dosyanin altinda); il2cpp_array_new/string_new
+// basarisizsa NULL doner, o yuzden basit NULL kontrolu yeterli.
+static void* mkStringArray1(NSString *value) {
+    if (!i_array_new || !g_stringClass || !value) return NULL;
+    void *arr = i_array_new(g_stringClass, 1);
+    if (!arr) return NULL;
+    void *s = mkStr(value);
+    if (!s) return NULL;
+    *((void**)((uintptr_t)arr + 0x20)) = s;
+    return arr;
 }
 
 // TMP_Text.richText = true  (Unity rich text acigini geri ac)
@@ -8072,7 +8109,7 @@ static NSString* few1n_roomPasswordPropertyKey(void) {
         [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
         [self present:e]; return;
     }
-    if (!pn_getCurrentRoom || !room_setCustomProperties || !g_hashtableClass) {
+    if (!pn_getCurrentRoom || !g_hashtableClass || !few1n_ensureRoomApi()) {
         UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🔑 Oda Şifresi"
             message:@"Photon oda işlevleri henüz hazır değil. Lobiye dönüp tekrar dene."
             preferredStyle:UIAlertControllerStyleAlert];
@@ -8093,7 +8130,34 @@ static NSString* few1n_roomPasswordPropertyKey(void) {
             void *room = pn_getCurrentRoom();
             NSString *key = few1n_roomPasswordPropertyKey();
             void *ht = ptrOk(room) ? mkPhotonHashtable(@{ key : pwd }) : NULL;
-            bool accepted = (ht != NULL) && room_setCustomProperties(room, ht, NULL, NULL);
+
+            // v114.10: il2cpp runtime_invoke ile SetCustomProperties(pWd, expected=null, webFlags=null).
+            // Eski hardcoded offset (0x5916158) yeni build'lerde PhotonNetwork.get_NickName'e
+            // sapip sessiz fail ediyordu; isim ile bulmak drift-immune.
+            bool accepted = false;
+            if (ptrOk(room) && ht && g_mRoomSetCustomProperties && i_runtime_invoke) {
+                void *args[3] = { ht, NULL, NULL };
+                @try {
+                    void *ret = i_runtime_invoke(g_mRoomSetCustomProperties, room, args, NULL);
+                    // Boxed bool: Il2CppObject header (0x10) + value (bool byte)
+                    if (ret) accepted = *(unsigned char*)((uintptr_t)ret + 0x10) != 0;
+                } @catch (...) { FLog(@"🔑 SetCustomProperties exception"); }
+            }
+
+            // Yeni gelenlerin oda listesinde şifreyi görmesi için pWd'yi lobby'ye görünür
+            // property'lere ekle. Zaten oradaysa no-op; değilse post-create update propagasyonu
+            // için kritik (aksi halde HR_UI_RoomListLine.password @+0x50 boş kalır).
+            if (accepted && g_mRoomSetPropertiesListedInLobby && i_runtime_invoke) {
+                void *arr = mkStringArray1(key);
+                if (arr) {
+                    void *args2[1] = { arr };
+                    @try {
+                        i_runtime_invoke(g_mRoomSetPropertiesListedInLobby, room, args2, NULL);
+                        FLog([NSString stringWithFormat:@"🔑 pWd propertiesListedInLobby'ye eklendi"]);
+                    } @catch (...) { FLog(@"🔑 SetPropertiesListedInLobby exception"); }
+                }
+            }
+
             FLog([NSString stringWithFormat:@"🔑 Oda şifre isteği: key=%@, uzunluk=%lu → %s",
                   key, (unsigned long)pwd.length, accepted ? "KABUL" : "RED"]);
 
