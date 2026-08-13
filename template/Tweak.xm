@@ -1514,9 +1514,39 @@ static void w_mapSel_selectMap(void *self, void *name) {
 // isimler obfuscated + sunucu-kilitli → NULL bırakılıyor. Kod'daki NULL guard'lar
 // handle eder, kullanıcı için görünen değişiklik yok.
 // PhotonManager.enp: obfuscated + kullanım sadece 1 yerde, güvenli fail.
-// Teleport RPC'ler (cps/rbps_TeleportCar_RPC, hrph_TeleportPlayerRPC, ssrcc_RpcTeleport):
-// direkt il2cpp method invoke edilebilir ama tip-güvenli imza gerekli. Bu 4 tanesi
-// v114.21+'da eklenecek. Şu an yalnız hook path (SmoothSync) çalışıyor.
+
+// v114.21: Teleport RPC wrapper'ları. il2cpp Vector3/Quaternion value type'lar
+// runtime_invoke'a pointer olarak geçirilir (aynı Rigidbody Injected getters gibi).
+// Class isimleri koruldu: CarPhotonSync, RigidbodyPhotonSync, HR_PhotonHandler,
+// SmoothSyncRCC — hiçbiri obfuscated değil.
+static void w_cps_TeleportCar_RPC(void* self, Vec3 pos, Quaternion rot, void* methodInfo) {
+    static void *m = NULL;
+    if (!m) { void *c = few1n_classAnyImage("", "CarPhotonSync"); m = few1n_resolveOn(c, "TeleportCar_RPC", 2); }
+    if (!m || !i_runtime_invoke || !self) return;
+    (void)methodInfo;
+    @try { void *args[2] = { &pos, &rot }; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+static void w_rbps_TeleportCar_RPC(void* self, Vec3 pos, Quaternion rot, void* methodInfo) {
+    static void *m = NULL;
+    if (!m) { void *c = few1n_classAnyImage("", "RigidbodyPhotonSync"); m = few1n_resolveOn(c, "TeleportCar_RPC", 2); }
+    if (!m || !i_runtime_invoke || !self) return;
+    (void)methodInfo;
+    @try { void *args[2] = { &pos, &rot }; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+static void w_hrph_TeleportPlayerRPC(void* self, Vec3 pos, void* methodInfo) {
+    static void *m = NULL;
+    if (!m) { void *c = few1n_classAnyImage("", "HR_PhotonHandler"); m = few1n_resolveOn(c, "TeleportPlayerRPC", 1); }
+    if (!m || !i_runtime_invoke || !self) return;
+    (void)methodInfo;
+    @try { void *args[1] = { &pos }; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+static void w_ssrcc_RpcTeleport(void* self, Vec3 pos, Vec3 rot, Vec3 scale, float t, void* methodInfo) {
+    static void *m = NULL;
+    if (!m) { void *c = few1n_classAnyImage("", "SmoothSyncRCC"); m = few1n_resolveOn(c, "RpcTeleport", 4); }
+    if (!m || !i_runtime_invoke || !self) return;
+    (void)methodInfo;
+    @try { float ft = t; void *args[4] = { &pos, &rot, &scale, &ft }; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
 
 // TMP_Text.richText = true  (Unity rich text acigini geri ac)
 static void setRichTextIl(void* tmp, bool on) {
@@ -7192,7 +7222,8 @@ static NSString* rainbowWrap(NSString* text, int idx) {
                                     void** phArr = (void**)((uintptr_t)phs + 0x20);
                                     for (int k = 0; k < pcnt; k++) {
                                         void* ph = phArr[k]; if (!unityAlive(ph)) continue;
-                                        NSString *phName = readStr(*(void**)((uintptr_t)ph + 0x28));
+                                        // v114.21 fix: VehicleName @0x30 (0x28 = Rigidbody, önceki sürüm silent-fail eden yanlış field'ı okuyordu)
+                                        NSString *phName = readStr(*(void**)((uintptr_t)ph + 0x30));
                                         if (phName && [phName rangeOfString:nmCopy options:NSCaseInsensitiveSearch].location != NSNotFound) { targetPH = ph; break; }
                                     }
                                 }
@@ -7203,7 +7234,8 @@ static NSString* rainbowWrap(NSString* text, int idx) {
                                 int bc = (int)(*(uintptr_t*)((uintptr_t)bombs + 0x18));
                                 if (bc > 0 && bc < 32) {
                                     void** bArr = (void**)((uintptr_t)bombs + 0x20);
-                                    for (int k = 0; k < bc; k++) { void* b = bArr[k]; if (unityAlive(b)) { *(void**)((uintptr_t)b + 0x18) = targetPH; m++; } }
+                                    // v114.21 fix: HR_Bomb.iqo (owner PlayerHandler) @0x20 (0x18 UnityEngine.Object.m_CachedPtr'ye yaziyor)
+                                    for (int k = 0; k < bc; k++) { void* b = bArr[k]; if (unityAlive(b)) { *(void**)((uintptr_t)b + 0x20) = targetPH; m++; } }
                                 }
                             }
                         }
@@ -7255,7 +7287,8 @@ static NSString* rainbowWrap(NSString* text, int idx) {
                                 void** phArr = (void**)((uintptr_t)phs + 0x20);
                                 for (int k = 0; k < pcnt; k++) {
                                     void* ph = phArr[k]; if (!unityAlive(ph)) continue;
-                                    NSString *phName = readStr(*(void**)((uintptr_t)ph + 0x28)); // VehicleName - hedef isim degil ama best guess
+                                    // v114.21 fix: VehicleName @0x30 (0x28 = Rigidbody, sessiz-fail eden field)
+                                    NSString *phName = readStr(*(void**)((uintptr_t)ph + 0x30));
                                     if (phName && [phName rangeOfString:nmCopy options:NSCaseInsensitiveSearch].location != NSNotFound) { targetPH = ph; break; }
                                 }
                             }
@@ -7269,7 +7302,7 @@ static NSString* rainbowWrap(NSString* text, int idx) {
                                 void** bArr = (void**)((uintptr_t)bombs + 0x20);
                                 for (int k = 0; k < bc; k++) {
                                     void* b = bArr[k]; if (!unityAlive(b)) continue;
-                                    *(void**)((uintptr_t)b + 0x18) = targetPH;   // ifl PlayerHandler swap
+                                    *(void**)((uintptr_t)b + 0x20) = targetPH;   // v114.21 fix: HR_Bomb.iqo owner @0x20
                                     m++;
                                 }
                                 FLog([NSString stringWithFormat:@"  ✓ Metod A: %d HR_Bomb PlayerHandler swap edildi", m]);
@@ -10879,14 +10912,15 @@ static void InstallEverything(uintptr_t b) {
     mapSel_selectMap           = w_mapSel_selectMap;
     photonMgrEnp               = NULL;   // obf isim bilinmiyor, güvenli NULL (kullanım tek yer + NULL-guard var)
 
-    // === Teleport RPC'ler (complex signature: Vec3, Quaternion — v114.21'de wrap edilecek) ===
-    // Şu an hardcoded eski offset'ler; muhtemelen 1.4.3'te yanlış. Kullanım
-    // yerinde @try/@catch guard'ları var, silent fail. Hook (SmoothSync.Update)
-    // path'i çalışır.
-    cps_TeleportCar_RPC        = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A49AE0);
-    rbps_TeleportCar_RPC       = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A4C494);
-    hrph_TeleportPlayerRPC     = (void(*)(void*,Vec3,void*))(b + 0x54A6F00);
-    ssrcc_RpcTeleport          = (void(*)(void*,Vec3,Vec3,Vec3,float,void*))(b + 0x5A5B788);
+    // === Teleport RPC'ler — v114.21: drift-immune il2cpp-by-name ===
+    // Eski hardcoded offset'lerin HEPSİ 1.4.3'te yanlış yere düşüyordu (crash veya
+    // silent fail). Şimdi CarPhotonSync / RigidbodyPhotonSync / HR_PhotonHandler /
+    // SmoothSyncRCC class'larından TeleportCar_RPC / TeleportPlayerRPC / RpcTeleport
+    // isim ile bulunuyor. Vec3 & Quaternion value type'lar pointer olarak geçiliyor.
+    cps_TeleportCar_RPC        = w_cps_TeleportCar_RPC;
+    rbps_TeleportCar_RPC       = w_rbps_TeleportCar_RPC;
+    hrph_TeleportPlayerRPC     = w_hrph_TeleportPlayerRPC;
+    ssrcc_RpcTeleport          = w_ssrcc_RpcTeleport;
 
     // === PhotonNetwork.RaiseEvent — signature değişikliği (PUN2 vs PUN1) ===
     // Eski sig (byte, object, bool, RaiseEventOptions) — yeni PUN2 (byte, object,
