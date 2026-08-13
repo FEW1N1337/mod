@@ -23,6 +23,12 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Secret Scan (TruffleHog)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          extra_args: --only-verified --results=verified,unknown
+
       - name: Read VERSION
         run: |
           VERSION=$(tr -d ' \t\n\r' < VERSION)
@@ -32,16 +38,31 @@ jobs:
           echo "Surum: $VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
+      - name: Pin Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.4'
+
       - name: Install Dependencies
         run: |
           brew install ldid dpkg xz
           echo "Xcode: $(xcode-select -p)"
           echo "SDK: $(xcrun --sdk iphoneos --show-sdk-path)"
 
+      - name: Cache Theos
+        id: cache-theos
+        uses: actions/cache@v4
+        with:
+          path: ~/theos
+          key: theos-${{ runner.os }}-v1
+
       - name: Setup Theos
+        if: steps.cache-theos.outputs.cache-hit != 'true'
         run: |
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+
+      - name: Export THEOS env
+        run: echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
       - name: Prepare Build Files
         run: |
