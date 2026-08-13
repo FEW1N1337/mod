@@ -3117,9 +3117,11 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
         @try {
             // v104 FIX: HR_UI_RoomListLine gerçek offset'ler (il2cpp.h dogrulandi)
             // MonoBehaviour_Fields base = 0x18, sonra: RoomNameText @+0x18, MapNameText @+0x20, PlayerCountText @+0x28
-            void* nameText  = *(void**)((uintptr_t)self + 0x18);  // Oda İsmi TMPro (rich text renderi burada)
-            void* mapText   = *(void**)((uintptr_t)self + 0x20);  // Harita & Günün Saati TMPro
-            void* pCountText= *(void**)((uintptr_t)self + 0x28);  // Oyuncu Sayısı TMPro
+            // v114.18: 1.4.3 dump'ta HR_UI_RoomListLine'a LockImage @0x38 eklendi;
+            // TMP_Text field'lari 8 byte kaydi. Named define uzerinden okuyoruz.
+            void* nameText  = *(void**)((uintptr_t)self + OFF_ROOMLINE_NAME_TEXT);        // RoomNameText @0x20
+            void* mapText   = *(void**)((uintptr_t)self + OFF_ROOMLINE_MAP_TEXT);         // MapNameText @0x28
+            void* pCountText= *(void**)((uintptr_t)self + OFF_ROOMLINE_PLAYERCOUNT_TEXT); // PlayerCountText @0x30
 
             // v90: tmp_set_richText direkt pointer kaldirildi — offset yanlis olabilir, crash sebep.
             // Sadece il2cpp invoke uzerinden (guvenli yol).
