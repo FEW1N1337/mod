@@ -37,15 +37,12 @@
 // CarNitro.get_nitroAmount() [obf: fda]    -> 0x54CFE14
 // CarNitro.set_nitroAmount(float)[obf: fdb]-> 0x54CFE1C
 // CarDriveSystem.Move(f,f,f,f) [obf: fca]  -> 0x54CCAA0
-// PlateVariant.Change(PlateHolder)[obf:gal]-> 0x54EA1FC   (c@0x0, t@0x8)
+// PlateVariant.Change(PlateHolder)[obf:ghs] -> metadata ile isimden cozulur
 // HR_UI_RoomListLine.Connect() [obf: elv]  -> 0x54B32F4   (password @ self+0x50)
 // HR_PhotonLobbyManager.get_Instance()[eke]-> 0x54A8098   (passwordInput@+0x50, passwordOnConnectInput@+0x60)
 // TMP_InputField.set_text(string)          -> 0x65F4CC8
-// PlayerManager.get_Instance() [obf: ggn]  -> 0x5A2DE20
-// PlayerManager.get_Money()    [obf: ggx]  -> 0x5A4346C
-// PlayerManager.AddMoney(int)  [obf: ghm]  -> 0x5A43A2C
-// PlayerManager.SyncWithServer()[obf: ghj] -> 0x5A2DF80
-// PlayerManager.UpdateNicknameInternal(str)[ghn] -> 0x5A3DDD4
+// PlayerManager zinciri IL2CPP metadata ile isimden cozulur (sabit RVA yok):
+// gns() instance, goc() bakiye, gor(int) para ekle, goo() senkron, gos(string) isim.
 // ============================================================
 
 struct PlateHolder { void* c; void* t; };   // c@0x0, t@0x8
@@ -456,6 +453,11 @@ static bool  isEspEnabled = false;
 // ==== PLAKA (il2cpp ile zorla - hook olu) ====
 static void* g_mTmpSetText = NULL;     // TMP_Text.set_text(string)
 static void* g_plateTypeObj = NULL;    // typeof(PlateVariant)
+static void* g_plateClass = NULL;      // PlateVariant Il2CppClass*
+static int   g_offPlateParts = 0;       // PlateVariant.parts (runtime field API)
+static int   g_offPlateDisableSplit = 0; // PlateVariant.disableSplit (runtime field API)
+static void* g_plateUiTypeObj = NULL;   // typeof(PlateUIElement)
+static void* g_mPlateSpinRandom = NULL; // PlateUIElement.SpinRandom()
 // ==== SIFRE KIRICI (RoomListLine.password client'ta) ====
 static void* g_roomLineType = NULL;    // typeof(HR_UI_RoomListLine)
 // ==== RIGIDBODY YEDEK YOLU (CarDriveSystem bulunamazsa kameraya en yakin arac) ====
@@ -748,7 +750,17 @@ static void few1n_initIl2cpp(void) {
         if (!g_plateTypeObj) {
             void* pc = i_class_from_name(img, "", "PlateVariant");
             if (!pc) pc = few1n_findClassByName(img, "PlateVariant");
-            if (pc) { g_plateTypeObj = few1n_typeObjOf(pc); FLog([NSString stringWithFormat:@"PlateVariant tipi=%p", g_plateTypeObj]); }
+            if (pc) {
+                g_plateClass = pc;
+                g_plateTypeObj = few1n_typeObjOf(pc);
+                if (i_class_get_field_from_name && i_field_get_offset) {
+                    void* f = i_class_get_field_from_name(pc, "parts");
+                    if (f) g_offPlateParts = (int)i_field_get_offset(f);
+                    f = i_class_get_field_from_name(pc, "disableSplit");
+                    if (f) g_offPlateDisableSplit = (int)i_field_get_offset(f);
+                }
+                FLog([NSString stringWithFormat:@"PlateVariant: tip=%p parts@%d split@%d", g_plateTypeObj, g_offPlateParts, g_offPlateDisableSplit]);
+            }
         }
         if (!g_roomLineType) {
             void* rc = i_class_from_name(img, "", "HR_UI_RoomListLine");
@@ -1386,6 +1398,30 @@ static void* w_playerManagerGetInst(void) {
     if (!m || !i_runtime_invoke) return NULL;
     @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
 }
+static int w_pm_getMoney(void *self) {
+    static void *m = NULL;
+    if (!m) m = few1n_resolveOn(few1n_playerMgrClass(), "goc", 0);
+    if (!m || !i_runtime_invoke || !self) return -1;
+    @try { return few1n_unboxInt(i_runtime_invoke(m, self, NULL, NULL)); } @catch (...) { return -1; }
+}
+static void w_pm_addMoney(void *self, int amount) {
+    static void *m = NULL;
+    if (!m) m = few1n_resolveOn(few1n_playerMgrClass(), "gor", 1);
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { void *args[1] = { &amount }; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+static void w_pm_syncWithServer(void *self) {
+    static void *m = NULL;
+    if (!m) m = few1n_resolveOn(few1n_playerMgrClass(), "goo", 0);
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { i_runtime_invoke(m, self, NULL, NULL); } @catch (...) {}
+}
+static void w_pm_updateNicknameInternal(void *self, void *name) {
+    static void *m = NULL;
+    if (!m) m = few1n_resolveOn(few1n_playerMgrClass(), "gos", 1);
+    if (!m || !i_runtime_invoke || !self || !name) return;
+    @try { void *args[1] = { name }; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
 
 // ====== HR_PhotonLobbyManager (get_Instance obfuscated -> eov) ======
 static void* w_lobbyGetInst(void) {
@@ -1807,6 +1843,7 @@ static void  (*tmp_set_richText)(void* self, bool value) = NULL;   // 0x66017B8
 static void* (*rinfo_getName)(void* self) = NULL;  // RoomInfo.get_Name (ham oda ismi)
 static void  (*pn_setNickName)(void* name) = NULL;
 static void* (*lobbyGetInst)(void) = NULL;
+// PlayerManager pointer'lari, RVA degil IL2CPP by-name wrapper'larina baglanir.
 static void* (*playerManagerGetInst)(void) = NULL;
 static void  (*pm_updateNicknameInternal)(void* self, void* newName) = NULL;
 static int   (*pm_getMoney)(void* self) = NULL;
@@ -2525,11 +2562,23 @@ static void few1n_applyCar(void) {
 }
 
 // ===== PLAKA ZORLA (il2cpp, hook olu) =====
-// PlateVariant.parts (+0x20) = TMP_Text[]; disableSplit (+0x29). Her karede zorla yaz.
+// PlateVariant.parts ve disableSplit alanlari IL2CPP field API ile bulunur; her karede zorla yaz.
 // NOT: sadece SENIN ekranindaki plaka - server/digerleri baska gorebilir.
 static void* g_plateEmptyStr = NULL;
 static void few1n_forcePlate(void) {
-    if (!isCustomPlateEnabled || !g_mTmpSetText || !g_plateTypeObj || !g_mFindObjectsPlural || !i_runtime_invoke) return;
+    if (!isCustomPlateEnabled || !g_mTmpSetText || !g_mFindObjectsPlural || !i_runtime_invoke) return;
+    // PlateVariant daha sonra yuklenirse alanlari IL2CPP metadata'dan yeniden cozumle.
+    if (!g_plateTypeObj || g_offPlateParts <= 0 || g_offPlateDisableSplit <= 0) {
+        void* pc = few1n_classAnyImage("", "PlateVariant");
+        if (!pc || !i_class_get_field_from_name || !i_field_get_offset) return;
+        g_plateClass = pc;
+        g_plateTypeObj = few1n_typeObjOf(pc);
+        void* f = i_class_get_field_from_name(pc, "parts");
+        if (f) g_offPlateParts = (int)i_field_get_offset(f);
+        f = i_class_get_field_from_name(pc, "disableSplit");
+        if (f) g_offPlateDisableSplit = (int)i_field_get_offset(f);
+    }
+    if (!g_plateTypeObj || g_offPlateParts <= 0 || g_offPlateDisableSplit <= 0) return;
     @try {
         void* a[1]; a[0] = g_plateTypeObj;
         void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
@@ -2543,8 +2592,8 @@ static void few1n_forcePlate(void) {
         for (int i = 0; i < cnt; i++) {
             void* pv = plates[i];
             if (!ptrOk(pv)) continue;
-            *(unsigned char*)((uintptr_t)pv + 0x29) = 1;        // disableSplit = true (tek parca)
-            void* parts = *(void**)((uintptr_t)pv + 0x20);      // TMP_Text[]
+            *(unsigned char*)((uintptr_t)pv + g_offPlateDisableSplit) = 1; // disableSplit = true
+            void* parts = *(void**)((uintptr_t)pv + g_offPlateParts);       // TMP_Text[]
             if (!ptrOk(parts)) continue;
             int pc = (int)(*(uintptr_t*)((uintptr_t)parts + 0x18));
             if (pc < 0 || pc > 32) continue;
@@ -2557,6 +2606,34 @@ static void few1n_forcePlate(void) {
             }
         }
     } @catch (...) {}
+}
+
+// Resmi PlateUIElement akisini kullanir: PlayerManager.goy(...) sunucuya gider,
+// SpinPlateResponse'tan gelen plaka oyuncunun kaydina yazilir. Yerel preview degildir.
+static bool few1n_spinServerPlate(void) {
+    if (!i_runtime_invoke || !g_mFindObjectsPlural) return false;
+    if (!g_plateUiTypeObj || !g_mPlateSpinRandom) {
+        void* cls = few1n_classAnyImage("", "PlateUIElement");
+        if (!cls) return false;
+        g_plateUiTypeObj = few1n_typeObjOf(cls);
+        g_mPlateSpinRandom = i_class_get_method_from_name(cls, "SpinRandom", 0);
+    }
+    if (!g_plateUiTypeObj || !g_mPlateSpinRandom) return false;
+    @try {
+        void* args[1] = { g_plateUiTypeObj };
+        void* array = i_runtime_invoke(g_mFindObjectsPlural, NULL, args, NULL);
+        if (!ptrOk(array)) return false;
+        int count = *(int*)((uintptr_t)array + 0x18);
+        if (count < 1 || count > 16) return false;
+        void** elements = (void**)((uintptr_t)array + 0x20);
+        for (int i = 0; i < count; i++) {
+            if (!ptrOk(elements[i])) continue;
+            i_runtime_invoke(g_mPlateSpinRandom, elements[i], NULL, NULL);
+            FLog(@"Plaka: resmi sunucu cevirmesi baslatildi");
+            return true;
+        }
+    } @catch (...) {}
+    return false;
 }
 
 // ===== ARAC RENGI (Renderer.material.color, il2cpp) =====
@@ -3797,6 +3874,8 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)dpUp:(UIButton*)b;
 - (void)tapAutoGreet;
 - (void)editGreet;
+- (void)editPlate;
+- (void)spinServerPlate;
 - (void)joinRoomByName;
 - (void)pickRoomsServerHide;
 - (void)present:(UIAlertController*)ac;
@@ -3863,13 +3942,6 @@ static void h_createRoomBtn(void* self) {
         }
     } @catch (...) {}
     if (o_createRoomBtn) o_createRoomBtn(self);   // yedek: normal akis
-}
-
-// ===== MONEY =====
-static void (*o_addMoney)(void*, int) = NULL;
-static void h_addMoney(void* self, int amount) {
-    if (isAutoMoneyEnabled && amount > 0) amount = customMoneyAmount;
-    if (o_addMoney) o_addMoney(self, amount);
 }
 
 // ===== CAS IL2CPP REKLAM HOOKS (CANLI REKLAM BOZUCU) =====
@@ -4235,6 +4307,10 @@ static UIViewController* few1n_topVC(void) {
     y = [self toggle:@"🛡️  HASAR YOK V2 (il2cpp)" sub:@"RCCP_Damage maximumDamage=0 + deformMult=0" key:@"nodamagev2" atY:y action:@selector(tapNoDamageV2)];
     y = [self toggle:@"🔥  Motor Ölmez" sub:@"RCCP_Engine.engineRunning = true" key:@"immortalengine" atY:y action:@selector(tapImmortalEngine)];
     y = [self toggle:@"🚗  Trafik Dursun" sub:@"HR_TrafficCar.maximumSpeed = 0" key:@"notraffic" atY:y action:@selector(tapNoTraffic)];
+    self.plateBtn = [self actionButtonRow:&y];
+    [self.plateBtn addTarget:self action:@selector(editPlate) forControlEvents:UIControlEventTouchUpInside];
+    y = [self actionRow:@"Sunucudan Rastgele Plaka Al" color:C_ON atY:y action:@selector(spinServerPlate)];
+
     // v102: 6 yeni ozellik
     y = [self toggle:@"✨  Emissive Parlak Boya" sub:@"Aracın materyallerini HDR sarı-turuncu parlak yapar" key:@"emissive" atY:y action:@selector(tapEmissivePaint)];
     y = [self toggle:@"🔥  Egzoz Alev Sürekli" sub:@"RCCP_Exhaust.flameOnCutOff=true" key:@"exhaustflame" atY:y action:@selector(tapExhaustFlame)];
@@ -4732,9 +4808,9 @@ static UIViewController* few1n_topVC(void) {
     [self.moneyBtn setTitleColor:C_GOLD forState:UIControlStateNormal];
 
     if (isCustomPlateEnabled)
-        [self.plateBtn setTitle:[NSString stringWithFormat:@"\U0001F4DD Plaka: %s ✅", customPlateText] forState:UIControlStateNormal];
+        [self.plateBtn setTitle:[NSString stringWithFormat:@"\U0001F4DD Yerel Plaka: %s", customPlateText] forState:UIControlStateNormal];
     else
-        [self.plateBtn setTitle:@"\U0001F4DD Ozel Plaka Ayarla" forState:UIControlStateNormal];
+        [self.plateBtn setTitle:@"\U0001F4DD Yerel Plaka Onizlemesi" forState:UIControlStateNormal];
     [self.plateBtn setTitleColor:isCustomPlateEnabled ? C_ON : C_GOLD forState:UIControlStateNormal];
 }
 
@@ -10240,7 +10316,7 @@ static void few1n_joinTargetRoom(NSString *nm) {
 }
 
 - (void)editPlate {
-    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"\U0001F522 Ozel Plaka" message:@"Plakada gorunecek yazi:" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"\U0001F522 Yerel Plaka Onizlemesi" message:@"Yalnizca bu cihazda gorunecek yazi:" preferredStyle:UIAlertControllerStyleAlert];
     [ac addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.placeholder = @"FEW1N"; if (isCustomPlateEnabled) tf.text = [NSString stringWithUTF8String:customPlateText]; tf.clearButtonMode = UITextFieldViewModeAlways; }];
     [ac addAction:[UIAlertAction actionWithTitle:@"Uygula" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
         NSString *t = ac.textFields.firstObject.text;
@@ -10248,6 +10324,22 @@ static void few1n_joinTargetRoom(NSString *nm) {
     }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"Kapat" style:UIAlertActionStyleCancel handler:^(UIAlertAction *a){ isCustomPlateEnabled = false; saveBool(@"plateEnabled", false); [self refreshUI]; }]];
     [self present:ac];
+}
+
+- (void)spinServerPlate {
+    if (few1n_spinServerPlate()) {
+        UIAlertController *ok = [UIAlertController alertControllerWithTitle:@"Plaka istegi gonderildi"
+            message:@"Oyunun resmi plaka akisi sunucudan yanit bekliyor. Sonuc geldiginde plaka kayda yazilir."
+            preferredStyle:UIAlertControllerStyleAlert];
+        [ok addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:ok];
+    } else {
+        UIAlertController *er = [UIAlertController alertControllerWithTitle:@"Plaka hazir degil"
+            message:@"Once oyunun arac tuning/plaka ekranini ac. PlateUIElement yuklendikten sonra tekrar dene."
+            preferredStyle:UIAlertControllerStyleAlert];
+        [er addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:er];
+    }
 }
 
 // ===== REKLAM BOZUCU TOGGLE (CANLI / ANINDA) =====
@@ -10871,12 +10963,12 @@ static void InstallEverything(uintptr_t b) {
     chatGetInst                = w_chatGetInst;                 // obf fzi
     chatSend                   = w_chatSend;
 
-    // === PlayerManager (get_Instance obf gns; para metotları obf + server-locked, hardcoded NULL) ===
-    playerManagerGetInst       = w_playerManagerGetInst;        // obf gns
-    pm_updateNicknameInternal  = NULL;    // obf, kullanım yerinde NULL-guard var
-    pm_getMoney                = NULL;    // obf, il2cpp field read alternatif
-    pm_syncWithServer          = NULL;    // obf
-    pm_addMoney                = NULL;    // obf + server-locked
+    // === PlayerManager (tamami IL2CPP by-name; hardcoded RVA yok) ===
+    playerManagerGetInst       = w_playerManagerGetInst;        // gns()
+    pm_updateNicknameInternal  = w_pm_updateNicknameInternal;   // gos(string)
+    pm_getMoney                = w_pm_getMoney;                 // goc()
+    pm_syncWithServer          = w_pm_syncWithServer;           // goo()
+    pm_addMoney                = w_pm_addMoney;                 // gor(int)
 
     // === HR_PhotonLobbyManager ===
     lobbyGetInst               = w_lobbyGetInst;                // obf eov
