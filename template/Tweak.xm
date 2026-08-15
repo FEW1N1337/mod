@@ -3198,6 +3198,91 @@ static bool few1n_spinServerPlate(void) {
     return false;
 }
 
+// ===== v114.27: OZEL PLAKA — HERKESTE GORUNUR (client-authoritative) =====
+//
+// dump.cs analizi: odadaki diger oyunculara plaka, sunucu dogrulamasiyla DEGIL,
+// oyunun kendi tuning RPC'siyle gidiyor:
+//   PlateTuner.Apply(string country, string text)  -> plakayi lokal ayarlar
+//   TuningManager : MonoBehaviourPun                -> [PunRPC] LoadTuners(byte[])
+//   ile tum tuning'i (plaka dahil) herkese yayinlar.
+// Sunucunun SpinPlate'i yalniz kalicilik + para icin; oda-ici canli gorunum
+// client'in RPC'sine guveniyor. Yani Apply'a girdigimiz metin herkese gider.
+//
+// Hook DEGIL, dogrudan il2cpp cagrisi — sideload'da hook'lar olu olsa bile calisir.
+// SADECE benim aracima uygulanir: PlateTuner'in ustundeki PhotonView.IsMine kontrol
+// edilir (uzak oyuncularin plakasina dokunmayiz). Garajda PhotonView yoksa (tek
+// arac) yine uygulanir.
+static bool few1n_pvIsMineFor(void* comp) {
+    if (!g_mGetCompInParent || !g_photonViewType || !i_runtime_invoke || g_isMineOff <= 0) return true; // kontrol edilemiyorsa izin ver
+    @try {
+        unsigned char inc = 1;
+        void* a[2] = { g_photonViewType, &inc };
+        void* pv = i_runtime_invoke(g_mGetCompInParent, comp, a, NULL);
+        if (!ptrOk(pv)) return true;   // PhotonView yok = garaj/tek arac -> uygula
+        return *(unsigned char*)((uintptr_t)pv + g_isMineOff) != 0;
+    } @catch (...) { return true; }
+}
+
+static bool few1n_applyServerPlate(NSString *text) {
+    if (!text || text.length == 0) return false;
+    if (!i_runtime_invoke || !g_mFindObjectsPlural) return false;
+    void* ptCls = few1n_classAnyImage("", "PlateTuner");
+    if (!ptCls) { FLog(@"OzelPlaka: PlateTuner sinifi yok"); return false; }
+    void* ptType = few1n_typeObjOf(ptCls);
+    void* mApply = i_class_get_method_from_name(ptCls, "Apply", 2);   // Apply(country, text)
+    if (!ptType || !mApply) { FLog(@"OzelPlaka: PlateTuner.Apply(2) yok"); return false; }
+    void* textStr = mkStr(text);
+    if (!textStr) return false;
+
+    int applied = 0;
+    @try {
+        void* a[1] = { ptType };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) { FLog(@"OzelPlaka: PlateTuner instance yok (garaj/tuning ekranini ac)"); return false; }
+        int cnt = *(int*)((uintptr_t)arr + 0x18);
+        if (cnt < 1 || cnt > 64) return false;
+        void** items = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < cnt; i++) {
+            void* pt = items[i];
+            if (!unityAlive(pt)) continue;
+            if (!few1n_pvIsMineFor(pt)) continue;   // uzak oyuncunun plakasina dokunma
+            // Mevcut ulke: Nullable<PlateHolder> inf @0x28 -> PlateHolder.c (country) @+0x28
+            void* country = *(void**)((uintptr_t)pt + 0x28);
+            if (!ptrOk(country)) country = mkStr(@"TR");   // okunamadi -> varsayilan
+            void* args[2] = { country, textStr };
+            @try { i_runtime_invoke(mApply, pt, args, NULL); applied++; } @catch (...) {}
+        }
+    } @catch (...) {}
+
+    if (applied == 0) { FLog(@"OzelPlaka: uygulanacak (benim) PlateTuner bulunamadi"); return false; }
+
+    // TuningManager.ead() ile herkese yayinla (benim olan instance).
+    @try {
+        void* tmCls = few1n_classAnyImage("", "TuningManager");
+        if (tmCls) {
+            void* tmType = few1n_typeObjOf(tmCls);
+            void* mBroadcast = i_class_get_method_from_name(tmCls, "ead", 0);
+            if (tmType && mBroadcast) {
+                void* b[1] = { tmType };
+                void* tms = i_runtime_invoke(g_mFindObjectsPlural, NULL, b, NULL);
+                if (ptrOk(tms)) {
+                    int tc = *(int*)((uintptr_t)tms + 0x18);
+                    void** tmi = (void**)((uintptr_t)tms + 0x20);
+                    for (int i = 0; i < tc && i < 16; i++) {
+                        void* tm = tmi[i];
+                        if (!unityAlive(tm) || !few1n_pvIsMineFor(tm)) continue;
+                        @try { i_runtime_invoke(mBroadcast, tm, NULL, NULL); } @catch (...) {}
+                    }
+                    FLog(@"OzelPlaka: TuningManager.ead() ile yayinlandi");
+                }
+            }
+        }
+    } @catch (...) {}
+
+    FLog([NSString stringWithFormat:@"OzelPlaka: '%@' %d araca uygulandi + yayinlandi", text, applied]);
+    return true;
+}
+
 // ===== ARAC RENGI (Renderer.material.color, il2cpp) =====
 static Color4 hueToRGB(float h) {   // h 0..1 arasi -> gokkusagi
     float f = h*6.0f - floorf(h*6.0f), q = 1.0f - f;
@@ -4430,6 +4515,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)editGreet;
 - (void)editPlate;
 - (void)spinServerPlate;
+- (void)setServerPlate;
 - (void)joinRoomByName;
 - (void)pickRoomsServerHide;
 - (void)present:(UIAlertController*)ac;
@@ -4864,6 +4950,7 @@ static UIViewController* few1n_topVC(void) {
     self.plateBtn = [self actionButtonRow:&y];
     [self.plateBtn addTarget:self action:@selector(editPlate) forControlEvents:UIControlEventTouchUpInside];
     y = [self actionRow:@"Sunucudan Rastgele Plaka Al" color:C_ON atY:y action:@selector(spinServerPlate)];
+    y = [self actionRow:@"🔰  Özel Plaka — HERKESTE Göster (yaz + yayınla)" color:C_GOLD atY:y action:@selector(setServerPlate)];
 
     // v102: 6 yeni ozellik
     y = [self toggle:@"✨  Emissive Parlak Boya" sub:@"Aracın materyallerini HDR sarı-turuncu parlak yapar" key:@"emissive" atY:y action:@selector(tapEmissivePaint)];
@@ -10897,6 +10984,33 @@ static void few1n_joinTargetRoom(NSString *nm) {
         [er addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
         [self present:er];
     }
+}
+
+- (void)setServerPlate {
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🔰 Özel Plaka (Herkeste)"
+        message:@"Yazdığın plaka odadaki HERKESTE görünür (oyunun kendi tuning yayınıyla). Aracın garaj/tuning ekranı açıkken en güvenilir çalışır."
+        preferredStyle:UIAlertControllerStyleAlert];
+    [ac addTextFieldWithConfigurationHandler:^(UITextField *tf){
+        tf.placeholder = @"Örn: FEW1N 34";
+        tf.text = [NSString stringWithUTF8String:customPlateText];
+        tf.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
+        tf.clearButtonMode = UITextFieldViewModeAlways;
+    }];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Uygula & Yayınla" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        NSString *t = ac.textFields.firstObject.text;
+        if (!t || t.length == 0) return;
+        strncpy(customPlateText, t.UTF8String, sizeof(customPlateText)-1);
+        customPlateText[sizeof(customPlateText)-1] = '\0';
+        bool ok = few1n_applyServerPlate(t);
+        UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Gönderildi" : @"⚠️ Şimdi olmadı")
+            message:(ok ? @"Plaka uygulandı ve odaya yayınlandı. Diğer oyuncularda görünmeli."
+                        : @"PlateTuner bulunamadı. Aracın tuning/garaj ekranını aç, sonra tekrar dene.")
+            preferredStyle:UIAlertControllerStyleAlert];
+        [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:r];
+    }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    [self present:ac];
 }
 
 // ===== REKLAM BOZUCU TOGGLE (CANLI / ANINDA) =====
