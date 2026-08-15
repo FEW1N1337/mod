@@ -615,6 +615,9 @@ static void* g_mFindAnyByType    = NULL;   // FindAnyObjectByType(Type)
 static void* g_carDriveTypeObj   = NULL;   // typeof(CarDriveSystem)
 static void* g_carInputTypeObj   = NULL;   // typeof(CarPlayerInput)
 
+// v114.23: class layout'lari il2cpp metadata'sindan cozer (asagida tanimli).
+static void few1n_resolveFieldOffsets(void);
+
 static void few1n_initIl2cpp(void) {
     i_domain_get                = (void*(*)(void))dlsym(RTLD_DEFAULT, "il2cpp_domain_get");
     i_domain_get_assemblies     = (void**(*)(void*,unsigned long*))dlsym(RTLD_DEFAULT, "il2cpp_domain_get_assemblies");
@@ -1035,6 +1038,9 @@ static void few1n_initIl2cpp(void) {
             g_carDriveTypeObj && g_carInputTypeObj && g_mCamGetMain) break;
     }
     g_il2cppReady = (g_mSetTS != NULL);
+    // v114.23: sabit offset yerine class layout'unu metadata'dan cek. Oyun
+    // guncellenip sinifa alan eklendiginde offsetler kendiliginden duzelir.
+    few1n_resolveFieldOffsets();
     FLog([NSString stringWithFormat:@"il2cpp bitti: carTip=%@ inputTip=%@ (taranan sinif=%ld)",
           g_carDriveTypeObj ? @"VAR" : @"YOK", g_carInputTypeObj ? @"VAR" : @"YOK", g_classScanned]);
     if (!g_il2cppReady) FLog(@"UnityEngine.Time bulunamadi");
@@ -1229,11 +1235,195 @@ static void* few1n_mapSelClass(void) {
     if (!cls && i_class_from_name) cls = few1n_classAnyImage("", "MapSelection");
     return cls;
 }
+static void* few1n_photonMgrClass(void) {
+    static void* cls = NULL;
+    if (!cls && i_class_from_name) cls = few1n_classAnyImage("", "PhotonManager");
+    return cls;
+}
 
 // Generic method resolver
 static void* few1n_resolveOn(void* cls, const char *methodName, int argc) {
     if (!cls || !i_class_get_method_from_name) return NULL;
     return i_class_get_method_from_name(cls, methodName, argc);
+}
+
+// ===== v114.23: RUNTIME FIELD OFFSET COZUMU =====
+//
+// Oyun her guncellendiginde class layout'u kayiyor (1.4.3'te HR_UI_RoomListLine'a
+// LockImage eklendi -> tum TMP_Text'ler +8 kaydi ve mod cokuyordu). Sabit offset
+// yazmak yerine il2cpp metadata'sindan ISIMLE okuyoruz — sinifa alan eklense bile
+// dogru offset gelir.
+//
+// Cozulemezse Offsets.h'deki bilinen deger fallback olarak kullanilir (davranis
+// en kotu ihtimalle eskisi kadar iyi, daha kotu degil).
+static int few1n_fieldOffOn(void* cls, const char* field, int fallback) {
+    if (!cls || !field || !i_class_get_field_from_name || !i_field_get_offset) return fallback;
+    void* f = NULL;
+    @try { f = i_class_get_field_from_name(cls, field); } @catch (...) { return fallback; }
+    if (!f) return fallback;
+    size_t off = 0;
+    @try { off = i_field_get_offset(f); } @catch (...) { return fallback; }
+    // Makul aralik disi (0 = static/cozulemedi) ise fallback'e don.
+    if (off < 0x10 || off > 0x4000) return fallback;
+    return (int)off;
+}
+static int few1n_fieldOff(const char* ns, const char* cls, const char* field, int fallback) {
+    return few1n_fieldOffOn(few1n_classAnyImage(ns ?: "", cls), field, fallback);
+}
+
+// Bir kez cozulur, sonra sabit. -1 = henuz cozulmedi.
+// Varsayilanlar Offsets.h / 1.4.3 dump degerleri (fallback).
+static int OFFR_PH_PHOTONVIEW   = OFF_PLAYERHANDLER_PHOTONVIEW;   // HR_PlayerHandler.iza
+static int OFFR_PH_CANCRASH     = OFF_PLAYERHANDLER_CANCRASH;     // .canCrash
+static int OFFR_PH_DAMAGE       = OFF_PLAYERHANDLER_DAMAGE;       // .damage
+static int OFFR_PH_VEHICLENAME  = 0x30;                           // .VehicleName
+static int OFFR_PH_RCCP         = OFF_PLAYERHANDLER_RCCP;         // .ixy (RCCP_CarController)
+static int OFFR_PH_RIGIDBODY    = OFF_PLAYERHANDLER_RIGIDBODY;    // .ixz (Rigidbody)
+
+static int OFFR_RL_NAMETEXT     = OFF_ROOMLINE_NAME_TEXT;         // HR_UI_RoomListLine.RoomNameText
+static int OFFR_RL_MAPTEXT      = OFF_ROOMLINE_MAP_TEXT;          // .MapNameText
+static int OFFR_RL_PLAYERCOUNT  = OFF_ROOMLINE_PLAYERCOUNT_TEXT;  // .PlayerCountText
+static int OFFR_RL_PASSWORD     = OFF_ROOMLINE_PASSWORD;          // .password
+static int OFFR_RL_ROOMINFO     = 0x58;                           // .roomInfo
+
+static int OFFR_LOBBY_MAPSEL    = 0x28;   // HR_PhotonLobbyManager.mapSelection
+static int OFFR_LOBBY_ROOMNAME  = 0x48;   // .roomNameInput
+static int OFFR_LOBBY_PWD       = OFF_LOBBY_PWD_INPUT;
+static int OFFR_LOBBY_PWD_CONN  = OFF_LOBBY_PWD_ON_CONN_INPUT;
+static int OFFR_DUMMY_KICKNAME  = 0x108;  // HR_PhotonLobbyManagerDummy.jdz (kick hedef ismi)
+
+static int OFFR_CDS_INPUT       = 0x20;   // CarDriveSystem.jyr (CarPlayerInput)
+static int OFFR_CDS_RIGIDBODY   = 0x48;   // .<jyt>k__BackingField (Rigidbody)
+static int OFFR_CDS_OVR_ACCEL   = 0x61;   // .overrideAcceleration
+static int OFFR_CDS_OVR_STEER   = 0x62;   // .overrideSteering
+static int OFFR_CDS_STEERPOWER  = 0x64;   // .overrideSteeringPower
+static int OFFR_CDS_ACCELPOWER  = 0x6C;   // .overrideAccelerationPower
+static int OFFR_CDS_TOPSPEED    = 0x98;   // .topSpeed
+static int OFFR_CDS_CURSPEED    = 0x9C;   // .currentSpeed
+
+static int OFFR_CPI_DRIVE       = 0x20;   // CarPlayerInput.kaq (CarDriveSystem)
+static int OFFR_CPI_NITRO       = 0x28;   // .kar (CarNitro)
+static int OFFR_NITRO_DRIVE     = 0x28;   // CarNitro.kam (CarDriveSystem)
+static int OFFR_NITRO_AMOUNT    = 0x34;   // CarNitro.<kap>k__BackingField
+
+static int OFFR_RCCP_ENGINERPM  = 0x114;  // RCCP_CarController.engineRPM
+static int OFFR_RCCP_MAXRPM     = 0x11C;  // .maxEngineRPM
+static int OFFR_RCCP_THROTTLE   = 0x168;  // .throttleInput_V
+static int OFFR_RCCP_BRAKE      = 0x16C;  // .brakeInput_V
+static int OFFR_RCCP_STEER      = 0x170;  // .steerInput_V
+static int OFFR_RCCP_LOWBEAM    = 0x19C;  // .lowBeamLights
+static int OFFR_RCCP_HIGHBEAM   = 0x19D;  // .highBeamLights
+static int OFFR_RCCP_INDICATORS = 0x1A0;  // .indicatorsAllLights
+
+static int OFFR_LIGHTS_LOWBEAM  = 0x40;   // RCCP_Lights.lowBeamHeadlights
+static int OFFR_LIGHTS_HIGHBEAM = 0x41;   // .highBeamHeadlights
+
+static int OFFR_RCCPMAIN_RB     = 0x48;   // RCCP_MainComponent.hnm (Rigidbody)
+static int OFFR_SSRCC_RB        = 0xF8;   // SmoothSyncRCC.rb
+static int OFFR_BOMB_OWNER      = 0x20;   // HR_Bomb.iqo (HR_PlayerHandler)
+
+static int OFFR_ROOM_NAME       = 0x40;   // RoomInfo.name
+static int OFFR_ROOM_MASTERID   = 0x48;   // RoomInfo.masterClientId
+static int OFFR_ROOM_MAXPLAYERS = 0x20;   // RoomInfo.maxPlayers
+static int OFFR_PLAYER_ACTORNUM = 0x18;   // Player.actorNumber
+
+static int OFFR_ROPT_ISVISIBLE  = 0x10;   // RoomOptions.isVisible
+static int OFFR_ROPT_ISOPEN     = 0x11;   // .isOpen
+static int OFFR_ROPT_MAXPLAYERS = 0x14;   // .MaxPlayers
+static int OFFR_ROPT_EMPTYTTL   = 0x1C;   // .EmptyRoomTtl
+
+static int OFFR_MAPLIST_MAPS    = 0x18;   // MapList.maps[]
+
+static bool g_offsetsResolved = false;
+static void few1n_resolveFieldOffsets(void) {
+    if (g_offsetsResolved) return;
+    if (!i_class_get_field_from_name || !i_field_get_offset) return;   // API yok, fallback'lerle devam
+    void* c;
+
+    if ((c = few1n_classAnyImage("", "HR_PlayerHandler"))) {
+        OFFR_PH_PHOTONVIEW  = few1n_fieldOffOn(c, "iza",         OFFR_PH_PHOTONVIEW);
+        OFFR_PH_CANCRASH    = few1n_fieldOffOn(c, "canCrash",    OFFR_PH_CANCRASH);
+        OFFR_PH_DAMAGE      = few1n_fieldOffOn(c, "damage",      OFFR_PH_DAMAGE);
+        OFFR_PH_VEHICLENAME = few1n_fieldOffOn(c, "VehicleName", OFFR_PH_VEHICLENAME);
+        OFFR_PH_RCCP        = few1n_fieldOffOn(c, "ixy",         OFFR_PH_RCCP);
+        OFFR_PH_RIGIDBODY   = few1n_fieldOffOn(c, "ixz",         OFFR_PH_RIGIDBODY);
+    }
+    if ((c = few1n_classAnyImage("", "HR_UI_RoomListLine"))) {
+        OFFR_RL_NAMETEXT    = few1n_fieldOffOn(c, "RoomNameText",    OFFR_RL_NAMETEXT);
+        OFFR_RL_MAPTEXT     = few1n_fieldOffOn(c, "MapNameText",     OFFR_RL_MAPTEXT);
+        OFFR_RL_PLAYERCOUNT = few1n_fieldOffOn(c, "PlayerCountText", OFFR_RL_PLAYERCOUNT);
+        OFFR_RL_PASSWORD    = few1n_fieldOffOn(c, "password",        OFFR_RL_PASSWORD);
+        OFFR_RL_ROOMINFO    = few1n_fieldOffOn(c, "roomInfo",        OFFR_RL_ROOMINFO);
+    }
+    if ((c = few1n_classAnyImage("", "HR_PhotonLobbyManager"))) {
+        OFFR_LOBBY_MAPSEL   = few1n_fieldOffOn(c, "mapSelection",          OFFR_LOBBY_MAPSEL);
+        OFFR_LOBBY_ROOMNAME = few1n_fieldOffOn(c, "roomNameInput",         OFFR_LOBBY_ROOMNAME);
+        OFFR_LOBBY_PWD      = few1n_fieldOffOn(c, "passwordInput",         OFFR_LOBBY_PWD);
+        OFFR_LOBBY_PWD_CONN = few1n_fieldOffOn(c, "passwordOnConnectInput",OFFR_LOBBY_PWD_CONN);
+    }
+    if ((c = few1n_classAnyImage("", "HR_PhotonLobbyManagerDummy")))
+        OFFR_DUMMY_KICKNAME = few1n_fieldOffOn(c, "jdz", OFFR_DUMMY_KICKNAME);
+
+    if ((c = few1n_classAnyImage("", "CarDriveSystem"))) {
+        OFFR_CDS_INPUT      = few1n_fieldOffOn(c, "jyr",                      OFFR_CDS_INPUT);
+        OFFR_CDS_RIGIDBODY  = few1n_fieldOffOn(c, "<jyt>k__BackingField",     OFFR_CDS_RIGIDBODY);
+        OFFR_CDS_OVR_ACCEL  = few1n_fieldOffOn(c, "overrideAcceleration",     OFFR_CDS_OVR_ACCEL);
+        OFFR_CDS_OVR_STEER  = few1n_fieldOffOn(c, "overrideSteering",         OFFR_CDS_OVR_STEER);
+        OFFR_CDS_STEERPOWER = few1n_fieldOffOn(c, "overrideSteeringPower",    OFFR_CDS_STEERPOWER);
+        OFFR_CDS_ACCELPOWER = few1n_fieldOffOn(c, "overrideAccelerationPower",OFFR_CDS_ACCELPOWER);
+        OFFR_CDS_TOPSPEED   = few1n_fieldOffOn(c, "topSpeed",                 OFFR_CDS_TOPSPEED);
+        OFFR_CDS_CURSPEED   = few1n_fieldOffOn(c, "currentSpeed",             OFFR_CDS_CURSPEED);
+    }
+    if ((c = few1n_classAnyImage("", "CarPlayerInput"))) {
+        OFFR_CPI_DRIVE      = few1n_fieldOffOn(c, "kaq", OFFR_CPI_DRIVE);
+        OFFR_CPI_NITRO      = few1n_fieldOffOn(c, "kar", OFFR_CPI_NITRO);
+    }
+    if ((c = few1n_classAnyImage("", "CarNitro"))) {
+        OFFR_NITRO_DRIVE    = few1n_fieldOffOn(c, "kam",                  OFFR_NITRO_DRIVE);
+        OFFR_NITRO_AMOUNT   = few1n_fieldOffOn(c, "<kap>k__BackingField", OFFR_NITRO_AMOUNT);
+    }
+
+    if ((c = few1n_classAnyImage("", "RCCP_CarController"))) {
+        OFFR_RCCP_ENGINERPM = few1n_fieldOffOn(c, "engineRPM",           OFFR_RCCP_ENGINERPM);
+        OFFR_RCCP_MAXRPM    = few1n_fieldOffOn(c, "maxEngineRPM",        OFFR_RCCP_MAXRPM);
+        OFFR_RCCP_THROTTLE  = few1n_fieldOffOn(c, "throttleInput_V",     OFFR_RCCP_THROTTLE);
+        OFFR_RCCP_BRAKE     = few1n_fieldOffOn(c, "brakeInput_V",        OFFR_RCCP_BRAKE);
+        OFFR_RCCP_STEER     = few1n_fieldOffOn(c, "steerInput_V",        OFFR_RCCP_STEER);
+        OFFR_RCCP_LOWBEAM   = few1n_fieldOffOn(c, "lowBeamLights",       OFFR_RCCP_LOWBEAM);
+        OFFR_RCCP_HIGHBEAM  = few1n_fieldOffOn(c, "highBeamLights",      OFFR_RCCP_HIGHBEAM);
+        OFFR_RCCP_INDICATORS= few1n_fieldOffOn(c, "indicatorsAllLights", OFFR_RCCP_INDICATORS);
+    }
+    if ((c = few1n_classAnyImage("", "RCCP_Lights"))) {
+        OFFR_LIGHTS_LOWBEAM  = few1n_fieldOffOn(c, "lowBeamHeadlights",  OFFR_LIGHTS_LOWBEAM);
+        OFFR_LIGHTS_HIGHBEAM = few1n_fieldOffOn(c, "highBeamHeadlights", OFFR_LIGHTS_HIGHBEAM);
+    }
+    if ((c = few1n_classAnyImage("", "RCCP_MainComponent")))
+        OFFR_RCCPMAIN_RB    = few1n_fieldOffOn(c, "hnm", OFFR_RCCPMAIN_RB);
+    if ((c = few1n_classAnyImage("", "SmoothSyncRCC")))
+        OFFR_SSRCC_RB       = few1n_fieldOffOn(c, "rb",  OFFR_SSRCC_RB);
+    if ((c = few1n_classAnyImage("", "HR_Bomb")))
+        OFFR_BOMB_OWNER     = few1n_fieldOffOn(c, "iqo", OFFR_BOMB_OWNER);
+
+    if ((c = few1n_classAnyImage("Photon.Realtime", "RoomInfo"))) {
+        OFFR_ROOM_NAME       = few1n_fieldOffOn(c, "name",           OFFR_ROOM_NAME);
+        OFFR_ROOM_MASTERID   = few1n_fieldOffOn(c, "masterClientId", OFFR_ROOM_MASTERID);
+        OFFR_ROOM_MAXPLAYERS = few1n_fieldOffOn(c, "maxPlayers",     OFFR_ROOM_MAXPLAYERS);
+    }
+    if ((c = few1n_classAnyImage("Photon.Realtime", "Player")))
+        OFFR_PLAYER_ACTORNUM = few1n_fieldOffOn(c, "actorNumber", OFFR_PLAYER_ACTORNUM);
+    if ((c = few1n_classAnyImage("Photon.Realtime", "RoomOptions"))) {
+        OFFR_ROPT_ISVISIBLE  = few1n_fieldOffOn(c, "isVisible",    OFFR_ROPT_ISVISIBLE);
+        OFFR_ROPT_ISOPEN     = few1n_fieldOffOn(c, "isOpen",       OFFR_ROPT_ISOPEN);
+        OFFR_ROPT_MAXPLAYERS = few1n_fieldOffOn(c, "MaxPlayers",   OFFR_ROPT_MAXPLAYERS);
+        OFFR_ROPT_EMPTYTTL   = few1n_fieldOffOn(c, "EmptyRoomTtl", OFFR_ROPT_EMPTYTTL);
+    }
+    if ((c = few1n_classAnyImage("", "MapList")))
+        OFFR_MAPLIST_MAPS   = few1n_fieldOffOn(c, "maps", OFFR_MAPLIST_MAPS);
+
+    g_offsetsResolved = true;
+    FLog([NSString stringWithFormat:
+        @"📐 Field offsetleri runtime'dan cozuldu: PH.pv@0x%X RL.name@0x%X CDS.top@0x%X RCCP.rpm@0x%X ROpt.max@0x%X",
+        OFFR_PH_PHOTONVIEW, OFFR_RL_NAMETEXT, OFFR_CDS_TOPSPEED, OFFR_RCCP_ENGINERPM, OFFR_ROPT_MAXPLAYERS]);
 }
 
 // ====== PhotonNetwork static methods ======
@@ -1564,6 +1754,36 @@ static void w_mapSel_selectMap(void *self, void *name) {
     static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_mapSelClass(), "SelectMap", 1);
     if (!m || !i_runtime_invoke || !self) return;
     @try { void *args[1]={name}; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
+
+// ====== PhotonManager.LoadLevel(string scene, bool addressable) — static ======
+// Odadayken harita degistirmenin CALISAN yolu. Isim her surumde degisiyor:
+//   1.4.2 -> "LoadLevel" (obfuscate edilmemis)
+//   1.4.3 -> "ese"       (obfuscated)
+//   daha eski -> "enp"
+// Bu yuzden aday listesi ile aranir; ilk tutan kullanilir. Hepsi ayni imza:
+// static void (string, bool = false).
+static bool g_photonMgrLLResolved = false;
+static void w_photonMgrLoadLevel(void *sceneStr, bool addressable) {
+    static void *m = NULL;
+    if (!m && !g_photonMgrLLResolved) {
+        g_photonMgrLLResolved = true;
+        void *c = few1n_photonMgrClass();
+        if (c) {
+            static const char *cands[] = { "LoadLevel", "ese", "enp", NULL };
+            for (int i = 0; cands[i]; i++) {
+                m = few1n_resolveOn(c, cands[i], 2);
+                if (m) { FLog([NSString stringWithFormat:@"🗺️ PhotonManager.%s(string,bool) bulundu", cands[i]]); break; }
+            }
+        }
+        if (!m) FLog(@"🗺️ PhotonManager LoadLevel adayi bulunamadi — PhotonNetwork.LoadLevel yedegi kullanilacak");
+    }
+    if (!m || !i_runtime_invoke || !sceneStr) return;
+    @try {
+        unsigned char b = addressable ? 1 : 0;
+        void *args[2] = { sceneStr, &b };
+        i_runtime_invoke(m, NULL, args, NULL);
+    } @catch (...) {}
 }
 
 // PlayerManager AddMoney/get_Money/SyncWithServer/UpdateNicknameInternal:
@@ -2035,8 +2255,8 @@ static inline void few1n_claimMaster(void) {
                     @try { pn_setMasterClient(me); } @catch (...) {}
                 }
                 // B) Client-side memory patch: ActorNumber = offset 0x18, MasterClientId = offset 0x48
-                int myActor = *(int*)((uintptr_t)me + 0x18);
-                *(int*)((uintptr_t)room + 0x48) = myActor;
+                int myActor = *(int*)((uintptr_t)me + OFFR_PLAYER_ACTORNUM);
+                *(int*)((uintptr_t)room + OFFR_ROOM_MASTERID) = myActor;
             }
         } @catch (...) {}
     }
@@ -2110,7 +2330,7 @@ static void few1n_kickPlayer(void* playerObj) {
         if (g_lobbyDummyType && g_mFindObjectsPlural && i_runtime_invoke && g_mDummyKick && ptrOk(nmeStr)) {
             void* mgr = few1n_findLobbyMgr();
             if (unityAlive(mgr)) {
-                *(void**)((uintptr_t)mgr + 0x108) = nmeStr;
+                *(void**)((uintptr_t)mgr + OFFR_DUMMY_KICKNAME) = nmeStr;
                 @try {
                     i_runtime_invoke(g_mDummyKick, mgr, NULL, NULL);
                     FLog(@"  → Lobby RPC KickPlayer gönderildi ✓");
@@ -2179,10 +2399,10 @@ static float h_getNitro(void* self) {
     fNitro++;
     if (self && ptrOk(self)) {
         @try {
-            void* ds = *(void**)((uintptr_t)self + 0x28);
-            if (ds) { void* rb = *(void**)((uintptr_t)ds + 0x48); if (rb) g_rb = rb; }
-            diagNitroVal = *(float*)((uintptr_t)self + 0x34);
-            if (isInfiniteNitroEnabled) *(float*)((uintptr_t)self + 0x34) = 1.0f;  // nitroAmount backing field'i de doldur
+            void* ds = *(void**)((uintptr_t)self + OFFR_NITRO_DRIVE);
+            if (ds) { void* rb = *(void**)((uintptr_t)ds + OFFR_CDS_RIGIDBODY); if (rb) g_rb = rb; }
+            diagNitroVal = *(float*)((uintptr_t)self + OFFR_NITRO_AMOUNT);
+            if (isInfiniteNitroEnabled) *(float*)((uintptr_t)self + OFFR_NITRO_AMOUNT) = 1.0f;  // nitroAmount backing field'i de doldur
         } @catch (...) {}
     }
     if (isInfiniteNitroEnabled) return 1.0f;
@@ -2210,18 +2430,18 @@ static void h_driveMove(void* self, float a, float b, float c, float d) {
     if (self) {
         @try {
             diagDrive  = self;
-            diagCurSpd = *(float*)((uintptr_t)self + 0x9C);   // currentSpeed
-            diagTopSpd = *(float*)((uintptr_t)self + 0x98);   // topSpeed
+            diagCurSpd = *(float*)((uintptr_t)self + OFFR_CDS_CURSPEED);   // currentSpeed
+            diagTopSpd = *(float*)((uintptr_t)self + OFFR_CDS_TOPSPEED);   // topSpeed
             // topSpeed cap'ini de yukselt (bazi oyunlar hizi buna clamp eder)
             if (speedMult != 1.0f || speedMode > 1) {
                 if (g_origTop <= 0.0f && diagTopSpd > 0.0f && diagTopSpd < 1000.0f) g_origTop = diagTopSpd;
                 float base = (g_origTop > 0.0f) ? g_origTop : 200.0f;
-                *(float*)((uintptr_t)self + 0x98) = base * 3.0f;
+                *(float*)((uintptr_t)self + OFFR_CDS_TOPSPEED) = base * 3.0f;
             } else if (g_origTop > 0.0f) {
-                *(float*)((uintptr_t)self + 0x98) = g_origTop; g_origTop = 0.0f;
+                *(float*)((uintptr_t)self + OFFR_CDS_TOPSPEED) = g_origTop; g_origTop = 0.0f;
             }
             // ASIL HIZ: Rigidbody linearVelocity'yi dogrudan olcekle (en kesin yontem)
-            void* rb = *(void**)((uintptr_t)self + 0x48);     // CarDriveSystem._rigidbody
+            void* rb = *(void**)((uintptr_t)self + OFFR_CDS_RIGIDBODY);     // CarDriveSystem._rigidbody
             g_rb = rb;                                        // fly/zipla/lowgrav icin sakla
             if (rb && rb_getVel && rb_setVel) {
                 Vec3 v = {0,0,0};
@@ -2515,14 +2735,14 @@ static void few1n_findCar(void) {
         if (g_carInputTypeObj && ((!g_carDrive) || (!g_carNitro) || (g_findTick % 8 == 0))) {
             void* inp = few1n_findByType(g_carInputTypeObj);
             if (ptrOk(inp)) {
-                void* drive = *(void**)((uintptr_t)inp + 0x20);   // jhr -> CarDriveSystem (SENIN)
+                void* drive = *(void**)((uintptr_t)inp + OFFR_CPI_DRIVE);   // jhr -> CarDriveSystem (SENIN)
                 if (unityAlive(drive)) {
                     if (drive != g_carDrive) fFind++;
                     g_carDrive = drive; gotMine = true;
-                    void* rb = *(void**)((uintptr_t)drive + 0x48); // Rigidbody (SENIN araban)
+                    void* rb = *(void**)((uintptr_t)drive + OFFR_CDS_RIGIDBODY); // Rigidbody (SENIN araban)
                     if (ptrOk(rb)) g_rb = rb;
                 }
-                void* nos = *(void**)((uintptr_t)inp + 0x28);     // jhs -> CarNitro
+                void* nos = *(void**)((uintptr_t)inp + OFFR_CPI_NITRO);     // jhs -> CarNitro
                 if (ptrOk(nos)) g_carNitro = nos;
             }
         }
@@ -2531,7 +2751,7 @@ static void few1n_findCar(void) {
             void* found = few1n_findByType(g_carDriveTypeObj);
             if (ptrOk(found)) {
                 g_carDrive = found;
-                void* rb = *(void**)((uintptr_t)found + 0x48);
+                void* rb = *(void**)((uintptr_t)found + OFFR_CDS_RIGIDBODY);
                 if (ptrOk(rb)) g_rb = rb;
             }
         }
@@ -2547,8 +2767,8 @@ static void few1n_findCar(void) {
                 void* cd = i_runtime_invoke(g_mGetCompInParent, g_rb, a, NULL);
                 if (unityAlive(cd)) {
                     g_carDrive = cd;
-                    void* inp = *(void**)((uintptr_t)cd + 0x20);   // jfs -> CarPlayerInput
-                    if (unityAlive(inp)) { void* nos = *(void**)((uintptr_t)inp + 0x28); if (ptrOk(nos)) g_carNitro = nos; }
+                    void* inp = *(void**)((uintptr_t)cd + OFFR_CDS_INPUT);   // jfs -> CarPlayerInput
+                    if (unityAlive(inp)) { void* nos = *(void**)((uintptr_t)inp + OFFR_CPI_NITRO); if (ptrOk(nos)) g_carNitro = nos; }
                 }
             } @catch (...) {}
         }
@@ -2559,7 +2779,7 @@ static void few1n_findCar(void) {
 static void few1n_applyCar(void) {
     @try {
         if (isInfiniteNitroEnabled && unityAlive(g_carNitro)) {
-            *(float*)((uintptr_t)g_carNitro + 0x34) = 1.0f;   // nitro dolu tut
+            *(float*)((uintptr_t)g_carNitro + OFFR_NITRO_AMOUNT) = 1.0f;   // nitro dolu tut
         }
         // NO-CLIP (hayalet) + ANTI-GRAV - sadece g_rb yeterli (carDrive gerekmez)
         if (unityAlive(g_rb)) {
@@ -2579,15 +2799,15 @@ static void few1n_applyCar(void) {
         if (!unityAlive(g_carDrive)) return;   // araba oldu -> field yazma (crash korumasi)
         uintptr_t d = (uintptr_t)g_carDrive;
         diagDrive  = g_carDrive;
-        diagCurSpd = *(float*)(d + 0x9C);
+        diagCurSpd = *(float*)(d + OFFR_CDS_CURSPEED);
         g_hudSpeed = fabsf(diagCurSpd);   // HUD icin hiz
-        diagTopSpd = *(float*)(d + 0x98);
+        diagTopSpd = *(float*)(d + OFFR_CDS_TOPSPEED);
         if (speedMult != 1.0f || speedMode > 1) {
             if (g_origTop <= 0.0f && diagTopSpd > 0.0f && diagTopSpd < 1000.0f) g_origTop = diagTopSpd;
             float base = (g_origTop > 0.0f) ? g_origTop : 200.0f;
-            *(float*)(d + 0x98) = base * 3.0f;
+            *(float*)(d + OFFR_CDS_TOPSPEED) = base * 3.0f;
         } else if (g_origTop > 0.0f && !isCarPanelEnabled) {
-            *(float*)(d + 0x98) = g_origTop; g_origTop = 0.0f;
+            *(float*)(d + OFFR_CDS_TOPSPEED) = g_origTop; g_origTop = 0.0f;
         }
         float scale = targetScale();
         if (unityAlive(g_rb) && scale > 1.05f) {
@@ -2604,11 +2824,11 @@ static void few1n_applyCar(void) {
             }
         }
         if (isCarPanelEnabled) {
-            *(unsigned char*)(d + 0x61) = 1;
-            *(float*)(d + 0x6C) = carAccelPower;
-            *(unsigned char*)(d + 0x62) = 1;
-            *(float*)(d + 0x64) = carSteerPower;
-            *(float*)(d + 0x98) = carTopSpeed;
+            *(unsigned char*)(d + OFFR_CDS_OVR_ACCEL) = 1;
+            *(float*)(d + OFFR_CDS_ACCELPOWER) = carAccelPower;
+            *(unsigned char*)(d + OFFR_CDS_OVR_STEER) = 1;
+            *(float*)(d + OFFR_CDS_STEERPOWER) = carSteerPower;
+            *(float*)(d + OFFR_CDS_TOPSPEED) = carTopSpeed;
         }
     } @catch (...) {}
 }
@@ -2754,16 +2974,16 @@ static void few1n_applyGodmode(void) {
             void** hs = (void**)((uintptr_t)arr + 0x20);
             for (int i = 0; i < cnt; i++) {
                 void* h = hs[i]; if (!unityAlive(h)) continue;
-                void* pv = *(void**)((uintptr_t)h + OFF_PLAYERHANDLER_PHOTONVIEW);
+                void* pv = *(void**)((uintptr_t)h + OFFR_PH_PHOTONVIEW);
                 bool mine = unityAlive(pv) ? *(bool*)((uintptr_t)pv + g_isMineOff) : false;
-                if (mine) { g_myPlayerHandler = h; g_myRccp = *(void**)((uintptr_t)h + 0x20); break; }
+                if (mine) { g_myPlayerHandler = h; g_myRccp = *(void**)((uintptr_t)h + OFFR_PH_RCCP); break; }
             }
         } @catch (...) {}
         return;
     }
     if (isGodmode) { @try {
-        *(unsigned char*)((uintptr_t)g_myPlayerHandler + OFF_PLAYERHANDLER_CANCRASH) = 0;
-        *(float*)((uintptr_t)g_myPlayerHandler + OFF_PLAYERHANDLER_DAMAGE) = 0.0f;
+        *(unsigned char*)((uintptr_t)g_myPlayerHandler + OFFR_PH_CANCRASH) = 0;
+        *(float*)((uintptr_t)g_myPlayerHandler + OFFR_PH_DAMAGE) = 0.0f;
     } @catch (...) {} }
 }
 
@@ -2796,8 +3016,8 @@ static void few1n_applyAlwaysLights(void) {
         if (!unityAlive(g_myLights)) return;
     }
     @try {
-        *(unsigned char*)((uintptr_t)g_myLights + 0x40) = 1;   // lowBeam SUREKLI ON
-        *(unsigned char*)((uintptr_t)g_myLights + 0x41) = 1;   // highBeam SUREKLI ON
+        *(unsigned char*)((uintptr_t)g_myLights + OFFR_LIGHTS_LOWBEAM) = 1;   // lowBeam SUREKLI ON
+        *(unsigned char*)((uintptr_t)g_myLights + OFFR_LIGHTS_HIGHBEAM) = 1;   // highBeam SUREKLI ON
     } @catch (...) {}
 }
 
@@ -2939,8 +3159,8 @@ static void few1n_applySelektor(void) {
         g_selTick++;
         int rate = (g_selFlashRate >= 1) ? g_selFlashRate : 1;
         unsigned char on = (((g_selTick / rate) % 2) == 0) ? 1 : 0;   // hiz menuden ayarli
-        *(unsigned char*)((uintptr_t)g_myLights + 0x41) = on;   // highBeamHeadlights
-        *(unsigned char*)((uintptr_t)g_myLights + 0x40) = on;   // lowBeamHeadlights (gorunurluk icin)
+        *(unsigned char*)((uintptr_t)g_myLights + OFFR_LIGHTS_HIGHBEAM) = on;   // highBeamHeadlights
+        *(unsigned char*)((uintptr_t)g_myLights + OFFR_LIGHTS_LOWBEAM) = on;   // lowBeamHeadlights (gorunurluk icin)
     } @catch (...) {}
 }
 
@@ -2955,23 +3175,23 @@ static void h_playerInputFixed(void* self) {
     fInput++;
     if (self && ptrOk(self)) {
         @try {
-            void* drive = *(void**)((uintptr_t)self + 0x20);   // jhr -> CarDriveSystem
+            void* drive = *(void**)((uintptr_t)self + OFFR_CPI_DRIVE);   // jhr -> CarDriveSystem
             if (drive) {
                 g_carDrive = drive;
-                void* rb = *(void**)((uintptr_t)drive + 0x48); // Rigidbody backing field
+                void* rb = *(void**)((uintptr_t)drive + OFFR_CDS_RIGIDBODY); // Rigidbody backing field
                 if (rb) g_rb = rb;
             }
-            void* nos = *(void**)((uintptr_t)self + 0x28);     // jhs -> CarNitro
+            void* nos = *(void**)((uintptr_t)self + OFFR_CPI_NITRO);     // jhs -> CarNitro
             if (nos) g_carNitro = nos;
             // ---- ARAC KONTROL PANELI: oyunun kendi override alanlarini kullan ----
             // timeScale'e dokunmaz -> sadece bu arac etkilenir, digerleri fark etmez
             if (isCarPanelEnabled && g_carDrive) {
                 uintptr_t d = (uintptr_t)g_carDrive;
-                *(unsigned char*)(d + 0x61) = 1;              // overrideAcceleration
-                *(float*)(d + 0x6C) = carAccelPower;          // overrideAccelerationPower
-                *(unsigned char*)(d + 0x62) = 1;              // overrideSteering
-                *(float*)(d + 0x64) = carSteerPower;          // overrideSteeringPower
-                *(float*)(d + 0x98) = carTopSpeed;            // topSpeed
+                *(unsigned char*)(d + OFFR_CDS_OVR_ACCEL) = 1;              // overrideAcceleration
+                *(float*)(d + OFFR_CDS_ACCELPOWER) = carAccelPower;          // overrideAccelerationPower
+                *(unsigned char*)(d + OFFR_CDS_OVR_STEER) = 1;              // overrideSteering
+                *(float*)(d + OFFR_CDS_STEERPOWER) = carSteerPower;          // overrideSteeringPower
+                *(float*)(d + OFFR_CDS_TOPSPEED) = carTopSpeed;            // topSpeed
             }
         } @catch (...) {}
     }
@@ -2987,7 +3207,7 @@ static void h_rccpUpdate(void* self) {
     fRccp++;
     if (self) {
         @try {
-            void* rb = *(void**)((uintptr_t)self + 0x48);   // RCCP Rigidbody
+            void* rb = *(void**)((uintptr_t)self + OFFR_RCCPMAIN_RB);   // RCCP Rigidbody
             if (rb) g_rb = rb;
         } @catch (...) {}
     }
@@ -3001,7 +3221,7 @@ static void h_smRCC(void* self) {
     fSmRCC++;
     if (self) {
         @try {
-            void* rb = *(void**)((uintptr_t)self + 0xF8);   // SmoothSyncRCC.rb
+            void* rb = *(void**)((uintptr_t)self + OFFR_SSRCC_RB);   // SmoothSyncRCC.rb
             if (rb) g_rb = rb;
         } @catch (...) {}
     }
@@ -3569,13 +3789,13 @@ static void (*o_roomConnect)(void*) = NULL;
 static void h_roomConnect(void* self) {
     if (isBypassPasswordEnabled && self) {
         @try {
-            void* roomPwd = *(void**)((uintptr_t)self + OFF_ROOMLINE_PASSWORD);
+            void* roomPwd = *(void**)((uintptr_t)self + OFFR_RL_PASSWORD);
             if (lobbyGetInst && roomPwd) {
                 void* lobby = lobbyGetInst();
                 if (lobby && tmp_set_text) {
-                    void* pOnConnect = *(void**)((uintptr_t)lobby + OFF_LOBBY_PWD_ON_CONN_INPUT);
+                    void* pOnConnect = *(void**)((uintptr_t)lobby + OFFR_LOBBY_PWD_CONN);
                     if (pOnConnect) tmp_set_text(pOnConnect, roomPwd);
-                    void* pInput = *(void**)((uintptr_t)lobby + OFF_LOBBY_PWD_INPUT);
+                    void* pInput = *(void**)((uintptr_t)lobby + OFFR_LOBBY_PWD);
                     if (pInput) tmp_set_text(pInput, roomPwd);
                 }
             }
@@ -3717,9 +3937,9 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
             // MonoBehaviour_Fields base = 0x18, sonra: RoomNameText @+0x18, MapNameText @+0x20, PlayerCountText @+0x28
             // v114.18: 1.4.3 dump'ta HR_UI_RoomListLine'a LockImage @0x38 eklendi;
             // TMP_Text field'lari 8 byte kaydi. Named define uzerinden okuyoruz.
-            void* nameText  = *(void**)((uintptr_t)self + OFF_ROOMLINE_NAME_TEXT);        // RoomNameText @0x20
-            void* mapText   = *(void**)((uintptr_t)self + OFF_ROOMLINE_MAP_TEXT);         // MapNameText @0x28
-            void* pCountText= *(void**)((uintptr_t)self + OFF_ROOMLINE_PLAYERCOUNT_TEXT); // PlayerCountText @0x30
+            void* nameText  = *(void**)((uintptr_t)self + OFFR_RL_NAMETEXT);        // RoomNameText @0x20
+            void* mapText   = *(void**)((uintptr_t)self + OFFR_RL_MAPTEXT);         // MapNameText @0x28
+            void* pCountText= *(void**)((uintptr_t)self + OFFR_RL_PLAYERCOUNT); // PlayerCountText @0x30
 
             // v90: tmp_set_richText direkt pointer kaldirildi — offset yanlis olabilir, crash sebep.
             // Sadece il2cpp invoke uzerinden (guvenli yol).
@@ -3970,7 +4190,7 @@ static void (*o_createRoomBtn)(void*) = NULL;
 static void h_createRoomBtn(void* self) {
     fCreateBtn++;
     @try {
-        void* nameInput = *(void**)((uintptr_t)self + 0x48);   // roomNameInput
+        void* nameInput = *(void**)((uintptr_t)self + OFFR_LOBBY_ROOMNAME);   // roomNameInput
         NSString *typed = (nameInput && tmp_get_text) ? readStr(tmp_get_text(nameInput)) : @"";
         // SADECE rich text isimlerde bypass yap (normal odalar oyunun akisini kullansin -> harita korunur)
         BOOL isRich = ([typed rangeOfString:@"<"].location != NSNotFound);
@@ -3983,10 +4203,10 @@ static void h_createRoomBtn(void* self) {
             void* ns = mkStr(uniq);
             void* opts = i_object_new(g_roomOptionsClass);
             if (ns && opts) {
-                *(bool*)((uintptr_t)opts + 0x10) = true;
-                *(bool*)((uintptr_t)opts + 0x11) = true;
-                *(int*) ((uintptr_t)opts + 0x14) = roomMaxPlayers;   // MAX oyuncu (oyun 10 sinirini as)
-                *(int*) ((uintptr_t)opts + 0x1C) = roomSpamTTL;
+                *(bool*)((uintptr_t)opts + OFFR_ROPT_ISVISIBLE) = true;
+                *(bool*)((uintptr_t)opts + OFFR_ROPT_ISOPEN) = true;
+                *(int*) ((uintptr_t)opts + OFFR_ROPT_MAXPLAYERS) = roomMaxPlayers;   // MAX oyuncu (oyun 10 sinirini as)
+                *(int*) ((uintptr_t)opts + OFFR_ROPT_EMPTYTTL) = roomSpamTTL;
                 pn_createRoom(ns, opts, NULL, NULL);
                 FLog(@"Oda kuruldu (direkt pn_createRoom, dogrulama atlandi)");
                 return;   // orijinali CAGIRMA -> reddi atla
@@ -4895,9 +5115,9 @@ static UIViewController* few1n_topVC(void) {
             Vec3 fwd; bool haveFwd = few1n_fwd(g_rb, &fwd);
             float thr = 0.0f, brk = 0.0f, str = 0.0f;
             if (unityAlive(g_myRccp)) {
-                thr = *(float*)((uintptr_t)g_myRccp + 0x168);   // throttleInput_V
-                brk = *(float*)((uintptr_t)g_myRccp + 0x16C);   // brakeInput_V (geri)
-                str = *(float*)((uintptr_t)g_myRccp + 0x170);   // steerInput_V
+                thr = *(float*)((uintptr_t)g_myRccp + OFFR_RCCP_THROTTLE);   // throttleInput_V
+                brk = *(float*)((uintptr_t)g_myRccp + OFFR_RCCP_BRAKE);   // brakeInput_V (geri)
+                str = *(float*)((uintptr_t)g_myRccp + OFFR_RCCP_STEER);   // steerInput_V
             }
             float drive = thr - brk;   // gaz ileri, fren geri (-1..1)
             // OTOMATIK GAZ: fren basili degilse otomatik ileri git -> parmak sadece direksiyonda
@@ -4954,7 +5174,7 @@ static UIViewController* few1n_topVC(void) {
         @try {
             if (g_myRccp) {
                 bool hornState = (hornTick % 10 < 5);  // 100ms ritmik cal
-                *(bool*)((uintptr_t)g_myRccp + 0x1A0) = hornState; // indicatorsAllLights / Horn signal
+                *(bool*)((uintptr_t)g_myRccp + OFFR_RCCP_INDICATORS) = hornState; // indicatorsAllLights / Horn signal
             }
         } @catch (...) {}
     }
@@ -4962,15 +5182,15 @@ static UIViewController* few1n_topVC(void) {
     // ===== POP & BANGS (EGZOZ ALEV & PATLAMA EFEKTI) =====
     if (isPopBangsEnabled && unityAlive(g_rb) && g_myRccp) {
         @try {
-            float rpm = *(float*)((uintptr_t)g_myRccp + 0x114); // engineRPM
+            float rpm = *(float*)((uintptr_t)g_myRccp + OFFR_RCCP_ENGINERPM); // engineRPM
             if (rpm > 3500.0f) {
                 static int pTick = 0; pTick++;
                 if (pTick % 4 == 0) {
-                    *(bool*)((uintptr_t)g_myRccp + 0x19C) = true;  // lowBeam
-                    *(bool*)((uintptr_t)g_myRccp + 0x19D) = true;  // highBeam
+                    *(bool*)((uintptr_t)g_myRccp + OFFR_RCCP_LOWBEAM) = true;  // lowBeam
+                    *(bool*)((uintptr_t)g_myRccp + OFFR_RCCP_HIGHBEAM) = true;  // highBeam
                 } else if (pTick % 4 == 2) {
-                    *(bool*)((uintptr_t)g_myRccp + 0x19C) = false;
-                    *(bool*)((uintptr_t)g_myRccp + 0x19D) = false;
+                    *(bool*)((uintptr_t)g_myRccp + OFFR_RCCP_LOWBEAM) = false;
+                    *(bool*)((uintptr_t)g_myRccp + OFFR_RCCP_HIGHBEAM) = false;
                 }
             }
         } @catch (...) {}
@@ -4980,10 +5200,10 @@ static UIViewController* few1n_topVC(void) {
     if (isRevLimiterEnabled && unityAlive(g_rb) && g_myRccp) {
         @try {
             static int rTick = 0; rTick++;
-            float maxRpm = *(float*)((uintptr_t)g_myRccp + 0x11C); // maxEngineRPM
+            float maxRpm = *(float*)((uintptr_t)g_myRccp + OFFR_RCCP_MAXRPM); // maxEngineRPM
             if (maxRpm < 6000.0f) maxRpm = 9000.0f;
             float targetRpm = (rTick % 6 < 3) ? maxRpm : (maxRpm * 0.88f);
-            *(float*)((uintptr_t)g_myRccp + 0x114) = targetRpm; // engineRPM -> Online oyunculara kesici sesi gider
+            *(float*)((uintptr_t)g_myRccp + OFFR_RCCP_ENGINERPM) = targetRpm; // engineRPM -> Online oyunculara kesici sesi gider
         } @catch (...) {}
     }
     if (isCruiseEnabled && unityAlive(g_rb)) {
@@ -5133,7 +5353,7 @@ static UIViewController* few1n_topVC(void) {
                 for (int i = 0; i < cnt && g_espCount < 128; i++) {
                     void* car = cars[i];
                     if (!unityAlive(car)) continue;
-                    void* rb = *(void**)((uintptr_t)car + 0x48);
+                    void* rb = *(void**)((uintptr_t)car + OFFR_CDS_RIGIDBODY);
                     if (!unityAlive(rb) || rb == g_rb) continue;
                     Vec3 wp = {0,0,0}; rbGetPosIl(rb, &wp);
                     Vec3 sp = {0,0,0};
@@ -5251,7 +5471,7 @@ static UIViewController* few1n_topVC(void) {
                 void* p = ps[i]; if (!ptrOk(p)) continue;
                 void* nmeStr = ply_getNickName ? ply_getNickName(p) : NULL;
                 if (!ptrOk(nmeStr)) continue;
-                *(void**)((uintptr_t)mgr + 0x108) = nmeStr;   // hedef ismi ipg (+0x108) alanina yaz
+                *(void**)((uintptr_t)mgr + OFFR_DUMMY_KICKNAME) = nmeStr;   // hedef ismi ipg (+0x108) alanina yaz
                 void* exc = NULL;
                 @try { i_runtime_invoke(g_mDummyKick, mgr, NULL, &exc); k++; } @catch (...) {}
             }
@@ -5280,7 +5500,7 @@ static UIViewController* few1n_topVC(void) {
             if (!unityAlive(mgr)) { FLog(@"Lobi instance gecersiz"); return; }
             void* ns = mkStr(nm);
             if (!ns) return;
-            *(void**)((uintptr_t)mgr + 0x108) = ns;
+            *(void**)((uintptr_t)mgr + OFFR_DUMMY_KICKNAME) = ns;
             @try { i_runtime_invoke(g_mDummyKick, mgr, NULL, NULL); } @catch (...) {}
             FLog([NSString stringWithFormat:@"'%@' icin KickPlayerRPC gonderildi -> dusmeli", nm]);
         } @catch (...) { FLog(@"Gercek kick hatasi"); }
@@ -5296,7 +5516,7 @@ static UIViewController* few1n_topVC(void) {
     @try {
         void* ns = mkStr(nm);
         if (!ns) return NO;
-        *(void**)((uintptr_t)mgr + 0x108) = ns;   // hedef ismi ipg (+0x108)
+        *(void**)((uintptr_t)mgr + OFFR_DUMMY_KICKNAME) = ns;   // hedef ismi ipg (+0x108)
         // KickPlayer icinde RPC panel erisiminden ONCE gider; panel null olsa bile
         // olusan exception'i exc'ye yakalariz (crash yok, RPC yine de gitmis olur).
         void* exc = NULL;
@@ -5394,7 +5614,7 @@ static UIViewController* few1n_topVC(void) {
                         if (unityAlive(mgr) && g_mDummyKick && i_runtime_invoke) {
                             void* nsStr = mkStr(nmCopy);
                             if (nsStr) {
-                                *(void**)((uintptr_t)mgr + 0x108) = nsStr;
+                                *(void**)((uintptr_t)mgr + OFFR_DUMMY_KICKNAME) = nsStr;
                                 @try {
                                     i_runtime_invoke(g_mDummyKick, mgr, NULL, NULL);
                                     successCount++;
@@ -5456,7 +5676,7 @@ static UIViewController* few1n_topVC(void) {
         NSMutableArray *rooms = [NSMutableArray array];   // @[gorunenAd, gercekAd]
         for (int i = 0; i < cnt; i++) {
             void* ln = lines[i]; if (!unityAlive(ln)) continue;
-            void* rinfo = *(void**)((uintptr_t)ln + 0x58);
+            void* rinfo = *(void**)((uintptr_t)ln + OFFR_RL_ROOMINFO);
             NSString *real = (ptrOk(rinfo) && rinfo_getName) ? readStr(rinfo_getName(rinfo)) : @"";
             if (real.length == 0) continue;
             NSString *disp = [real stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -5528,9 +5748,9 @@ static UIViewController* few1n_topVC(void) {
         int shown = 0;
         for (int i = 0; i < cnt; i++) {
             void* ln = lines[i]; if (!unityAlive(ln)) continue;
-            NSString *pw = readStr(*(void**)((uintptr_t)ln + 0x50));   // password
+            NSString *pw = readStr(*(void**)((uintptr_t)ln + OFFR_RL_PASSWORD));   // password
             NSString *nm = @"?";
-            void* rinfo = *(void**)((uintptr_t)ln + 0x58);
+            void* rinfo = *(void**)((uintptr_t)ln + OFFR_RL_ROOMINFO);
             if (ptrOk(rinfo) && rinfo_getName) nm = readStr(rinfo_getName(rinfo));
             if (pw.length > 0) { [list appendFormat:@"\U0001F512 %@\n     sifre: %@\n\n", nm, pw]; shown++; }
         }
@@ -7205,10 +7425,10 @@ static NSString* rainbowWrap(NSString* text, int idx) {
             @try {
                 void* opts = i_object_new(g_roomOptionsClass);
                 if (!opts) { FLog(@"❌ recreate: RoomOptions instantiate FAIL"); return; }
-                *(bool*)((uintptr_t)opts + 0x10) = true;   // IsVisible
-                *(bool*)((uintptr_t)opts + 0x11) = true;   // IsOpen
-                *(int*) ((uintptr_t)opts + 0x14) = roomMaxPlayers > 0 ? roomMaxPlayers : 31;
-                *(int*) ((uintptr_t)opts + 0x1C) = 0;
+                *(bool*)((uintptr_t)opts + OFFR_ROPT_ISVISIBLE) = true;   // IsVisible
+                *(bool*)((uintptr_t)opts + OFFR_ROPT_ISOPEN) = true;   // IsOpen
+                *(int*) ((uintptr_t)opts + OFFR_ROPT_MAXPLAYERS) = roomMaxPlayers > 0 ? roomMaxPlayers : 31;
+                *(int*) ((uintptr_t)opts + OFFR_ROPT_EMPTYTTL) = 0;
                 void* ns = mkStr(newName);
                 if (ns) {
                     pn_createRoom(ns, opts, NULL, NULL);
@@ -7351,7 +7571,7 @@ static NSString* rainbowWrap(NSString* text, int idx) {
                                     for (int k = 0; k < pcnt; k++) {
                                         void* ph = phArr[k]; if (!unityAlive(ph)) continue;
                                         // v114.21 fix: VehicleName @0x30 (0x28 = Rigidbody, önceki sürüm silent-fail eden yanlış field'ı okuyordu)
-                                        NSString *phName = readStr(*(void**)((uintptr_t)ph + 0x30));
+                                        NSString *phName = readStr(*(void**)((uintptr_t)ph + OFFR_PH_VEHICLENAME));
                                         if (phName && [phName rangeOfString:nmCopy options:NSCaseInsensitiveSearch].location != NSNotFound) { targetPH = ph; break; }
                                     }
                                 }
@@ -7363,7 +7583,7 @@ static NSString* rainbowWrap(NSString* text, int idx) {
                                 if (bc > 0 && bc < 32) {
                                     void** bArr = (void**)((uintptr_t)bombs + 0x20);
                                     // v114.21 fix: HR_Bomb.iqo (owner PlayerHandler) @0x20 (0x18 UnityEngine.Object.m_CachedPtr'ye yaziyor)
-                                    for (int k = 0; k < bc; k++) { void* b = bArr[k]; if (unityAlive(b)) { *(void**)((uintptr_t)b + 0x20) = targetPH; m++; } }
+                                    for (int k = 0; k < bc; k++) { void* b = bArr[k]; if (unityAlive(b)) { *(void**)((uintptr_t)b + OFFR_BOMB_OWNER) = targetPH; m++; } }
                                 }
                             }
                         }
@@ -7416,7 +7636,7 @@ static NSString* rainbowWrap(NSString* text, int idx) {
                                 for (int k = 0; k < pcnt; k++) {
                                     void* ph = phArr[k]; if (!unityAlive(ph)) continue;
                                     // v114.21 fix: VehicleName @0x30 (0x28 = Rigidbody, sessiz-fail eden field)
-                                    NSString *phName = readStr(*(void**)((uintptr_t)ph + 0x30));
+                                    NSString *phName = readStr(*(void**)((uintptr_t)ph + OFFR_PH_VEHICLENAME));
                                     if (phName && [phName rangeOfString:nmCopy options:NSCaseInsensitiveSearch].location != NSNotFound) { targetPH = ph; break; }
                                 }
                             }
@@ -7430,7 +7650,7 @@ static NSString* rainbowWrap(NSString* text, int idx) {
                                 void** bArr = (void**)((uintptr_t)bombs + 0x20);
                                 for (int k = 0; k < bc; k++) {
                                     void* b = bArr[k]; if (!unityAlive(b)) continue;
-                                    *(void**)((uintptr_t)b + 0x20) = targetPH;   // v114.21 fix: HR_Bomb.iqo owner @0x20
+                                    *(void**)((uintptr_t)b + OFFR_BOMB_OWNER) = targetPH;   // v114.21 fix: HR_Bomb.iqo owner @0x20
                                     m++;
                                 }
                                 FLog([NSString stringWithFormat:@"  ✓ Metod A: %d HR_Bomb PlayerHandler swap edildi", m]);
@@ -7740,10 +7960,10 @@ static NSString* rainbowWrap(NSString* text, int idx) {
         if (pn_createRoom && i_object_new && g_roomOptionsClass) {
             void* opts = i_object_new(g_roomOptionsClass);
             if (opts) {
-                *(bool*)((uintptr_t)opts + 0x10) = true;     // isVisible
-                *(bool*)((uintptr_t)opts + 0x11) = true;     // isOpen
-                *(int*) ((uintptr_t)opts + 0x14) = roomMaxPlayers;   // MaxPlayers (10 sinirini as)
-                *(int*) ((uintptr_t)opts + 0x1C) = roomSpamTTL;   // EmptyRoomTtl (ayarlanabilir)
+                *(bool*)((uintptr_t)opts + OFFR_ROPT_ISVISIBLE) = true;     // isVisible
+                *(bool*)((uintptr_t)opts + OFFR_ROPT_ISOPEN) = true;     // isOpen
+                *(int*) ((uintptr_t)opts + OFFR_ROPT_MAXPLAYERS) = roomMaxPlayers;   // MaxPlayers (10 sinirini as)
+                *(int*) ((uintptr_t)opts + OFFR_ROPT_EMPTYTTL) = roomSpamTTL;   // EmptyRoomTtl (ayarlanabilir)
                 pn_createRoom(nameStr, opts, NULL, NULL);
                 return;
             }
@@ -7753,7 +7973,7 @@ static NSString* rainbowWrap(NSString* text, int idx) {
             void* lobby = lobbyGetInst();
             if (!lobby) return;
             if (tmp_set_text) {
-                void* nameInput = *(void**)((uintptr_t)lobby + 0x48);   // roomNameInput
+                void* nameInput = *(void**)((uintptr_t)lobby + OFFR_LOBBY_ROOMNAME);   // roomNameInput
                 if (nameInput) tmp_set_text(nameInput, nameStr);
             }
             lobby_createRoom(lobby);
@@ -7846,10 +8066,10 @@ static NSString* rainbowWrap(NSString* text, int idx) {
                                     void* nameStr = mkStr(uniq);
                                     void* opts = i_object_new(g_roomOptionsClass);
                                     if (nameStr && opts) {
-                                        *(bool*)((uintptr_t)opts + 0x10) = true;            // isVisible
-                                        *(bool*)((uintptr_t)opts + 0x11) = true;            // isOpen
-                                        *(int*) ((uintptr_t)opts + 0x14) = roomMaxPlayers;  // 31 Kişi
-                                        *(int*) ((uintptr_t)opts + 0x1C) = 0;
+                                        *(bool*)((uintptr_t)opts + OFFR_ROPT_ISVISIBLE) = true;            // isVisible
+                                        *(bool*)((uintptr_t)opts + OFFR_ROPT_ISOPEN) = true;            // isOpen
+                                        *(int*) ((uintptr_t)opts + OFFR_ROPT_MAXPLAYERS) = roomMaxPlayers;  // 31 Kişi
+                                        *(int*) ((uintptr_t)opts + OFFR_ROPT_EMPTYTTL) = 0;
 
                                         bool ok = pn_createRoom(nameStr, opts, NULL, NULL);
                                         if (ok) {
@@ -7896,10 +8116,10 @@ static NSString* rainbowWrap(NSString* text, int idx) {
                     void* nameStr = mkStr(uniq);
                     void* opts = i_object_new(g_roomOptionsClass);
                     if (nameStr && opts) {
-                        *(bool*)((uintptr_t)opts + 0x10) = true;
-                        *(bool*)((uintptr_t)opts + 0x11) = true;
-                        *(int*) ((uintptr_t)opts + 0x14) = roomMaxPlayers;
-                        *(int*) ((uintptr_t)opts + 0x1C) = 0;
+                        *(bool*)((uintptr_t)opts + OFFR_ROPT_ISVISIBLE) = true;
+                        *(bool*)((uintptr_t)opts + OFFR_ROPT_ISOPEN) = true;
+                        *(int*) ((uintptr_t)opts + OFFR_ROPT_MAXPLAYERS) = roomMaxPlayers;
+                        *(int*) ((uintptr_t)opts + OFFR_ROPT_EMPTYTTL) = 0;
                         if (pn_createRoom(nameStr, opts, NULL, NULL)) {
                             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                                 if ([customVal rangeOfCharacterFromSet:[[NSCharacterSet decimalDigitCharacterSet] invertedSet]].location == NSNotFound) {
@@ -7961,10 +8181,10 @@ static NSString* rainbowWrap(NSString* text, int idx) {
             void* nameStr = mkStr(uniq);
             void* opts = i_object_new(g_roomOptionsClass);
             if (nameStr && opts) {
-                *(bool*)((uintptr_t)opts + 0x10) = true;            // isVisible
-                *(bool*)((uintptr_t)opts + 0x11) = true;            // isOpen
-                *(int*) ((uintptr_t)opts + 0x14) = roomMaxPlayers;  // 10 sinirini as
-                *(int*) ((uintptr_t)opts + 0x1C) = 0;               // normal oda (spam TTL yok)
+                *(bool*)((uintptr_t)opts + OFFR_ROPT_ISVISIBLE) = true;            // isVisible
+                *(bool*)((uintptr_t)opts + OFFR_ROPT_ISOPEN) = true;            // isOpen
+                *(int*) ((uintptr_t)opts + OFFR_ROPT_MAXPLAYERS) = roomMaxPlayers;  // 10 sinirini as
+                *(int*) ((uintptr_t)opts + OFFR_ROPT_EMPTYTTL) = 0;               // normal oda (spam TTL yok)
                 bool ok = pn_createRoom(nameStr, opts, NULL, NULL);
                 FLog(ok ? [NSString stringWithFormat:@"✓ Oda kurma istegi GONDERILDI: '%@' (%d kisilik). Birazdan odaya girmelisin.", nm, roomMaxPlayers]
                         : @"❌ CreateRoom REDDETTI. Sebep genelde: zaten odadasin YA DA oda listesi/lobi ekraninda degilsin. Ana menu > oda listesinde dene.");
@@ -7996,7 +8216,7 @@ static NSArray<NSString*>* few1n_readMapNames(void) {
         if (!mapList_getInstance) return names;
         void* ml = mapList_getInstance();
         if (!ptrOk(ml)) return names;
-        void* arr = *(void**)((uintptr_t)ml + 0x18);   // MapList.maps[]
+        void* arr = *(void**)((uintptr_t)ml + OFFR_MAPLIST_MAPS);   // MapList.maps[]
         if (!ptrOk(arr)) return names;
         int cnt = (int)(*(uintptr_t*)((uintptr_t)arr + 0x18));   // il2cpp array length
         if (cnt <= 0 || cnt > 64) return names;
@@ -8028,14 +8248,17 @@ static void few1n_loadMap(NSString *scene, int idx) {
                 if (me) amMaster = ply_getIsMaster(me);
             }
             if (!amMaster) FLog(@"⚠️ Master gorunmuyorum — yine de deneniyor");
+            // v114.23: eskiden photonMgrEnp NULL ise burada return ediliyordu —
+            // asagidaki PhotonNetwork.LoadLevel yedegi hic denenmiyordu. Artik
+            // birincil yol yoksa dogrudan yedege dusuyor.
             if (photonMgrEnp) {
                 void* s = mkStr(sceneCopy);
                 if (s) {
                     photonMgrEnp(s, false);
-                    FLog([NSString stringWithFormat:@"🗺️ [v233] PhotonManager.enp('%@') gonderildi", sceneCopy]);
+                    FLog([NSString stringWithFormat:@"🗺️ [v233] PhotonManager.LoadLevel('%@') gonderildi", sceneCopy]);
                 }
             } else {
-                FLog(@"❌ photonMgrEnp NULL — offset yenilenmeli"); return;
+                FLog(@"⚠️ PhotonManager.LoadLevel yok — PhotonNetwork.LoadLevel yedegine geciliyor");
             }
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 NSString *cur = (pn_getActiveSceneName) ? readStr(pn_getActiveSceneName()) : @"?";
@@ -8160,7 +8383,7 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
             if (method == 1) {
                 if (!mapSel_selectMap || !lobbyStartGame || !lobbyGetInst) { FLog(@"[Y1] Pointerler hazir degil"); return; }
                 void* lobby = lobbyGetInst(); if (!ptrOk(lobby)) { FLog(@"[Y1] Lobby yok"); return; }
-                void* mapSel = *(void**)((uintptr_t)lobby + 0x28);
+                void* mapSel = *(void**)((uintptr_t)lobby + OFFR_LOBBY_MAPSEL);
                 if (!ptrOk(mapSel)) { FLog(@"[Y1] mapSelection null"); return; }
                 void* s = mkStr(inp); if (!s) return;
                 mapSel_selectMap(mapSel, s);
@@ -8300,7 +8523,7 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
                 if (!mapSel_selectMap || !lobbyStartGame || !lobbyGetInst) { FLog(@"[v70] Pointerler yok"); return; }
                 void* lobby = lobbyGetInst();
                 if (!ptrOk(lobby)) { FLog(@"[v70] Lobby yok"); return; }
-                void* mapSel = *(void**)((uintptr_t)lobby + 0x28);
+                void* mapSel = *(void**)((uintptr_t)lobby + OFFR_LOBBY_MAPSEL);
                 if (!ptrOk(mapSel)) { FLog(@"[v70] mapSelection null"); return; }
                 void* s = mkStr(internal);
                 if (!s) return;
@@ -8455,7 +8678,7 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
             if (pn_getCurrentRoom && nameStr) {
                 void* room = pn_getCurrentRoom();
                 if (ptrOk(room)) {
-                    *(void**)((uintptr_t)room + 0x40) = nameStr;
+                    *(void**)((uintptr_t)room + OFFR_ROOM_NAME) = nameStr;
                     FLog([NSString stringWithFormat:@"✓ Metod 1 Room.Name (0x40) client-side yazildi: '%@'", newName]);
 
                     // v114.4: Metod 2 - SUNUCU push - Room.set_Name(string) invoke
@@ -8843,8 +9066,8 @@ static NSString* few1n_roomPasswordPropertyKey(void) {
             if (lobbyGetInst && tmp_set_text) {
                 void *lobby = lobbyGetInst();
                 if (ptrOk(lobby)) {
-                    void *pwdInput = *(void **)((uintptr_t)lobby + OFF_LOBBY_PWD_INPUT);
-                    void *pwdOnConnect = *(void **)((uintptr_t)lobby + OFF_LOBBY_PWD_ON_CONN_INPUT);
+                    void *pwdInput = *(void **)((uintptr_t)lobby + OFFR_LOBBY_PWD);
+                    void *pwdOnConnect = *(void **)((uintptr_t)lobby + OFFR_LOBBY_PWD_CONN);
                     void *pwdStr = mkStr(pwd);
                     if (ptrOk(pwdStr)) {
                         if (ptrOk(pwdInput)) tmp_set_text(pwdInput, pwdStr);
@@ -9186,8 +9409,8 @@ static bool few1n_invoke0(void* method, void* obj, const char* label) {
     if (!isCarPanelEnabled && g_carDrive) {
         @try {   // kapatinca oyunun kendi kontroluna geri birak
             uintptr_t d = (uintptr_t)g_carDrive;
-            *(unsigned char*)(d + 0x61) = 0;
-            *(unsigned char*)(d + 0x62) = 0;
+            *(unsigned char*)(d + OFFR_CDS_OVR_ACCEL) = 0;
+            *(unsigned char*)(d + OFFR_CDS_OVR_STEER) = 0;
         } @catch (...) {}
     }
     FLog([NSString stringWithFormat:@"Arac paneli: %@", isCarPanelEnabled ? @"ACIK" : @"KAPALI"]);
@@ -9533,10 +9756,10 @@ static bool few1n_invoke0(void* method, void* obj, const char* label) {
                 void* nameStr = mkStr(crashName);
                 void* opts = i_object_new(g_roomOptionsClass);
                 if (nameStr && opts) {
-                    *(bool*)((uintptr_t)opts + 0x10) = true;
-                    *(bool*)((uintptr_t)opts + 0x11) = true;
-                    *(int*) ((uintptr_t)opts + 0x14) = 0x7FFFFFFF;
-                    *(int*) ((uintptr_t)opts + 0x1C) = 0;
+                    *(bool*)((uintptr_t)opts + OFFR_ROPT_ISVISIBLE) = true;
+                    *(bool*)((uintptr_t)opts + OFFR_ROPT_ISOPEN) = true;
+                    *(int*) ((uintptr_t)opts + OFFR_ROPT_MAXPLAYERS) = 0x7FFFFFFF;
+                    *(int*) ((uintptr_t)opts + OFFR_ROPT_EMPTYTTL) = 0;
                     pn_createRoom(nameStr, opts, NULL, NULL);
                 }
             }
@@ -10003,14 +10226,14 @@ static void few1n_joinTargetRoom(NSString *nm) {
                                 void** lines = (void**)((uintptr_t)rlarr + 0x20);
                                 for (int i = 0; i < rcnt; i++) {
                                     void* ln = lines[i]; if (!unityAlive(ln)) continue;
-                                    void* rinfo = *(void**)((uintptr_t)ln + 0x58);
+                                    void* rinfo = *(void**)((uintptr_t)ln + OFFR_RL_ROOMINFO);
                                     if (ptrOk(rinfo) && rinfo_getName) {
                                         NSString *rnm = readStr(rinfo_getName(rinfo));
                                         if ([rnm isEqualToString:nm]) {
                                             // RoomInfo.maxPlayers @offset +0x20 (bool RemovedFromList +0x10, customProps +0x18 pointer)
                                             // Photon.Realtime.RoomInfo layout: bool(1) + [ptr customProps(8)] + int(maxPlayers)
                                             // Offset guvenlik icin +0x20 civari
-                                            @try { *(int*)((uintptr_t)rinfo + 0x20) = 100; } @catch (...) {}
+                                            @try { *(int*)((uintptr_t)rinfo + OFFR_ROOM_MAXPLAYERS) = 100; } @catch (...) {}
                                             void* nsRetry = mkStr(nm);
                                             if (nsRetry) ok = pn_joinRoom(nsRetry, NULL);
                                             break;
@@ -10056,7 +10279,7 @@ static void few1n_joinTargetRoom(NSString *nm) {
                     void** lines = (void**)((uintptr_t)arr + 0x20);
                     for (int i = 0; i < cnt; i++) {
                         void* ln = lines[i]; if (!unityAlive(ln)) continue;
-                        void* rinfo = *(void**)((uintptr_t)ln + 0x58);
+                        void* rinfo = *(void**)((uintptr_t)ln + OFFR_RL_ROOMINFO);
                         if (ptrOk(rinfo) && rinfo_getName) {
                             NSString *nm = readStr(rinfo_getName(rinfo));
                             if (nm.length > 0 && ![liveNames containsObject:nm]) [liveNames addObject:nm];
@@ -10232,7 +10455,7 @@ static void few1n_joinTargetRoom(NSString *nm) {
                     void** lines = (void**)((uintptr_t)arr + 0x20);
                     for (int i = 0; i < cnt; i++) {
                         void* ln = lines[i]; if (!unityAlive(ln)) continue;
-                        void* rinfo = *(void**)((uintptr_t)ln + 0x58);
+                        void* rinfo = *(void**)((uintptr_t)ln + OFFR_RL_ROOMINFO);
                         if (ptrOk(rinfo) && rinfo_getName) {
                             NSString *nm = readStr(rinfo_getName(rinfo));
                             if (nm.length > 0 && ![liveNames containsObject:nm]) [liveNames addObject:nm];
@@ -10675,10 +10898,10 @@ static void few1n_joinTargetRoom(NSString *nm) {
         void* ns = mkStr(@"OVERFLOW");
         void* opts = i_object_new(g_roomOptionsClass);
         if (ns && opts) {
-            *(bool*)((uintptr_t)opts + 0x10) = true;
-            *(bool*)((uintptr_t)opts + 0x11) = true;
-            *(int*)((uintptr_t)opts + 0x14) = 0x7FFFFFFF;
-            *(int*)((uintptr_t)opts + 0x1C) = 0x7FFFFFFF;
+            *(bool*)((uintptr_t)opts + OFFR_ROPT_ISVISIBLE) = true;
+            *(bool*)((uintptr_t)opts + OFFR_ROPT_ISOPEN) = true;
+            *(int*)((uintptr_t)opts + OFFR_ROPT_MAXPLAYERS) = 0x7FFFFFFF;
+            *(int*)((uintptr_t)opts + OFFR_ROPT_EMPTYTTL) = 0x7FFFFFFF;
             pn_createRoom(ns, opts, NULL, NULL);
             FLog(@"MaxPlayer=INT_MAX overflow denendi");
         }
@@ -11064,7 +11287,9 @@ static void InstallEverything(uintptr_t b) {
     // === MapList / MapSelection / PhotonManager (obf isimler) ===
     mapList_getInstance        = w_mapList_getInstance;         // obf gtp
     mapSel_selectMap           = w_mapSel_selectMap;
-    photonMgrEnp               = NULL;   // obf isim bilinmiyor, güvenli NULL (kullanım tek yer + NULL-guard var)
+    // v114.23: harita degistirme buradan kiriliyordu. Isim her surumde degisiyor
+    // (1.4.2 "LoadLevel" -> 1.4.3 "ese"), wrapper aday listesiyle bulur.
+    photonMgrEnp               = w_photonMgrLoadLevel;
 
     // === Teleport RPC'ler — v114.21: drift-immune il2cpp-by-name ===
     // Eski hardcoded offset'lerin HEPSİ 1.4.3'te yanlış yere düşüyordu (crash veya
