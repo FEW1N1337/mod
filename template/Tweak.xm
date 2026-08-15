@@ -6404,11 +6404,40 @@ static UIViewController* few1n_topVC(void) {
 
                     FLog([NSString stringWithFormat:@"🎯 KICK BITTI '%@' → %d/3 metod tetiklendi", nmCopy, successCount]);
 
-                    UIAlertController *r = [UIAlertController alertControllerWithTitle:@"🔨 Kick Gonderildi"
-                        message:[NSString stringWithFormat:@"'%@'\n\n%d/3 metod tetiklendi.\n\nOyuncu dusmediyse:\n1) Sen MASTER olmayabilirsin — once 👑 Oda Master Ol butonu\n2) Hedef mod'lu client kullaniyor olabilir (kick reddeder)\n3) Baska bir odada dene", nmCopy, successCount]
-                        preferredStyle:UIAlertControllerStyleAlert];
-                    [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
-                    [self present:r];
+                    // v114.36: GERCEK DOGRULAMA — 2.5sn sonra hedef hala odada mi?
+                    // Lokal masterClientId yamasi "master=EVET / CloseConnection BASARILI"
+                    // yalanini uretiyor; sunucu gercek master degilsen kick'i reddediyor.
+                    // Tek dogru olcum: hedef oyuncu listeden gercekten dustu mu.
+                    int tgtActor = (ply_getActorNumber && pTarget) ? ply_getActorNumber(pTarget) : -1;
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        BOOL stillHere = NO;
+                        @try {
+                            if (tgtActor > 0 && pn_getPlayerListOthers && i_runtime_invoke) {
+                                void* pa = pn_getPlayerListOthers();
+                                if (ptrOk(pa)) {
+                                    int c = (int)(*(uintptr_t*)((uintptr_t)pa + 0x18));
+                                    void** ps2 = (void**)((uintptr_t)pa + 0x20);
+                                    for (int k = 0; k < c && k < 64; k++) {
+                                        void* pp = ps2[k]; if (!ptrOk(pp)) continue;
+                                        if (ply_getActorNumber && ply_getActorNumber(pp) == tgtActor) { stillHere = YES; break; }
+                                    }
+                                }
+                            }
+                        } @catch (...) {}
+                        NSString *title, *msg;
+                        if (!stillHere) {
+                            title = @"✅ Atıldı";
+                            msg = [NSString stringWithFormat:@"'%@' odadan düştü. Kick gerçekten çalıştı.", nmCopy];
+                            FLog([NSString stringWithFormat:@"✅ '%@' GERCEKTEN dustu (actor=%d)", nmCopy, tgtActor]);
+                        } else {
+                            title = @"❌ Atılamadı (sunucu reddetti)";
+                            msg = [NSString stringWithFormat:@"'%@' HALA odada.\n\nSebep: sen GERÇEK oda master'ı değilsin. Mod 'master=EVET' gösterse bile bu lokal bir yanılsama — sunucu senin master olmadığını biliyor ve kick'i reddediyor.\n\n✅ ÇÖZÜM: KENDİ odanı kur (otomatik gerçek master olursun), oradaki toksik oyuncuları kesin atarsın. Başkasının odasında kick mümkün değil.", nmCopy];
+                            FLog([NSString stringWithFormat:@"❌ '%@' HALA odada (actor=%d) — sunucu kick'i reddetti (gercek master degilsin)", nmCopy, tgtActor]);
+                        }
+                        UIAlertController *r = [UIAlertController alertControllerWithTitle:title message:msg preferredStyle:UIAlertControllerStyleAlert];
+                        [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+                        [self present:r];
+                    });
                 });
             }]];
         }
