@@ -126,7 +126,9 @@ jobs:
         run: |
           export THEOS=$HOME/theos
           make clean
-          make package FINALPACKAGE=1
+          # Surum banner'i Tweak.xm'e derleme sirasinda gecer (VERSION.txt tek kaynak).
+          # TIRNAKSIZ define — Tweak.xm icindeki FEW1N_STR() makrosu stringify eder.
+          make package FINALPACKAGE=1 ADDITIONAL_CFLAGS="-DFEW1N_VERSION=${VERSION}"
 
       - name: Prepare Output
         run: |

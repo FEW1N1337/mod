@@ -12,6 +12,15 @@
 #import <objc/runtime.h>
 #import "Offsets.h"
 
+// Surum tek kaynak: repo kokundeki VERSION.txt. CI -DFEW1N_VERSION=114.22
+// seklinde TIRNAKSIZ gecer (kabuk/make katmanlarinda tirnak kacisi kirilgan);
+// stringify makrosu C tarafinda tirnaklar. Elle derlerken "dev" kalir.
+#ifndef FEW1N_VERSION
+#define FEW1N_VERSION dev
+#endif
+#define FEW1N_STR2(x) #x
+#define FEW1N_STR(x)  FEW1N_STR2(x)
+
 // ============================================================
 //  v114.8 - FEW1N MOD MENU  (derlemeye hazir guncel surum)
 //  v114.6 FIX: i_class_from_name(NULL,...) -> few1n_classAnyImage. NULL image SIGSEGV yapip
@@ -616,7 +625,9 @@ static void few1n_initIl2cpp(void) {
     i_thread_attach             = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_thread_attach");
     i_object_new                = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_object_new");
     i_array_new                 = (void*(*)(void*,unsigned long))dlsym(RTLD_DEFAULT, "il2cpp_array_new");
-    // v114.19: safeHookByName icin gerekli
+    // v114.19: safeHookByName icin gerekli. NOT: bu sembol cogu Unity build'inde
+    // export EDILMEZ (bu oyunda da yok) — few1n_methodCodeAddr fallback olarak
+    // MethodInfo.methodPointer @+0x00 alanini okur, hook'lar yine calisir.
     i_method_get_pointer        = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_method_get_pointer");
     i_class_get_field_from_name = (void*(*)(void*,const char*))dlsym(RTLD_DEFAULT, "il2cpp_class_get_field_from_name");
     i_field_static_get_value    = (void(*)(void*,void*))dlsym(RTLD_DEFAULT, "il2cpp_field_static_get_value");
@@ -631,6 +642,9 @@ static void few1n_initIl2cpp(void) {
         !i_class_from_name || !i_class_get_method_from_name || !i_runtime_invoke) {
         FLog(@"il2cpp API bulunamadi!"); return;
     }
+    FLog([NSString stringWithFormat:@"hook adres yolu: %@",
+          i_method_get_pointer ? @"il2cpp_method_get_pointer (export)"
+                               : @"MethodInfo.methodPointer @+0 (fallback — export yok)"]);
     void* domain = i_domain_get();
     if (i_thread_attach && domain) i_thread_attach(domain);   // bu thread'i il2cpp'e bagla
     unsigned long n = 0;
@@ -998,7 +1012,13 @@ static void few1n_initIl2cpp(void) {
                     break;
                 }
             }
-            if (!g_wheelGlowTypeObj) FLog(@"🔥 Balata: HICBIR WheelGlow class'i bulunamadi bu build'de");
+            // v114.22: bu blok her image icin calisiyor (162 assembly) — bulunamadi
+            // mesajini her turda basmak log'u bogyordu. Tek sefer bas.
+            static bool wgWarned = false;
+            if (!g_wheelGlowTypeObj && !wgWarned) {
+                wgWarned = true;
+                FLog(@"🔥 Balata: HICBIR WheelGlow class'i bulunamadi bu build'de");
+            }
         }
         // Photon.Hashtable — sifre + custom property icin
         if (!g_hashtableClass) {
@@ -1781,8 +1801,40 @@ static void safeHook(void* target, void* replacement, void** original, const cha
     hookSuccessCount++;
 }
 
+// v114.22: MethodInfo'dan kod adresini al.
+//
+// il2cpp_method_get_pointer bu build'de dlsym ile BULUNAMIYOR (export edilmemis) —
+// v114.19-21'de 18/18 hook bu yuzden "SKIP (il2cpp API yok)" diyordu. Cozum:
+// MethodInfo struct'inin ILK alani zaten methodPointer (il2cpp.h ile dogrulandi):
+//
+//   struct MethodInfo {
+//       Il2CppMethodPointer methodPointer;         // 0x00  <-- bu
+//       Il2CppMethodPointer virtualMethodPointer;  // 0x08
+//       InvokerMethod       invoker_method;        // 0x10
+//       const char*         name;                  // 0x18
+//       Il2CppClass*        klass;                 // 0x20
+//       ...
+//   };
+//
+// Export varsa onu kullan, yoksa dogrudan *(void**)m oku. Ikisi de ayni degeri verir.
+static void* few1n_methodCodeAddr(void* m) {
+    if (!m) return NULL;
+    if (i_method_get_pointer) {
+        void* a = NULL;
+        @try { a = i_method_get_pointer(m); } @catch (...) { a = NULL; }
+        if (a) return a;
+    }
+    // Fallback: MethodInfo.methodPointer @ +0x00
+    if (!few1n_memOk(m)) return NULL;
+    void* a = *(void**)m;
+    // Kod adresi olmali: NULL degil, arm64 4-byte hizali, okunabilir bellek.
+    if (!a || ((uintptr_t)a & 0x3) != 0) return NULL;
+    if (!few1n_memOk(a)) return NULL;
+    return a;
+}
+
 // v114.19: Drift-immune safeHook — hedef adresi il2cpp isim ile bul.
-// Hardcoded RVA yerine class+method lookup + il2cpp_method_get_pointer kullanir.
+// Hardcoded RVA yerine class+method lookup + MethodInfo.methodPointer kullanir.
 // Oyun her sürüm update'inde offset'ler kaysa bile isim korunuyorsa çalışır.
 // Namespace bos "" ise tum image'lardan class taranir.
 static void safeHookByName(const char* ns, const char* class_name, const char* method_name, int argc,
@@ -1790,7 +1842,7 @@ static void safeHookByName(const char* ns, const char* class_name, const char* m
     char logbuf[256];
     snprintf(logbuf, sizeof(logbuf), "%s [%s.%s(%d args)]",
              label ?: "", class_name ?: "?", method_name ?: "?", argc);
-    if (!i_class_from_name || !i_class_get_method_from_name || !i_method_get_pointer) {
+    if (!i_class_from_name || !i_class_get_method_from_name) {
         FLog([NSString stringWithFormat:@"SKIP (il2cpp API yok) %s", logbuf]);
         hookFailCount++; return;
     }
@@ -1804,7 +1856,7 @@ static void safeHookByName(const char* ns, const char* class_name, const char* m
         FLog([NSString stringWithFormat:@"SKIP (method YOK) %s", logbuf]);
         hookFailCount++; return;
     }
-    void* addr = i_method_get_pointer(m);
+    void* addr = few1n_methodCodeAddr(m);
     if (!addr) {
         FLog([NSString stringWithFormat:@"SKIP (code addr NULL) %s", logbuf]);
         hookFailCount++; return;
@@ -10693,7 +10745,17 @@ static void few1n_joinTargetRoom(NSString *nm) {
     [st appendString:@"── BASE TESTI (araba disi hook) ──\n"];
     [st appendFormat:@"timeScale:%ld chat:%ld odaSatir:%ld odaKurBtn:%ld baglanti:%ld\n", fTS, fChat, fRoomLine, fCreateBtn, fConn];
     long nonCar = fTS + fChat + fRoomLine + fCreateBtn + fConn;
-    [st appendFormat:@"SONUC: %@\n", nonCar > 0 ? @"HOOKLAR CALISIYOR -> sorun araba sinifi" : @"HICBIR HOOK CALISMIYOR -> OFFSET/BASE OLU"];
+    // v114.22: eski mesaj "OFFSET/BASE OLU" diyordu — yaniltici. Hook adresleri artik
+    // isimle bulunuyor, base ile ilgisi yok. Gercek nedenleri ayirt et.
+    NSString *hookVerdict;
+    if (nonCar > 0)                    hookVerdict = @"HOOKLAR CALISIYOR -> sorun araba sinifi";
+    else if (hookSuccessCount == 0 && !g_msHook)
+                                       hookVerdict = @"Hook motoru YOK (sideload?) -> il2cpp yolu aktif";
+    else if (hookSuccessCount == 0)    hookVerdict = @"Hook kurulamadi -> il2cpp yolu aktif";
+    else                               hookVerdict = @"Hooklar kuruldu, henuz tetiklenmedi (oyuna gir)";
+    [st appendFormat:@"SONUC: %@\n", hookVerdict];
+    [st appendFormat:@"hook kur: %d OK / %d FAIL | adres: %@\n", hookSuccessCount, hookFailCount,
+          i_method_get_pointer ? @"export" : @"MethodInfo+0"];
     [st appendString:@"── ozellik durumlari ──\n"];
     [st appendFormat:@"Hiz:%dx Nitro:%@ Ucus:%@ DusukG:%@\n", speedMode, isInfiniteNitroEnabled?@"A":@"K", isFlyEnabled?@"A":@"K", isLowGravEnabled?@"A":@"K"];
     [st appendFormat:@"RenkliChat:%@ Spam:%@ ASCII:%@ Sifre:%@\n", isColorChatEnabled?@"A":@"K", isSpamEnabled?@"A":@"K", isAsciiAnimEnabled?@"A":@"K", isBypassPasswordEnabled?@"A":@"K"];
@@ -11086,7 +11148,7 @@ static void few1n_poll(void) {
 
 %ctor {
     few1n_setupCrashGuard();
-    FLog(@"v114.8 basladi, UnityFramework araniyor...");
+    FLog(@"v" @FEW1N_STR(FEW1N_VERSION) @" basladi, UnityFramework araniyor...");
     restoreSettings();
 
     // ===== REKLAM BOZUCU: TUM reklam SDK'larini engelle (Obj-C runtime swizzle) =====
