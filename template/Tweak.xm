@@ -3223,6 +3223,30 @@ static bool few1n_pvIsMineFor(void* comp) {
     } @catch (...) { return true; }
 }
 
+// Tuning'i (plaka + renk + tum tuner'lar) odadaki HERKESE yayinla: benim
+// TuningManager instance'imda ead() cagir -> [PunRPC] LoadTuners tetiklenir.
+static void few1n_broadcastTuning(const char* who) {
+    if (!g_mFindObjectsPlural || !i_runtime_invoke) return;
+    @try {
+        void* tmCls = few1n_classAnyImage("", "TuningManager");
+        if (!tmCls) return;
+        void* tmType = few1n_typeObjOf(tmCls);
+        void* mBroadcast = i_class_get_method_from_name(tmCls, "ead", 0);
+        if (!tmType || !mBroadcast) return;
+        void* b[1] = { tmType };
+        void* tms = i_runtime_invoke(g_mFindObjectsPlural, NULL, b, NULL);
+        if (!ptrOk(tms)) return;
+        int tc = *(int*)((uintptr_t)tms + 0x18);
+        void** tmi = (void**)((uintptr_t)tms + 0x20);
+        for (int i = 0; i < tc && i < 16; i++) {
+            void* tm = tmi[i];
+            if (!unityAlive(tm) || !few1n_pvIsMineFor(tm)) continue;
+            @try { i_runtime_invoke(mBroadcast, tm, NULL, NULL); } @catch (...) {}
+        }
+        FLog([NSString stringWithFormat:@"%s: TuningManager.ead() ile yayinlandi", who ?: "Tuning"]);
+    } @catch (...) {}
+}
+
 static bool few1n_applyServerPlate(NSString *text) {
     if (!text || text.length == 0) return false;
     if (!i_runtime_invoke || !g_mFindObjectsPlural) return false;
@@ -3256,30 +3280,43 @@ static bool few1n_applyServerPlate(NSString *text) {
 
     if (applied == 0) { FLog(@"OzelPlaka: uygulanacak (benim) PlateTuner bulunamadi"); return false; }
 
-    // TuningManager.ead() ile herkese yayinla (benim olan instance).
+    few1n_broadcastTuning("OzelPlaka");
+    FLog([NSString stringWithFormat:@"OzelPlaka: '%@' %d araca uygulandi + yayinlandi", text, applied]);
+    return true;
+}
+
+// ===== v114.29: OZEL RENK — HERKESTE GORUNUR =====
+// PaintTuner : MonoBehaviour, hs — plaka ile AYNI tuning yolunu kullanir, yani
+// TuningManager RPC'siyle herkese yayilir. PaintTuner.Apply(Color, int type)
+// obfuscate degil. Color = UnityEngine.Color {float r,g,b,a} = mod'daki Color4.
+// SADECE benim aracima uygulanir (PhotonView.IsMine).
+static bool few1n_applyServerColor(float r, float g, float b) {
+    if (!i_runtime_invoke || !g_mFindObjectsPlural) return false;
+    void* ptCls = few1n_classAnyImage("", "PaintTuner");
+    if (!ptCls) { FLog(@"OzelRenk: PaintTuner sinifi yok"); return false; }
+    void* ptType = few1n_typeObjOf(ptCls);
+    void* mApply = i_class_get_method_from_name(ptCls, "Apply", 2);   // Apply(Color, int)
+    if (!ptType || !mApply) { FLog(@"OzelRenk: PaintTuner.Apply(Color,int) yok"); return false; }
+    Color4 col = { r, g, b, 1.0f };
+    int type = 0;   // varsayilan boya tipi (gloss)
+    int applied = 0;
     @try {
-        void* tmCls = few1n_classAnyImage("", "TuningManager");
-        if (tmCls) {
-            void* tmType = few1n_typeObjOf(tmCls);
-            void* mBroadcast = i_class_get_method_from_name(tmCls, "ead", 0);
-            if (tmType && mBroadcast) {
-                void* b[1] = { tmType };
-                void* tms = i_runtime_invoke(g_mFindObjectsPlural, NULL, b, NULL);
-                if (ptrOk(tms)) {
-                    int tc = *(int*)((uintptr_t)tms + 0x18);
-                    void** tmi = (void**)((uintptr_t)tms + 0x20);
-                    for (int i = 0; i < tc && i < 16; i++) {
-                        void* tm = tmi[i];
-                        if (!unityAlive(tm) || !few1n_pvIsMineFor(tm)) continue;
-                        @try { i_runtime_invoke(mBroadcast, tm, NULL, NULL); } @catch (...) {}
-                    }
-                    FLog(@"OzelPlaka: TuningManager.ead() ile yayinlandi");
-                }
-            }
+        void* a[1] = { ptType };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) { FLog(@"OzelRenk: PaintTuner instance yok (garaj/tuning ekranini ac)"); return false; }
+        int cnt = *(int*)((uintptr_t)arr + 0x18);
+        if (cnt < 1 || cnt > 64) return false;
+        void** items = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < cnt; i++) {
+            void* pt = items[i];
+            if (!unityAlive(pt) || !few1n_pvIsMineFor(pt)) continue;
+            void* args[2] = { &col, &type };
+            @try { i_runtime_invoke(mApply, pt, args, NULL); applied++; } @catch (...) {}
         }
     } @catch (...) {}
-
-    FLog([NSString stringWithFormat:@"OzelPlaka: '%@' %d araca uygulandi + yayinlandi", text, applied]);
+    if (applied == 0) { FLog(@"OzelRenk: benim PaintTuner bulunamadi"); return false; }
+    few1n_broadcastTuning("OzelRenk");
+    FLog([NSString stringWithFormat:@"OzelRenk: rgb(%.2f,%.2f,%.2f) %d araca uygulandi + yayinlandi", r, g, b, applied]);
     return true;
 }
 
@@ -4606,6 +4643,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)editPlate;
 - (void)spinServerPlate;
 - (void)setServerPlate;
+- (void)setServerColor;
 - (void)joinRoomByName;
 - (void)pickRoomsServerHide;
 - (void)present:(UIAlertController*)ac;
@@ -5199,6 +5237,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"✏️  Nickname ile At (Elle yaz)" color:C_GOLD atY:y action:@selector(nativeKickByName)];
     y = [self actionRow:@"💣  Oda Patlatma (Odadakileri Düşür)" color:C_RED atY:y action:@selector(tapRoomExplode)];
     y = [self actionRow:@"🎨  Odadaki Araç Rengini Değiştir (Tüm Araçları Boya)" color:C_GOLD atY:y action:@selector(pickCarPaintColor)];
+    y = [self actionRow:@"🌈  Kendi Rengin — HERKESTE Göster (PaintTuner yayını)" color:C_GOLD atY:y action:@selector(setServerColor)];
     y = [self actionRow:@"🎨  Renkli Oda Kur (Dinamik Stil Paneli)" color:C_GOLD atY:y action:@selector(createColoredRoom)];
     y = [self actionRow:@"🧪  Exploit Ile Oda Kur (30 Yontem)" color:C_RED atY:y action:@selector(exploitCreateRoom)];
     y = [self actionRow:@"🏠  Düz Özel İsimli Oda Kur" color:C_CYAN atY:y action:@selector(createOneRoom)];
@@ -11139,6 +11178,34 @@ static void few1n_joinTargetRoom(NSString *nm) {
         [self present:r];
     }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    [self present:ac];
+}
+
+- (void)setServerColor {
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🌈 Kendi Rengin (Herkeste)"
+        message:@"Seçtiğin renk oyunun kendi boya yayınıyla odadaki HERKESE gider. Garaj/tuning ekranı açıkken en güvenilir." preferredStyle:UIAlertControllerStyleActionSheet];
+    NSArray *cols = @[
+        @{@"n":@"🔴 Kırmızı", @"r":@1.0,@"g":@0.0,@"b":@0.0},
+        @{@"n":@"🟢 Yeşil",   @"r":@0.0,@"g":@1.0,@"b":@0.0},
+        @{@"n":@"🔵 Mavi",    @"r":@0.0,@"g":@0.35,@"b":@1.0},
+        @{@"n":@"🩵 Turkuaz",  @"r":@0.0,@"g":@1.0,@"b":@1.0},
+        @{@"n":@"🟣 Mor",     @"r":@0.6,@"g":@0.0,@"b":@1.0},
+        @{@"n":@"🟡 Altın",   @"r":@1.0,@"g":@0.84,@"b":@0.0},
+        @{@"n":@"🖤 Mat Siyah",@"r":@0.05,@"g":@0.05,@"b":@0.05},
+        @{@"n":@"⚪ Beyaz",    @"r":@1.0,@"g":@1.0,@"b":@1.0},
+    ];
+    for (NSDictionary *c in cols) {
+        [ac addAction:[UIAlertAction actionWithTitle:c[@"n"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+            bool ok = few1n_applyServerColor([c[@"r"] floatValue], [c[@"g"] floatValue], [c[@"b"] floatValue]);
+            if (!ok) {
+                UIAlertController *e = [UIAlertController alertControllerWithTitle:@"⚠️ Hazır değil" message:@"PaintTuner bulunamadı. Aracın garaj/tuning ekranını aç, tekrar dene." preferredStyle:UIAlertControllerStyleAlert];
+                [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+                [self present:e];
+            }
+        }]];
+    }
+    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, self.panel.bounds.size.height/2, 1, 1); }
     [self present:ac];
 }
 
