@@ -3361,6 +3361,98 @@ static bool few1n_applyServerColor(float r, float g, float b) {
     return true;
 }
 
+// ===== v114.32: JANT / KROM / CAM — HERKESTE (ayni tuning yayin yolu) =====
+// Hepsi hs tuner'i; farkli Apply imzalari var. Ortak kalip: benim (IsMine)
+// instance'lari bul, Apply cagir, few1n_broadcastTuning ile yayinla.
+
+// Jant rengi: DiskPaintTuner.Apply(Color, Color, int) — iki renk (ic/dis) + tip.
+static bool few1n_applyRimColor(float r, float g, float b) {
+    if (!i_runtime_invoke || !g_mFindObjectsPlural) return false;
+    void* cls = few1n_classAnyImage("", "DiskPaintTuner");
+    if (!cls) { FLog(@"Jant: DiskPaintTuner sinifi yok"); return false; }
+    void* type = few1n_typeObjOf(cls);
+    void* mApply = i_class_get_method_from_name(cls, "Apply", 3);   // Apply(Color,Color,int)
+    if (!type || !mApply) { FLog(@"Jant: DiskPaintTuner.Apply(3) yok"); return false; }
+    Color4 col = { r, g, b, 1.0f };
+    int t = 0; int applied = 0;
+    @try {
+        void* a[1] = { type };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) { FLog(@"Jant: instance yok (garaj/tuning ac)"); return false; }
+        int cnt = *(int*)((uintptr_t)arr + 0x18);
+        if (cnt < 1 || cnt > 64) return false;
+        void** items = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < cnt; i++) {
+            void* pt = items[i];
+            if (!unityAlive(pt) || !few1n_pvIsMineFor(pt)) continue;
+            void* args[3] = { &col, &col, &t };
+            @try { i_runtime_invoke(mApply, pt, args, NULL); applied++; } @catch (...) {}
+        }
+    } @catch (...) {}
+    if (applied == 0) { FLog(@"Jant: benim DiskPaintTuner yok"); return false; }
+    few1n_broadcastTuning("Jant");
+    FLog([NSString stringWithFormat:@"Jant rengi rgb(%.2f,%.2f,%.2f) %d araca + yayinlandi", r, g, b, applied]);
+    return true;
+}
+
+// Krom: ChromeTuner.Apply(bool on).
+static bool few1n_setChrome(bool on) {
+    if (!i_runtime_invoke || !g_mFindObjectsPlural) return false;
+    void* cls = few1n_classAnyImage("", "ChromeTuner");
+    if (!cls) { FLog(@"Krom: ChromeTuner sinifi yok"); return false; }
+    void* type = few1n_typeObjOf(cls);
+    void* mApply = i_class_get_method_from_name(cls, "Apply", 1);   // Apply(bool)
+    if (!type || !mApply) { FLog(@"Krom: ChromeTuner.Apply(1) yok"); return false; }
+    unsigned char b = on ? 1 : 0; int applied = 0;
+    @try {
+        void* a[1] = { type };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) { FLog(@"Krom: instance yok (garaj/tuning ac)"); return false; }
+        int cnt = *(int*)((uintptr_t)arr + 0x18);
+        if (cnt < 1 || cnt > 64) return false;
+        void** items = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < cnt; i++) {
+            void* pt = items[i];
+            if (!unityAlive(pt) || !few1n_pvIsMineFor(pt)) continue;
+            void* args[1] = { &b };
+            @try { i_runtime_invoke(mApply, pt, args, NULL); applied++; } @catch (...) {}
+        }
+    } @catch (...) {}
+    if (applied == 0) { FLog(@"Krom: benim ChromeTuner yok"); return false; }
+    few1n_broadcastTuning("Krom");
+    FLog([NSString stringWithFormat:@"Krom %@ %d araca + yayinlandi", on ? @"ACIK" : @"KAPALI", applied]);
+    return true;
+}
+
+// Cam koyulugu: GlassTuner.Apply(float value) — 0=seffaf, 1=koyu.
+static bool few1n_setGlass(float value) {
+    if (!i_runtime_invoke || !g_mFindObjectsPlural) return false;
+    void* cls = few1n_classAnyImage("", "GlassTuner");
+    if (!cls) { FLog(@"Cam: GlassTuner sinifi yok"); return false; }
+    void* type = few1n_typeObjOf(cls);
+    void* mApply = i_class_get_method_from_name(cls, "Apply", 1);   // Apply(float)
+    if (!type || !mApply) { FLog(@"Cam: GlassTuner.Apply(1) yok"); return false; }
+    float v = value; int applied = 0;
+    @try {
+        void* a[1] = { type };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) { FLog(@"Cam: instance yok (garaj/tuning ac)"); return false; }
+        int cnt = *(int*)((uintptr_t)arr + 0x18);
+        if (cnt < 1 || cnt > 64) return false;
+        void** items = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < cnt; i++) {
+            void* pt = items[i];
+            if (!unityAlive(pt) || !few1n_pvIsMineFor(pt)) continue;
+            void* args[1] = { &v };
+            @try { i_runtime_invoke(mApply, pt, args, NULL); applied++; } @catch (...) {}
+        }
+    } @catch (...) {}
+    if (applied == 0) { FLog(@"Cam: benim GlassTuner yok"); return false; }
+    few1n_broadcastTuning("Cam");
+    FLog([NSString stringWithFormat:@"Cam koyulugu %.2f %d araca + yayinlandi", value, applied]);
+    return true;
+}
+
 // ===== v114.28: NOS SUPER GUC =====
 // RCCP_Nos alanlari PUBLIC ve obfuscate DEGIL (nosInUse, torqueMultiplier, amount,
 // regenerateRate...) -> field API ile ISIMLE cozulur, surume dayanikli. Her frame
@@ -4685,6 +4777,9 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)spinServerPlate;
 - (void)setServerPlate;
 - (void)setServerColor;
+- (void)setRimColor;
+- (void)setChromeMenu;
+- (void)setGlassMenu;
 - (void)joinRoomByName;
 - (void)pickRoomsServerHide;
 - (void)present:(UIAlertController*)ac;
@@ -5288,6 +5383,9 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"💣  Oda Patlatma (Odadakileri Düşür)" color:C_RED atY:y action:@selector(tapRoomExplode)];
     y = [self actionRow:@"🎨  Odadaki Araç Rengini Değiştir (Tüm Araçları Boya)" color:C_GOLD atY:y action:@selector(pickCarPaintColor)];
     y = [self actionRow:@"🌈  Kendi Rengin — HERKESTE Göster (PaintTuner yayını)" color:C_GOLD atY:y action:@selector(setServerColor)];
+    y = [self actionRow:@"💿  Jant Rengi — HERKESTE" color:C_GOLD atY:y action:@selector(setRimColor)];
+    y = [self actionRow:@"✨  Krom Aç/Kapa — HERKESTE" color:C_GOLD atY:y action:@selector(setChromeMenu)];
+    y = [self actionRow:@"🪟  Cam Koyuluğu — HERKESTE" color:C_GOLD atY:y action:@selector(setGlassMenu)];
     y = [self actionRow:@"🎨  Renkli Oda Kur (Dinamik Stil Paneli)" color:C_GOLD atY:y action:@selector(createColoredRoom)];
     y = [self actionRow:@"🧪  Exploit Ile Oda Kur (30 Yontem)" color:C_RED atY:y action:@selector(exploitCreateRoom)];
     y = [self actionRow:@"🏠  Düz Özel İsimli Oda Kur" color:C_CYAN atY:y action:@selector(createOneRoom)];
@@ -11253,6 +11351,54 @@ static void few1n_joinTargetRoom(NSString *nm) {
                 [self present:e];
             }
         }]];
+    }
+    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, self.panel.bounds.size.height/2, 1, 1); }
+    [self present:ac];
+}
+
+- (void)setRimColor {
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"💿 Jant Rengi (Herkeste)"
+        message:@"Jant rengi oyunun tuning yayınıyla herkese gider. Garaj/tuning ekranı açıkken." preferredStyle:UIAlertControllerStyleActionSheet];
+    NSArray *cols = @[
+        @{@"n":@"🔴 Kırmızı", @"r":@1.0,@"g":@0.0,@"b":@0.0},
+        @{@"n":@"🟢 Yeşil",   @"r":@0.0,@"g":@1.0,@"b":@0.0},
+        @{@"n":@"🔵 Mavi",    @"r":@0.0,@"g":@0.35,@"b":@1.0},
+        @{@"n":@"🟡 Altın",   @"r":@1.0,@"g":@0.84,@"b":@0.0},
+        @{@"n":@"🟣 Mor",     @"r":@0.6,@"g":@0.0,@"b":@1.0},
+        @{@"n":@"🖤 Siyah",    @"r":@0.05,@"g":@0.05,@"b":@0.05},
+        @{@"n":@"⚪ Beyaz",    @"r":@1.0,@"g":@1.0,@"b":@1.0},
+    ];
+    for (NSDictionary *c in cols) {
+        [ac addAction:[UIAlertAction actionWithTitle:c[@"n"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+            if (!few1n_applyRimColor([c[@"r"] floatValue], [c[@"g"] floatValue], [c[@"b"] floatValue])) {
+                UIAlertController *e = [UIAlertController alertControllerWithTitle:@"⚠️ Hazır değil" message:@"DiskPaintTuner bulunamadı. Garaj/tuning ekranını aç, tekrar dene." preferredStyle:UIAlertControllerStyleAlert];
+                [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+                [self present:e];
+            }
+        }]];
+    }
+    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, self.panel.bounds.size.height/2, 1, 1); }
+    [self present:ac];
+}
+
+- (void)setChromeMenu {
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"✨ Krom (Herkeste)"
+        message:@"Aracın krom kaplamasını aç/kapa — herkes görür." preferredStyle:UIAlertControllerStyleActionSheet];
+    [ac addAction:[UIAlertAction actionWithTitle:@"✨ Krom AÇIK" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ few1n_setChrome(true); }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"◻️ Krom KAPALI" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ few1n_setChrome(false); }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, self.panel.bounds.size.height/2, 1, 1); }
+    [self present:ac];
+}
+
+- (void)setGlassMenu {
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🪟 Cam Koyuluğu (Herkeste)"
+        message:@"Camların koyuluğu — herkes görür." preferredStyle:UIAlertControllerStyleActionSheet];
+    NSArray *lv = @[@{@"n":@"⬜ Şeffaf", @"v":@0.0}, @{@"n":@"🌫️ Hafif", @"v":@0.35}, @{@"n":@"🕶️ Orta", @"v":@0.65}, @{@"n":@"⬛ Full Koyu", @"v":@1.0}];
+    for (NSDictionary *c in lv) {
+        [ac addAction:[UIAlertAction actionWithTitle:c[@"n"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ few1n_setGlass([c[@"v"] floatValue]); }]];
     }
     [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
     if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, self.panel.bounds.size.height/2, 1, 1); }
