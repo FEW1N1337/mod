@@ -3283,6 +3283,96 @@ static bool few1n_applyServerPlate(NSString *text) {
     return true;
 }
 
+// ===== v114.28: NOS SUPER GUC =====
+// RCCP_Nos alanlari PUBLIC ve obfuscate DEGIL (nosInUse, torqueMultiplier, amount,
+// regenerateRate...) -> field API ile ISIMLE cozulur, surume dayanikli. Her frame
+// benim aracimin Nos'una max deger yaz: nitro bitmez + cok daha guclu iter.
+static bool isNosSuperEnabled = false;
+static int OFFR_NOS_INUSE=0x38, OFFR_NOS_TORQUEMULT=0x3C, OFFR_NOS_AMOUNT=0x40,
+           OFFR_NOS_TIMER=0x48, OFFR_NOS_REGENRATE=0x54;
+static bool g_nosOffResolved = false;
+static void* g_nosType = NULL;
+static void few1n_forceNos(void) {
+    if (!isNosSuperEnabled || !g_mFindObjectsPlural || !i_runtime_invoke) return;
+    if (!g_nosType) {
+        void* c = few1n_classAnyImage("", "RCCP_Nos");
+        if (!c) return;
+        g_nosType = few1n_typeObjOf(c);
+        if (!g_nosOffResolved) {
+            g_nosOffResolved = true;
+            OFFR_NOS_INUSE      = few1n_fieldOffOn(c, "nosInUse",         OFFR_NOS_INUSE);
+            OFFR_NOS_TORQUEMULT = few1n_fieldOffOn(c, "torqueMultiplier", OFFR_NOS_TORQUEMULT);
+            OFFR_NOS_AMOUNT     = few1n_fieldOffOn(c, "amount",           OFFR_NOS_AMOUNT);
+            OFFR_NOS_TIMER      = few1n_fieldOffOn(c, "timer",            OFFR_NOS_TIMER);
+            OFFR_NOS_REGENRATE  = few1n_fieldOffOn(c, "regenerateRate",   OFFR_NOS_REGENRATE);
+        }
+    }
+    if (!g_nosType) return;
+    @try {
+        void* a[1] = { g_nosType };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) return;
+        int cnt = (int)(*(uintptr_t*)((uintptr_t)arr + 0x18));
+        if (cnt < 1 || cnt > 64) return;
+        void** items = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < cnt; i++) {
+            void* nos = items[i];
+            if (!unityAlive(nos) || !few1n_pvIsMineFor(nos)) continue;   // sadece benim aracim
+            *(float*)((uintptr_t)nos + OFFR_NOS_AMOUNT)     = 100.0f;   // hep dolu
+            *(float*)((uintptr_t)nos + OFFR_NOS_TORQUEMULT) = 8.0f;     // 8x itiş (varsayilan ~2)
+            *(float*)((uintptr_t)nos + OFFR_NOS_REGENRATE)  = 100.0f;   // aninda dolar
+            *(float*)((uintptr_t)nos + OFFR_NOS_TIMER)      = 0.0f;     // sure sifirlanmaz
+        }
+    } @catch (...) {}
+}
+
+// ===== v114.28: TRAFIK YOGUNLUGU =====
+// HR_TrafficPooling.frequence ve HR_TrafficCarList.frequence PUBLIC int (obfuscate
+// degil). Dusuk = az trafik / yol bos, yuksek = kalabalik. mode: 0=kapat(yol bos),
+// 1=normal, 2=cok kalabalik.
+static void few1n_setTrafficDensity(int mode) {
+    if (!g_mFindObjectsPlural || !i_runtime_invoke) return;
+    int freq = (mode == 0) ? 0 : (mode == 2 ? 200 : 40);
+    const char* classes[] = { "HR_TrafficPooling", "HR_TrafficCarList", NULL };
+    int total = 0;
+    for (int ci = 0; classes[ci]; ci++) {
+        void* c = few1n_classAnyImage("", classes[ci]);
+        if (!c) continue;
+        int off = few1n_fieldOffOn(c, "frequence", 0x18);
+        void* t = few1n_typeObjOf(c);
+        @try {
+            void* a[1] = { t };
+            void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+            if (!ptrOk(arr)) continue;
+            int cnt = (int)(*(uintptr_t*)((uintptr_t)arr + 0x18));
+            if (cnt < 0 || cnt > 64) continue;
+            void** items = (void**)((uintptr_t)arr + 0x20);
+            for (int i = 0; i < cnt; i++) {
+                if (!unityAlive(items[i])) continue;
+                *(int*)((uintptr_t)items[i] + off) = freq;
+                total++;
+            }
+        } @catch (...) {}
+    }
+    FLog([NSString stringWithFormat:@"Trafik yogunlugu mode=%d freq=%d (%d obje)", mode, freq, total]);
+}
+
+// ===== v114.28: COMBO / SKOR SISIR =====
+// HR_PlayerHandler skor alanlari obfuscated internal (iyd@0x50 score, iyf@0x58 combo,
+// iyg@0x5C maxCombo). Isimle cozulemez -> offset+fallback. Layout eski/yeni dump'ta
+// tutarli. g_myPlayerHandler zaten godmode icin cozuluyor.
+static int OFFR_PH_SCORE=0x50, OFFR_PH_COMBO=0x58, OFFR_PH_MAXCOMBO=0x5C;
+static bool few1n_boostScore(int score, int combo) {
+    if (!unityAlive(g_myPlayerHandler)) { FLog(@"Skor: aracin/PlayerHandler yok — yarista dene"); return false; }
+    @try {
+        *(float*)((uintptr_t)g_myPlayerHandler + OFFR_PH_SCORE)    = (float)score;
+        *(int*)  ((uintptr_t)g_myPlayerHandler + OFFR_PH_COMBO)    = combo;
+        *(int*)  ((uintptr_t)g_myPlayerHandler + OFFR_PH_MAXCOMBO) = combo;
+    } @catch (...) { return false; }
+    FLog([NSString stringWithFormat:@"Skor sisirildi: score=%d combo=%d", score, combo]);
+    return true;
+}
+
 // ===== ARAC RENGI (Renderer.material.color, il2cpp) =====
 static Color4 hueToRGB(float h) {   // h 0..1 arasi -> gokkusagi
     float f = h*6.0f - floorf(h*6.0f), q = 1.0f - f;
@@ -4942,11 +5032,14 @@ static UIViewController* few1n_topVC(void) {
 
     // Gizli il2cpp özellikleri (field API - versiyon-dayanikli)
     y = [self toggle:@"💨  SONSUZ NOS" sub:@"RCCP_Nos.amount = 100 sürekli" key:@"infnos" atY:y action:@selector(tapInfNos)];
+    y = [self toggle:@"🚀  NOS SÜPER GÜÇ" sub:@"Nitro bitmez + 8x itiş gücü (torqueMultiplier)" key:@"nossuper" atY:y action:@selector(tapNosSuper)];
     y = [self toggle:@"⛽  SONSUZ YAKIT" sub:@"RCCP_FuelTank fill=999 + consumption=0" key:@"inffuel" atY:y action:@selector(tapInfFuel)];
     y = [self toggle:@"🚀  MAX RPM (Turbo)" sub:@"RCCP_Engine override + engineRPM=9000" key:@"maxrpm" atY:y action:@selector(tapMaxRpm)];
     y = [self toggle:@"🛡️  HASAR YOK V2 (il2cpp)" sub:@"RCCP_Damage maximumDamage=0 + deformMult=0" key:@"nodamagev2" atY:y action:@selector(tapNoDamageV2)];
     y = [self toggle:@"🔥  Motor Ölmez" sub:@"RCCP_Engine.engineRunning = true" key:@"immortalengine" atY:y action:@selector(tapImmortalEngine)];
     y = [self toggle:@"🚗  Trafik Dursun" sub:@"HR_TrafficCar.maximumSpeed = 0" key:@"notraffic" atY:y action:@selector(tapNoTraffic)];
+    y = [self actionRow:@"🚦  Trafik Yoğunluğu (Boş / Normal / Kalabalık)" color:C_ON atY:y action:@selector(setTrafficDensity)];
+    y = [self actionRow:@"🏆  Combo/Skor Şişir (yarışta bas)" color:C_GOLD atY:y action:@selector(boostScore)];
     self.plateBtn = [self actionButtonRow:&y];
     [self.plateBtn addTarget:self action:@selector(editPlate) forControlEvents:UIControlEventTouchUpInside];
     y = [self actionRow:@"Sunucudan Rastgele Plaka Al" color:C_ON atY:y action:@selector(spinServerPlate)];
@@ -5422,6 +5515,7 @@ static UIViewController* few1n_topVC(void) {
     [self setToggle:@"nodamagev2"     on:isNoDamageV2Enabled];
     [self setToggle:@"immortalengine" on:isEngineImmortalEnabled];
     [self setToggle:@"notraffic"      on:isNoTrafficEnabled];
+    [self setToggle:@"nossuper"       on:isNosSuperEnabled];
     [self setToggle:@"emissive"       on:isEmissivePaintEnabled];
     [self setToggle:@"exhaustflame"   on:isExhaustFlameOnEnabled];
     [self setToggle:@"vidyonames"     on:isVidyoNamesEnabled];
@@ -6293,6 +6387,7 @@ static UIViewController* few1n_topVC(void) {
     enforceScale();
     few1n_findCar();   // sadece arama (throttle'li); uygulama frameTick'te
     few1n_forcePlate(); // ozel plaka acikken il2cpp ile zorla (hook olu)
+    few1n_forceNos();    // v114.28: NOS super guc acikken her frame max nitro
     // v92: BALATA SICAK TUT + HASAR YOK frame update GERI ALINDI — dokunmatik/input bug sebep olabilir
     // Toggle'lar UI'da duruyor ama etkisiz (placeholder). Bug root cause'u bulunca gercek fix gelecek.
     // arac rengi acikken materyalleri BIR KEZ al (tekrar fetch instance sizdirir/coker)
@@ -7376,6 +7471,40 @@ static NSString* rainbowWrap(NSString* text, int idx) {
     saveBool(@"notraffic", isNoTrafficEnabled);
     FLog(isNoTrafficEnabled ? [NSString stringWithFormat:@"🚗 TRAFİK DURSUN AKTIF (HR_TrafficCar class=%p)", g_hrTrafficCarTypeObj] : @"🚗 Trafik normal");
     [self startGizliTimerIfNeeded]; [self refreshUI];
+}
+- (void)tapNosSuper {
+    isNosSuperEnabled = !isNosSuperEnabled;
+    saveBool(@"nossuper", isNosSuperEnabled);
+    FLog(isNosSuperEnabled ? @"🚀 NOS SÜPER GÜÇ AKTIF (nitro bitmez + 8x itiş)" : @"🚀 NOS normal");
+    [self startGizliTimerIfNeeded]; [self refreshUI];
+}
+- (void)setTrafficDensity {
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🚦 Trafik Yoğunluğu"
+        message:@"Yoldaki trafik araç sayısı." preferredStyle:UIAlertControllerStyleActionSheet];
+    [ac addAction:[UIAlertAction actionWithTitle:@"🌵 Boş Yol (trafik yok)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ few1n_setTrafficDensity(0); }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"🚗 Normal" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ few1n_setTrafficDensity(1); }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"🚙 Çok Kalabalık" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ few1n_setTrafficDensity(2); }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.view; ac.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width/2, self.view.bounds.size.height/2, 1, 1); }
+    [self present:ac];
+}
+- (void)boostScore {
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🏆 Combo/Skor Şişir"
+        message:@"Freeroam skorunu ve combo'yu yükseltir. Aracın sahada (yarışta) olmalı." preferredStyle:UIAlertControllerStyleAlert];
+    [ac addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.placeholder = @"Skor (örn 999999)"; tf.keyboardType = UIKeyboardTypeNumberPad; tf.text = @"999999"; }];
+    [ac addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.placeholder = @"Combo (örn 100)"; tf.keyboardType = UIKeyboardTypeNumberPad; tf.text = @"100"; }];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Uygula" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        int sc = [ac.textFields[0].text intValue];
+        int cb = [ac.textFields[1].text intValue];
+        bool ok = few1n_boostScore(sc, cb);
+        if (!ok) {
+            UIAlertController *e = [UIAlertController alertControllerWithTitle:@"⚠️" message:@"Araç sahada değil. Bir yarışa/freeroam'a gir, sonra tekrar dene." preferredStyle:UIAlertControllerStyleAlert];
+            [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+            [self present:e];
+        }
+    }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    [self present:ac];
 }
 
 // v102 tap fonksiyonlari
