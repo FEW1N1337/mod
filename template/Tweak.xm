@@ -431,7 +431,6 @@ static void* (*i_class_from_name)(const void*, const char*, const char*) = NULL;
 static void* (*i_class_get_method_from_name)(void*, const char*, int) = NULL;
 static void* (*i_runtime_invoke)(void*, void*, void**, void**) = NULL;
 static void* (*i_thread_attach)(void*) = NULL;
-static void* (*i_domain_get_ptr)(void) = NULL;
 static void* g_mSetTS = NULL;   // set_timeScale MethodInfo*
 static void* g_mGetTS = NULL;   // get_timeScale MethodInfo*
 static void* g_mRbGetVel = NULL; // Rigidbody.get_linearVelocity MethodInfo*
@@ -566,6 +565,7 @@ static uint32_t (*i_method_get_param_count)(void*) = NULL;
 static void* (*i_method_get_return_type)(void*) = NULL;
 static void* (*i_method_get_param)(void*, uint32_t) = NULL;
 static char* (*i_type_get_name)(void*) = NULL;   // malloc'lu — free() gerekir
+static int32_t (*i_class_value_size)(void*, uint32_t*) = NULL;  // value-type array stride
 // Bir image'da verilen isimdeki sinifi TARAYARAK bul (obfuscation'a dayanikli)
 static long g_classScanned = 0;   // teshis: kac sinif tarandi
 static void* few1n_findClassByName(const void* img, const char* wantName) {
@@ -665,6 +665,7 @@ static void few1n_initIl2cpp(void) {
     i_method_get_return_type    = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_method_get_return_type");
     i_method_get_param          = (void*(*)(void*,uint32_t))dlsym(RTLD_DEFAULT, "il2cpp_method_get_param");
     i_type_get_name             = (char*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_type_get_name");
+    i_class_value_size          = (int32_t(*)(void*,uint32_t*))dlsym(RTLD_DEFAULT, "il2cpp_class_value_size");
     if (!i_domain_get || !i_domain_get_assemblies || !i_assembly_get_image ||
         !i_class_from_name || !i_class_get_method_from_name || !i_runtime_invoke) {
         FLog(@"il2cpp API bulunamadi!"); return;
@@ -1495,14 +1496,27 @@ static int OFFR_ROPT_MAXPLAYERS = 0x14;   // .MaxPlayers
 static int OFFR_ROPT_EMPTYTTL   = 0x1C;   // .EmptyRoomTtl
 
 static int OFFR_MAPLIST_MAPS    = 0x18;   // MapList.maps[]
+static int OFFR_MAP_STRIDE      = 0x20;   // MapList.Map struct boyu (array eleman adimi)
 
-static bool g_offsetsResolved = false;
+// v114.25 FIX: eskiden tek bir g_offsetsResolved bayragi vardi ve ILK cagride
+// kosulsuz true oluyordu. Ama bu fonksiyon oyun daha menudeyken calisiyor;
+// CarDriveSystem / CarNitro / RCCP_* siniflari ancak yarisa girilince yukleniyor.
+// Sonuc: o an bulunamayan siniflarin offsetleri sabit fallback'te KALICI takili
+// kaliyordu — yani tam da engellemeye calistigimiz drift. Artik her sinifin kendi
+// bayragi var; bulunana kadar her init turunda tekrar deneniyor.
+static bool g_offAllLogged = false;
 static void few1n_resolveFieldOffsets(void) {
-    if (g_offsetsResolved) return;
-    if (!i_class_get_field_from_name || !i_field_get_offset) return;   // API yok, fallback'lerle devam
+    // Offset API'si sart. Isim aramasi olmasa bile tip-imzasi yolu tek basina yeter.
+    if (!i_field_get_offset) return;
+    if (!i_class_get_field_from_name && !i_class_get_fields) return;
+    static bool dPH=false, dRL=false, dLobby=false, dDummy=false, dCDS=false,
+                dCPI=false, dNitro=false, dRCCP=false, dLights=false, dMain=false,
+                dSS=false, dBomb=false, dRoomInfo=false, dPlayer=false, dOpts=false,
+                dMapList=false;
     void* c;
 
-    if ((c = few1n_classAnyImage("", "HR_PlayerHandler"))) {
+    if (!dPH && (c = few1n_classAnyImage("", "HR_PlayerHandler"))) {
+        dPH = true;
         OFFR_PH_PHOTONVIEW  = few1n_fieldSmart(c, "iza",         "PhotonView",         0, OFFR_PH_PHOTONVIEW);
         OFFR_PH_CANCRASH    = few1n_fieldOffOn(c, "canCrash",    OFFR_PH_CANCRASH);
         OFFR_PH_DAMAGE      = few1n_fieldOffOn(c, "damage",      OFFR_PH_DAMAGE);
@@ -1510,23 +1524,27 @@ static void few1n_resolveFieldOffsets(void) {
         OFFR_PH_RCCP        = few1n_fieldSmart(c, "ixy",         "RCCP_CarController", 0, OFFR_PH_RCCP);
         OFFR_PH_RIGIDBODY   = few1n_fieldSmart(c, "ixz",         "Rigidbody",          0, OFFR_PH_RIGIDBODY);
     }
-    if ((c = few1n_classAnyImage("", "HR_UI_RoomListLine"))) {
+    if (!dRL && (c = few1n_classAnyImage("", "HR_UI_RoomListLine"))) {
+        dRL = true;
         OFFR_RL_NAMETEXT    = few1n_fieldOffOn(c, "RoomNameText",    OFFR_RL_NAMETEXT);
         OFFR_RL_MAPTEXT     = few1n_fieldOffOn(c, "MapNameText",     OFFR_RL_MAPTEXT);
         OFFR_RL_PLAYERCOUNT = few1n_fieldOffOn(c, "PlayerCountText", OFFR_RL_PLAYERCOUNT);
         OFFR_RL_PASSWORD    = few1n_fieldOffOn(c, "password",        OFFR_RL_PASSWORD);
         OFFR_RL_ROOMINFO    = few1n_fieldOffOn(c, "roomInfo",        OFFR_RL_ROOMINFO);
     }
-    if ((c = few1n_classAnyImage("", "HR_PhotonLobbyManager"))) {
+    if (!dLobby && (c = few1n_classAnyImage("", "HR_PhotonLobbyManager"))) {
+        dLobby = true;
         OFFR_LOBBY_MAPSEL   = few1n_fieldOffOn(c, "mapSelection",          OFFR_LOBBY_MAPSEL);
         OFFR_LOBBY_ROOMNAME = few1n_fieldOffOn(c, "roomNameInput",         OFFR_LOBBY_ROOMNAME);
         OFFR_LOBBY_PWD      = few1n_fieldOffOn(c, "passwordInput",         OFFR_LOBBY_PWD);
         OFFR_LOBBY_PWD_CONN = few1n_fieldOffOn(c, "passwordOnConnectInput",OFFR_LOBBY_PWD_CONN);
     }
-    if ((c = few1n_classAnyImage("", "HR_PhotonLobbyManagerDummy")))
+    if (!dDummy && (c = few1n_classAnyImage("", "HR_PhotonLobbyManagerDummy"))) {
+        dDummy = true;
         OFFR_DUMMY_KICKNAME = few1n_fieldSmart(c, "jdz", "String", 1, OFFR_DUMMY_KICKNAME);
-
-    if ((c = few1n_classAnyImage("", "CarDriveSystem"))) {
+    }
+    if (!dCDS && (c = few1n_classAnyImage("", "CarDriveSystem"))) {
+        dCDS = true;
         OFFR_CDS_INPUT      = few1n_fieldSmart(c, "jyr",                  "CarPlayerInput", 0, OFFR_CDS_INPUT);
         OFFR_CDS_RIGIDBODY  = few1n_fieldSmart(c, "<jyt>k__BackingField", "Rigidbody",      0, OFFR_CDS_RIGIDBODY);
         OFFR_CDS_OVR_ACCEL  = few1n_fieldOffOn(c, "overrideAcceleration",     OFFR_CDS_OVR_ACCEL);
@@ -1536,16 +1554,18 @@ static void few1n_resolveFieldOffsets(void) {
         OFFR_CDS_TOPSPEED   = few1n_fieldOffOn(c, "topSpeed",                 OFFR_CDS_TOPSPEED);
         OFFR_CDS_CURSPEED   = few1n_fieldOffOn(c, "currentSpeed",             OFFR_CDS_CURSPEED);
     }
-    if ((c = few1n_classAnyImage("", "CarPlayerInput"))) {
+    if (!dCPI && (c = few1n_classAnyImage("", "CarPlayerInput"))) {
+        dCPI = true;
         OFFR_CPI_DRIVE      = few1n_fieldSmart(c, "kaq", "CarDriveSystem", 0, OFFR_CPI_DRIVE);
         OFFR_CPI_NITRO      = few1n_fieldSmart(c, "kar", "CarNitro",       0, OFFR_CPI_NITRO);
     }
-    if ((c = few1n_classAnyImage("", "CarNitro"))) {
+    if (!dNitro && (c = few1n_classAnyImage("", "CarNitro"))) {
+        dNitro = true;
         OFFR_NITRO_DRIVE    = few1n_fieldSmart(c, "kam",                  "CarDriveSystem", 0, OFFR_NITRO_DRIVE);
         OFFR_NITRO_AMOUNT   = few1n_fieldSmart(c, "<kap>k__BackingField", "Single",         0, OFFR_NITRO_AMOUNT);
     }
-
-    if ((c = few1n_classAnyImage("", "RCCP_CarController"))) {
+    if (!dRCCP && (c = few1n_classAnyImage("", "RCCP_CarController"))) {
+        dRCCP = true;
         OFFR_RCCP_ENGINERPM = few1n_fieldOffOn(c, "engineRPM",           OFFR_RCCP_ENGINERPM);
         OFFR_RCCP_MAXRPM    = few1n_fieldOffOn(c, "maxEngineRPM",        OFFR_RCCP_MAXRPM);
         OFFR_RCCP_THROTTLE  = few1n_fieldOffOn(c, "throttleInput_V",     OFFR_RCCP_THROTTLE);
@@ -1555,37 +1575,62 @@ static void few1n_resolveFieldOffsets(void) {
         OFFR_RCCP_HIGHBEAM  = few1n_fieldOffOn(c, "highBeamLights",      OFFR_RCCP_HIGHBEAM);
         OFFR_RCCP_INDICATORS= few1n_fieldOffOn(c, "indicatorsAllLights", OFFR_RCCP_INDICATORS);
     }
-    if ((c = few1n_classAnyImage("", "RCCP_Lights"))) {
+    if (!dLights && (c = few1n_classAnyImage("", "RCCP_Lights"))) {
+        dLights = true;
         OFFR_LIGHTS_LOWBEAM  = few1n_fieldOffOn(c, "lowBeamHeadlights",  OFFR_LIGHTS_LOWBEAM);
         OFFR_LIGHTS_HIGHBEAM = few1n_fieldOffOn(c, "highBeamHeadlights", OFFR_LIGHTS_HIGHBEAM);
     }
-    if ((c = few1n_classAnyImage("", "RCCP_MainComponent")))
+    if (!dMain && (c = few1n_classAnyImage("", "RCCP_MainComponent"))) {
+        dMain = true;
         OFFR_RCCPMAIN_RB    = few1n_fieldSmart(c, "hnm", "Rigidbody", 0, OFFR_RCCPMAIN_RB);
-    if ((c = few1n_classAnyImage("", "SmoothSyncRCC")))
+    }
+    if (!dSS && (c = few1n_classAnyImage("", "SmoothSyncRCC"))) {
+        dSS = true;
         OFFR_SSRCC_RB       = few1n_fieldOffOn(c, "rb",  OFFR_SSRCC_RB);
-    if ((c = few1n_classAnyImage("", "HR_Bomb")))
+    }
+    if (!dBomb && (c = few1n_classAnyImage("", "HR_Bomb"))) {
+        dBomb = true;
         OFFR_BOMB_OWNER     = few1n_fieldSmart(c, "iqo", "HR_PlayerHandler", 0, OFFR_BOMB_OWNER);
-
-    if ((c = few1n_classAnyImage("Photon.Realtime", "RoomInfo"))) {
+    }
+    if (!dRoomInfo && (c = few1n_classAnyImage("Photon.Realtime", "RoomInfo"))) {
+        dRoomInfo = true;
         OFFR_ROOM_NAME       = few1n_fieldOffOn(c, "name",           OFFR_ROOM_NAME);
         OFFR_ROOM_MASTERID   = few1n_fieldOffOn(c, "masterClientId", OFFR_ROOM_MASTERID);
         OFFR_ROOM_MAXPLAYERS = few1n_fieldOffOn(c, "maxPlayers",     OFFR_ROOM_MAXPLAYERS);
     }
-    if ((c = few1n_classAnyImage("Photon.Realtime", "Player")))
+    if (!dPlayer && (c = few1n_classAnyImage("Photon.Realtime", "Player"))) {
+        dPlayer = true;
         OFFR_PLAYER_ACTORNUM = few1n_fieldOffOn(c, "actorNumber", OFFR_PLAYER_ACTORNUM);
-    if ((c = few1n_classAnyImage("Photon.Realtime", "RoomOptions"))) {
+    }
+    if (!dOpts && (c = few1n_classAnyImage("Photon.Realtime", "RoomOptions"))) {
+        dOpts = true;
         OFFR_ROPT_ISVISIBLE  = few1n_fieldOffOn(c, "isVisible",    OFFR_ROPT_ISVISIBLE);
         OFFR_ROPT_ISOPEN     = few1n_fieldOffOn(c, "isOpen",       OFFR_ROPT_ISOPEN);
         OFFR_ROPT_MAXPLAYERS = few1n_fieldOffOn(c, "MaxPlayers",   OFFR_ROPT_MAXPLAYERS);
         OFFR_ROPT_EMPTYTTL   = few1n_fieldOffOn(c, "EmptyRoomTtl", OFFR_ROPT_EMPTYTTL);
     }
-    if ((c = few1n_classAnyImage("", "MapList")))
+    if (!dMapList && (c = few1n_classAnyImage("", "MapList"))) {
+        dMapList = true;
         OFFR_MAPLIST_MAPS   = few1n_fieldOffOn(c, "maps", OFFR_MAPLIST_MAPS);
+        // MapList.Map value-type array'inin eleman boyu (stride). Struct'a alan
+        // eklenirse 0x20 kayar ve harita listesi cop okur — runtime'dan al.
+        void* mc = few1n_classAnyImage("", "MapList.Map");
+        if (!mc) mc = few1n_classAnyImage("", "Map");
+        if (mc && i_class_value_size) {
+            uint32_t align = 0;
+            int32_t vs = i_class_value_size(mc, &align);
+            if (vs >= 8 && vs <= 0x200) OFFR_MAP_STRIDE = (int)vs;
+        }
+    }
 
-    g_offsetsResolved = true;
-    FLog([NSString stringWithFormat:
-        @"📐 Field offsetleri runtime'dan cozuldu: PH.pv@0x%X RL.name@0x%X CDS.top@0x%X RCCP.rpm@0x%X ROpt.max@0x%X",
-        OFFR_PH_PHOTONVIEW, OFFR_RL_NAMETEXT, OFFR_CDS_TOPSPEED, OFFR_RCCP_ENGINERPM, OFFR_ROPT_MAXPLAYERS]);
+    // Hepsi cozulunce bir kez ozet bas (her init turunda spam etme).
+    if (!g_offAllLogged && dPH && dRL && dLobby && dCDS && dRCCP && dOpts) {
+        g_offAllLogged = true;
+        FLog([NSString stringWithFormat:
+            @"📐 Field offsetleri runtime'dan cozuldu: PH.pv@0x%X RL.name@0x%X CDS.top@0x%X RCCP.rpm@0x%X ROpt.max@0x%X mapStride=0x%X",
+            OFFR_PH_PHOTONVIEW, OFFR_RL_NAMETEXT, OFFR_CDS_TOPSPEED,
+            OFFR_RCCP_ENGINERPM, OFFR_ROPT_MAXPLAYERS, OFFR_MAP_STRIDE]);
+    }
 }
 
 // ====== PhotonNetwork static methods ======
@@ -8438,7 +8483,7 @@ static NSArray<NSString*>* few1n_readMapNames(void) {
         uintptr_t data = (uintptr_t)arr + 0x20;                 // eleman verisi
         for (int i = 0; i < cnt; i++) {
             @try {
-                void* refName = *(void**)(data + i * 0x20 + 0x0);   // Map.referenceName
+                void* refName = *(void**)(data + i * OFFR_MAP_STRIDE);   // Map.referenceName @ struct+0
                 if (ptrOk(refName)) {
                     NSString *s = readStr(refName);
                     if (s && s.length > 0) [names addObject:s];
