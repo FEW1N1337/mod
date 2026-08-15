@@ -1,12 +1,17 @@
 // FEW1N Mod Menu — Named il2cpp / Unity 6 field offsets
 //
-// Sadece TIP'e ozel ve okunabilirligi kazanan offset'ler burada. Generic
-// il2cpp offset'leri (Array.Length @ 0x18, Array.Data @ 0x20, string
-// header @ 0x10) kod icinde 100+ farkli semantic'te tekrar ediyor —
-// onlari isimlendirmek yaniltici olur, dokunmadik.
+// v114.23'ten itibaren bu dosya FALLBACK tablosudur, birincil kaynak DEGIL.
+// Tweak.xm icindeki few1n_resolveFieldOffsets() acilista class layout'unu
+// il2cpp metadata'sindan ALAN ISMIYLE okur (OFFR_* degiskenleri). Buradaki
+// degerler yalnizca metadata cozulemezse devreye girer.
 //
-// Yeni Unity 6 dump (metadata v39) geldiginde bu dosyayi guncellemek
-// yeterli — Tweak.xm'i taramaya gerek yok.
+// Pratik sonuc: oyun guncellenip bir sinifa alan eklendiginde (1.4.3'te
+// HR_UI_RoomListLine'a LockImage eklenip TMP_Text'ler +8 kaymisti) offsetler
+// kendiliginden duzelir; bu dosyayi guncellemek zorunlu degildir.
+//
+// Generic il2cpp offset'leri (Array.Length @ 0x18, Array.Data @ 0x20, string
+// header @ 0x10) runtime ABI sabitidir, oyun surumune bagli degildir — onlar
+// kod icinde birebir kalir.
 
 #pragma once
 
@@ -18,9 +23,12 @@
 #define OFF_IL2CPP_STRING_CHARS         0x14   // unichar[] baslangici
 
 // ===== HR_PlayerHandler (1.4.3 dump ile dogrulandi) =====
-#define OFF_PLAYERHANDLER_PHOTONVIEW    0xD0   // PhotonView* (1.4.3'te 0xB8'den 0xD0'a kaydi)
+#define OFF_PLAYERHANDLER_PHOTONVIEW    0xD0   // PhotonView* iza (1.4.3'te 0xB8'den 0xD0'a kaydi)
 #define OFF_PLAYERHANDLER_CANCRASH      0x38   // bool
 #define OFF_PLAYERHANDLER_DAMAGE        0x3C   // float
+#define OFF_PLAYERHANDLER_RCCP          0x20   // RCCP_CarController* ixy
+#define OFF_PLAYERHANDLER_RIGIDBODY     0x28   // Rigidbody* ixz
+#define OFF_PLAYERHANDLER_VEHICLENAME   0x30   // string* VehicleName
 
 // ===== HR_PhotonLobbyManager =====
 #define OFF_LOBBY_PWD_INPUT             0x50   // TMP_InputField* passwordInput

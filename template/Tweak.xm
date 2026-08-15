@@ -1276,7 +1276,7 @@ static int few1n_fieldOff(const char* ns, const char* cls, const char* field, in
 static int OFFR_PH_PHOTONVIEW   = OFF_PLAYERHANDLER_PHOTONVIEW;   // HR_PlayerHandler.iza
 static int OFFR_PH_CANCRASH     = OFF_PLAYERHANDLER_CANCRASH;     // .canCrash
 static int OFFR_PH_DAMAGE       = OFF_PLAYERHANDLER_DAMAGE;       // .damage
-static int OFFR_PH_VEHICLENAME  = 0x30;                           // .VehicleName
+static int OFFR_PH_VEHICLENAME  = OFF_PLAYERHANDLER_VEHICLENAME;  // .VehicleName
 static int OFFR_PH_RCCP         = OFF_PLAYERHANDLER_RCCP;         // .ixy (RCCP_CarController)
 static int OFFR_PH_RIGIDBODY    = OFF_PLAYERHANDLER_RIGIDBODY;    // .ixz (Rigidbody)
 
