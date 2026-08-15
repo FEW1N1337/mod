@@ -3262,26 +3262,42 @@ static bool few1n_pvIsMineFor(void* comp) {
 }
 
 // Tuning'i (plaka + renk + tum tuner'lar) odadaki HERKESE yayinla: benim
-// TuningManager instance'imda ead() cagir -> [PunRPC] LoadTuners tetiklenir.
+// TuningManager instance'imda LoadTuners RPC'sini tetikleyen metodu cagir.
+//
+// v114.35: Metotlar obfuscated (ead/eae/eah...), hangisi yayin yapiyor gövde
+// olmadan kesin bilinemiyor. Bu yuzden aday listesi deneniyor; en guclu aday
+// eah(bool) — muhtemelen Save(broadcast=true). Log her birini ayri gosteriyor,
+// boylece cihaz log'u hangisinin var oldugunu ve cagrildigini soyler.
 static void few1n_broadcastTuning(const char* who) {
     if (!g_mFindObjectsPlural || !i_runtime_invoke) return;
     @try {
         void* tmCls = few1n_classAnyImage("", "TuningManager");
-        if (!tmCls) return;
+        if (!tmCls) { FLog(@"Yayin: TuningManager sinifi yok"); return; }
         void* tmType = few1n_typeObjOf(tmCls);
-        void* mBroadcast = i_class_get_method_from_name(tmCls, "ead", 0);
-        if (!tmType || !mBroadcast) return;
+        // Aday metotlar: eah(bool), ead(0), eae(0), eai(0)
+        void* mEahBool = i_class_get_method_from_name(tmCls, "eah", 1);
+        void* mEad     = i_class_get_method_from_name(tmCls, "ead", 0);
+        void* mEae     = i_class_get_method_from_name(tmCls, "eae", 0);
+        void* mEai     = i_class_get_method_from_name(tmCls, "eai", 0);
+        FLog([NSString stringWithFormat:@"Yayin adaylari: eah(bool)=%@ ead=%@ eae=%@ eai=%@",
+              mEahBool?@"✓":@"✗", mEad?@"✓":@"✗", mEae?@"✓":@"✗", mEai?@"✓":@"✗"]);
+        if (!tmType) return;
         void* b[1] = { tmType };
         void* tms = i_runtime_invoke(g_mFindObjectsPlural, NULL, b, NULL);
-        if (!ptrOk(tms)) return;
+        if (!ptrOk(tms)) { FLog(@"Yayin: TuningManager instance yok"); return; }
         int tc = *(int*)((uintptr_t)tms + 0x18);
         void** tmi = (void**)((uintptr_t)tms + 0x20);
+        int done = 0;
+        unsigned char t = 1;
         for (int i = 0; i < tc && i < 16; i++) {
             void* tm = tmi[i];
             if (!unityAlive(tm) || !few1n_pvIsMineFor(tm)) continue;
-            @try { i_runtime_invoke(mBroadcast, tm, NULL, NULL); } @catch (...) {}
+            if (mEahBool) { @try { void* a[1]={&t}; i_runtime_invoke(mEahBool, tm, a, NULL); } @catch (...) {} }
+            if (mEad)     { @try { i_runtime_invoke(mEad, tm, NULL, NULL); } @catch (...) {} }
+            if (mEae)     { @try { i_runtime_invoke(mEae, tm, NULL, NULL); } @catch (...) {} }
+            done++;
         }
-        FLog([NSString stringWithFormat:@"%s: TuningManager.ead() ile yayinlandi", who ?: "Tuning"]);
+        FLog([NSString stringWithFormat:@"%s: %d TuningManager'a yayin denendi (eah+ead+eae)", who ?: "Tuning", done]);
     } @catch (...) {}
 }
 
