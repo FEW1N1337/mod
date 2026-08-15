@@ -4806,17 +4806,21 @@ static void h_casRewardPresent(void* self, void* method) {
 // =============================================================
 //  UI
 // =============================================================
-// ==== BEYAZ ARKA PLAN / BUZ MAVISI NEON TEMA ====
-#define C_BG     [UIColor colorWithRed:0.97 green:0.99 blue:1.0 alpha:0.97]   // beyaz panel
-#define C_CARD   [UIColor colorWithRed:0.20 green:0.55 blue:0.75 alpha:0.07]  // hafif buz karti
-#define C_ON     [UIColor colorWithRed:0.0 green:0.55 blue:0.85 alpha:1.0]    // canli buz mavisi (acik)
-#define C_OFF    [UIColor colorWithRed:0.70 green:0.76 blue:0.82 alpha:1.0]   // gri (kapali)
-#define C_RED    [UIColor colorWithRed:0.90 green:0.20 blue:0.35 alpha:1.0]
-#define C_ACCENT [UIColor colorWithRed:0.0 green:0.60 blue:0.90 alpha:1.0]    // buz mavisi vurgu
-#define C_GOLD   [UIColor colorWithRed:0.0 green:0.45 blue:0.70 alpha:1.0]    // koyu buz mavisi
-#define C_CYAN   [UIColor colorWithRed:0.10 green:0.62 blue:0.92 alpha:1.0]
-#define C_TEXT   [UIColor colorWithRed:0.06 green:0.12 blue:0.20 alpha:1.0]   // koyu lacivert metin
-#define C_SUB    [UIColor colorWithRed:0.30 green:0.42 blue:0.52 alpha:0.85]  // gri-mavi alt metin
+// ==== v114.31 KOYU / NEON TEMA (modern mod menu görünümü) ====
+// Koyu cam panel + neon cyan/mor vurgular. Tüm menü bu paletten türer;
+// selector/key mantığı değişmedi, yalnız görsel.
+#define C_BG     [UIColor colorWithRed:0.055 green:0.065 blue:0.10 alpha:0.97] // koyu cam panel
+#define C_CARD   [UIColor colorWithRed:0.11 green:0.13 blue:0.18 alpha:1.0]    // koyu slate kart
+#define C_CARD2  [UIColor colorWithRed:0.09 green:0.11 blue:0.16 alpha:1.0]    // biraz daha koyu
+#define C_ON     [UIColor colorWithRed:0.0 green:0.90 blue:1.0 alpha:1.0]      // neon cyan (acik)
+#define C_OFF    [UIColor colorWithRed:0.24 green:0.27 blue:0.34 alpha:1.0]    // koyu gri (kapali)
+#define C_RED    [UIColor colorWithRed:1.0 green:0.30 blue:0.42 alpha:1.0]     // neon kirmizi/pembe
+#define C_ACCENT [UIColor colorWithRed:0.45 green:0.55 blue:1.0 alpha:1.0]     // periwinkle vurgu
+#define C_GOLD   [UIColor colorWithRed:1.0 green:0.80 blue:0.25 alpha:1.0]     // altin (koyu üstünde parlar)
+#define C_CYAN   [UIColor colorWithRed:0.0 green:0.92 blue:1.0 alpha:1.0]      // parlak cyan (glow)
+#define C_TEXT   [UIColor colorWithRed:0.93 green:0.96 blue:0.99 alpha:1.0]    // acik metin
+#define C_SUB    [UIColor colorWithRed:0.58 green:0.65 blue:0.76 alpha:0.92]   // gri-mavi alt metin
+#define C_BORDER [UIColor colorWithRed:0.0 green:0.90 blue:1.0 alpha:0.16]     // cyan ince kenar
 
 // =============================================================
 //  GIF -> ASCII  (cihaz uzerinde, harici API YOK - ImageIO + CoreGraphics)
@@ -4993,14 +4997,14 @@ static UIViewController* few1n_topVC(void) {
     self.panel.backgroundColor = C_BG;
     self.panel.layer.cornerRadius = 28;
     self.panel.layer.borderWidth = 1.5;
-    self.panel.layer.borderColor = [UIColor colorWithRed:0.0 green:0.60 blue:0.90 alpha:0.35].CGColor;
+    self.panel.layer.borderColor = [UIColor colorWithRed:0.0 green:0.90 blue:1.0 alpha:0.30].CGColor;
     self.panel.layer.shadowColor = C_CYAN.CGColor;
-    self.panel.layer.shadowRadius = 25; self.panel.layer.shadowOpacity = 0.4;
+    self.panel.layer.shadowRadius = 30; self.panel.layer.shadowOpacity = 0.55;
     self.panel.layer.shadowOffset = CGSizeMake(0,0);
     self.panel.clipsToBounds = YES;
     self.panel.hidden = YES; self.panel.alpha = 0;
     self.panel.transform = CGAffineTransformMakeScale(0.85, 0.85);
-    UIVisualEffectView *blurV = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleExtraLight]];
+    UIVisualEffectView *blurV = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleDark]];
     blurV.frame = self.panel.bounds;
     blurV.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [self.panel insertSubview:blurV atIndex:0];
@@ -5008,13 +5012,18 @@ static UIViewController* few1n_topVC(void) {
 
     // HEADER - canli mavi baslik bandi (beyaz metin uzerinde parlar)
     UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0,0,pw,64)];
-    header.backgroundColor = [UIColor colorWithRed:0.0 green:0.48 blue:0.85 alpha:1.0];
+    header.backgroundColor = [UIColor colorWithRed:0.07 green:0.09 blue:0.15 alpha:1.0];
     CAGradientLayer *hgrad = [CAGradientLayer layer];
     hgrad.frame = CGRectMake(0,0,pw,64);
-    hgrad.colors = @[(id)[UIColor colorWithRed:0.05 green:0.62 blue:0.96 alpha:1.0].CGColor,
-                     (id)[UIColor colorWithRed:0.0 green:0.40 blue:0.80 alpha:1.0].CGColor];
+    hgrad.colors = @[(id)[UIColor colorWithRed:0.10 green:0.16 blue:0.30 alpha:1.0].CGColor,
+                     (id)[UIColor colorWithRed:0.05 green:0.07 blue:0.13 alpha:1.0].CGColor];
     hgrad.startPoint = CGPointMake(0,0); hgrad.endPoint = CGPointMake(1,1);
     [header.layer insertSublayer:hgrad atIndex:0];
+    // alt kenara ince neon cizgi (header ile içeriği ayirir)
+    CALayer *hline = [CALayer layer];
+    hline.frame = CGRectMake(0,63,pw,1);
+    hline.backgroundColor = [UIColor colorWithRed:0.0 green:0.90 blue:1.0 alpha:0.45].CGColor;
+    [header.layer addSublayer:hline];
     // parlak nokta rozeti
     UILabel *dotIcon = [[UILabel alloc] initWithFrame:CGRectMake(16,18,22,26)];
     dotIcon.text = @"\U0001F3CE"; dotIcon.font = [UIFont systemFontOfSize:18];
@@ -5024,8 +5033,8 @@ static UIViewController* few1n_topVC(void) {
     title.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBlack];
     [header addSubview:title];
     UILabel *ver = [[UILabel alloc] initWithFrame:CGRectMake(42,37,pw-90,16)];
-    ver.text = [NSString stringWithFormat:@"v114.8  •  Base 0x%lX", (unsigned long)global_base];
-    ver.textColor = [UIColor colorWithWhite:1 alpha:0.82];
+    ver.text = [NSString stringWithFormat:@"v" @FEW1N_STR(FEW1N_VERSION) @"  •  Base 0x%lX", (unsigned long)global_base];
+    ver.textColor = [UIColor colorWithRed:0.0 green:0.92 blue:1.0 alpha:0.90];
     ver.font = [UIFont fontWithName:@"Menlo-Bold" size:8] ?: [UIFont systemFontOfSize:8 weight:UIFontWeightBold];
     [header addSubview:ver];
     UIButton *cls = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -5056,10 +5065,10 @@ static UIViewController* few1n_topVC(void) {
     {
         // YENI: slider 0.1x - 10x (0.1 adim); butonlar kaldirildi
         UIView *sr = [[UIView alloc] initWithFrame:CGRectMake(12,y,pw-24,66)];
-        sr.backgroundColor = [UIColor colorWithRed:0.93 green:0.96 blue:0.99 alpha:1.0];
+        sr.backgroundColor = C_CARD;
         sr.layer.cornerRadius = 12;
         sr.layer.borderWidth = 1.0;
-        sr.layer.borderColor = [UIColor colorWithRed:0.0 green:0.48 blue:0.85 alpha:0.12].CGColor;
+        sr.layer.borderColor = C_BORDER.CGColor;
         UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(12,4,pw-48-40,18)];
         lbl.tag = 991; lbl.textColor = C_TEXT;
         lbl.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
@@ -5422,12 +5431,12 @@ static UIViewController* few1n_topVC(void) {
 - (CGFloat)toggle:(NSString*)tl sub:(NSString*)sub key:(NSString*)key atY:(CGFloat)y action:(SEL)action {
     CGFloat pw = self.panel.bounds.size.width;
     UIView *card = [[UIView alloc] initWithFrame:CGRectMake(12,y,pw-24,56)];
-    card.backgroundColor = [UIColor colorWithRed:0.97 green:0.985 blue:1.0 alpha:1.0];
+    card.backgroundColor = C_CARD;
     card.layer.cornerRadius = 14;
     card.layer.borderWidth = 1.0;
-    card.layer.borderColor = [UIColor colorWithRed:0.0 green:0.48 blue:0.85 alpha:0.14].CGColor;
-    card.layer.shadowColor = [UIColor colorWithRed:0.0 green:0.35 blue:0.65 alpha:1.0].CGColor;
-    card.layer.shadowRadius = 5; card.layer.shadowOpacity = 0.10;
+    card.layer.borderColor = C_BORDER.CGColor;
+    card.layer.shadowColor = C_CYAN.CGColor;
+    card.layer.shadowRadius = 6; card.layer.shadowOpacity = 0.12;
     card.layer.shadowOffset = CGSizeMake(0,2);
     UILabel *t = [[UILabel alloc] initWithFrame:CGRectMake(16,8,pw-100,22)];
     t.text = tl; t.textColor = C_TEXT;
@@ -5456,12 +5465,12 @@ static UIViewController* few1n_topVC(void) {
 - (CGFloat)actionRow:(NSString*)text color:(UIColor*)color atY:(CGFloat)y action:(SEL)action {
     CGFloat pw = self.panel.bounds.size.width;
     UIView *row = [[UIView alloc] initWithFrame:CGRectMake(12,y,pw-24,44)];
-    row.backgroundColor = [UIColor colorWithRed:0.97 green:0.985 blue:1.0 alpha:1.0];
+    row.backgroundColor = C_CARD;
     row.layer.cornerRadius = 12;
     row.layer.borderWidth = 1.0;
-    row.layer.borderColor = [UIColor colorWithRed:0.0 green:0.48 blue:0.85 alpha:0.12].CGColor;
-    row.layer.shadowColor = [UIColor colorWithRed:0.0 green:0.35 blue:0.65 alpha:1.0].CGColor;
-    row.layer.shadowRadius = 4; row.layer.shadowOpacity = 0.08;
+    row.layer.borderColor = C_BORDER.CGColor;
+    row.layer.shadowColor = C_CYAN.CGColor;
+    row.layer.shadowRadius = 5; row.layer.shadowOpacity = 0.10;
     row.layer.shadowOffset = CGSizeMake(0,2);
     UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
     b.frame = CGRectMake(0,0,pw-24,44);
