@@ -7,6 +7,7 @@
 #include <substrate.h>
 #include <mach-o/dyld.h>
 #include <string.h>
+#include <stdlib.h>   // free() — il2cpp_type_get_name malloc'lu string dondurur
 #include <dlfcn.h>
 #include <math.h>
 #import <objc/runtime.h>
@@ -552,6 +553,19 @@ static void* (*i_type_get_object)(void*) = NULL;
 static size_t (*i_image_get_class_count)(const void*) = NULL;
 static const void* (*i_image_get_class)(const void*, size_t) = NULL;
 static const char* (*i_class_get_name)(void*) = NULL;
+// v114.24: REFLECTION — alan/metotlari ISIM yerine TIP IMZASI ile bulmak icin.
+// Oyun her surumde yeniden obfuscate ediliyor (ixy/iza/jyr/ese/gns...), isim
+// tabanli arama o zaman komple oluyor. Tip imzasi obfuscate EDILMEZ:
+// "RCCP_CarController" alani her surumde "RCCP_CarController" tipindedir.
+static void* (*i_class_get_fields)(void*, void**) = NULL;
+static void* (*i_field_get_type)(void*) = NULL;
+static const char* (*i_field_get_name)(void*) = NULL;
+static void* (*i_class_get_methods)(void*, void**) = NULL;
+static const char* (*i_method_get_name)(void*) = NULL;
+static uint32_t (*i_method_get_param_count)(void*) = NULL;
+static void* (*i_method_get_return_type)(void*) = NULL;
+static void* (*i_method_get_param)(void*, uint32_t) = NULL;
+static char* (*i_type_get_name)(void*) = NULL;   // malloc'lu — free() gerekir
 // Bir image'da verilen isimdeki sinifi TARAYARAK bul (obfuscation'a dayanikli)
 static long g_classScanned = 0;   // teshis: kac sinif tarandi
 static void* few1n_findClassByName(const void* img, const char* wantName) {
@@ -641,6 +655,16 @@ static void few1n_initIl2cpp(void) {
     i_image_get_class_count     = (size_t(*)(const void*))dlsym(RTLD_DEFAULT, "il2cpp_image_get_class_count");
     i_image_get_class           = (const void*(*)(const void*,size_t))dlsym(RTLD_DEFAULT, "il2cpp_image_get_class");
     i_class_get_name            = (const char*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_class_get_name");
+    // v114.24: tip-imzasi ile arama (obfuscation seed degisince isim aramasi olur)
+    i_class_get_fields          = (void*(*)(void*,void**))dlsym(RTLD_DEFAULT, "il2cpp_class_get_fields");
+    i_field_get_type            = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_field_get_type");
+    i_field_get_name            = (const char*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_field_get_name");
+    i_class_get_methods         = (void*(*)(void*,void**))dlsym(RTLD_DEFAULT, "il2cpp_class_get_methods");
+    i_method_get_name           = (const char*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_method_get_name");
+    i_method_get_param_count    = (uint32_t(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_method_get_param_count");
+    i_method_get_return_type    = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_method_get_return_type");
+    i_method_get_param          = (void*(*)(void*,uint32_t))dlsym(RTLD_DEFAULT, "il2cpp_method_get_param");
+    i_type_get_name             = (char*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_type_get_name");
     if (!i_domain_get || !i_domain_get_assemblies || !i_assembly_get_image ||
         !i_class_from_name || !i_class_get_method_from_name || !i_runtime_invoke) {
         FLog(@"il2cpp API bulunamadi!"); return;
@@ -1271,6 +1295,144 @@ static int few1n_fieldOff(const char* ns, const char* cls, const char* field, in
     return few1n_fieldOffOn(few1n_classAnyImage(ns ?: "", cls), field, fallback);
 }
 
+// ===== v114.24: TIP IMZASI ILE ARAMA (obfuscation-immune) =====
+//
+// Alan/metot ISIMLERI her oyun surumunde yeniden uretiliyor (ixy, iza, jyr,
+// kam, ese, gns ...). Isim tabanli arama o gun komple oluyor ve mod cokuyor.
+// Ama TIPLER obfuscate edilmiyor: HR_PlayerHandler'in RCCP_CarController
+// alani her surumde "RCCP_CarController" tipindedir. Onu arayacagiz.
+//
+// Sira: (1) bilinen isim -> (2) tip imzasi -> (3) sabit fallback.
+
+// "UnityEngine.Rigidbody" ile "Rigidbody" eslessin diye son bileseni karsilastir.
+static bool few1n_typeIs(const char* full, const char* want) {
+    if (!full || !want) return false;
+    if (strcmp(full, want) == 0) return true;
+    const char* dot = strrchr(full, '.');
+    return dot && strcmp(dot + 1, want) == 0;
+}
+
+// cls icindeki `ordinal`. sirada gelen `typeName` tipli alanin offset'i.
+static int few1n_fieldOffByType(void* cls, const char* typeName, int ordinal, int fallback) {
+    if (!cls || !typeName) return fallback;
+    if (!i_class_get_fields || !i_field_get_type || !i_type_get_name || !i_field_get_offset) return fallback;
+    void* iter = NULL; int seen = 0;
+    @try {
+        void* f;
+        while ((f = i_class_get_fields(cls, &iter)) != NULL) {
+            void* t = i_field_get_type(f); if (!t) continue;
+            char* tn = i_type_get_name(t);  if (!tn) continue;
+            bool hit = few1n_typeIs(tn, typeName);
+            free(tn);
+            if (!hit) continue;
+            if (seen++ != ordinal) continue;
+            size_t off = i_field_get_offset(f);
+            if (off < 0x10 || off > 0x4000) return fallback;   // static/gecersiz
+            return (int)off;
+        }
+    } @catch (...) {}
+    return fallback;
+}
+
+// Once isim, olmazsa tip imzasi, o da olmazsa sabit.
+static int few1n_fieldSmart(void* cls, const char* name,
+                            const char* typeName, int ordinal, int fallback) {
+    int v = few1n_fieldOffOn(cls, name, -1);
+    if (v > 0) return v;
+    v = few1n_fieldOffByType(cls, typeName, ordinal, -1);
+    if (v > 0) return v;
+    return fallback;
+}
+
+// cls icindeki `ordinal`. sirada gelen, imzasi tutan metodu dondurur.
+// retType NULL ise donus tipi kontrol edilmez; params[i] NULL ise o parametre
+// kontrol edilmez (joker).
+static void* few1n_methodBySig(void* cls, const char* retType,
+                               const char** params, int nparams, int ordinal) {
+    if (!cls) return NULL;
+    if (!i_class_get_methods || !i_method_get_param_count || !i_type_get_name) return NULL;
+    void* iter = NULL; int seen = 0;
+    @try {
+        void* m;
+        while ((m = i_class_get_methods(cls, &iter)) != NULL) {
+            if ((int)i_method_get_param_count(m) != nparams) continue;
+            if (retType) {
+                if (!i_method_get_return_type) continue;
+                void* rt = i_method_get_return_type(m); if (!rt) continue;
+                char* rn = i_type_get_name(rt);          if (!rn) continue;
+                bool ok = few1n_typeIs(rn, retType);
+                free(rn);
+                if (!ok) continue;
+            }
+            bool allok = true;
+            if (params && nparams > 0) {
+                if (!i_method_get_param) continue;
+                for (int i = 0; i < nparams; i++) {
+                    if (!params[i]) continue;               // joker
+                    void* pt = i_method_get_param(m, (uint32_t)i);
+                    if (!pt) { allok = false; break; }
+                    char* pn = i_type_get_name(pt);
+                    if (!pn) { allok = false; break; }
+                    bool ok = few1n_typeIs(pn, params[i]);
+                    free(pn);
+                    if (!ok) { allok = false; break; }
+                }
+            }
+            if (!allok) continue;
+            if (seen++ != ordinal) continue;
+            return m;
+        }
+    } @catch (...) {}
+    return NULL;
+}
+
+// Once aday isimler, olmazsa tip imzasi. Wrapper'larin ortak giris noktasi.
+static void* few1n_methodSmart(void* cls, const char* const* nameCands, int argc,
+                               const char* retType, const char** params, int ordinal,
+                               const char* label) {
+    if (!cls) return NULL;
+    if (nameCands && i_class_get_method_from_name) {
+        for (int i = 0; nameCands[i]; i++) {
+            void* m = i_class_get_method_from_name(cls, nameCands[i], argc);
+            if (m) return m;
+        }
+    }
+    void* m = few1n_methodBySig(cls, retType, params, argc, ordinal);
+    if (m) {
+        const char* nm = (i_method_get_name ? i_method_get_name(m) : NULL);
+        FLog([NSString stringWithFormat:@"🔎 %s: isim tutmadi, tip imzasiyla bulundu -> %s",
+              label ?: "?", nm ?: "?"]);
+    }
+    return m;
+}
+
+// Singleton getter'lari icin kisayol: static, 0 parametre, kendi tipini donduren
+// metot. gns/gtp/fzi/eov hepsi bu kalibi kullaniyor — obfuscation'dan bagimsiz.
+static void* few1n_singletonGetter(void* cls, const char* const* nameCands,
+                                   const char* ownTypeName, const char* label) {
+    return few1n_methodSmart(cls, nameCands, 0, ownTypeName, NULL, 0, label);
+}
+
+// HOOK'lar icin TEKILLIK ZORUNLU varyant.
+//
+// Wrapper'da imza birden fazla metoda uyarsa ordinal ile birini secmek kabul
+// edilebilir (en fazla yanlis deger okuruz). Hook'ta ayni sey felaket: yanlis
+// fonksiyonun uzerine yazariz ve oyun coker — v114.19 oncesi tam olarak boyle
+// oluyordu. Bu yuzden birden fazla eslesme varsa hic hook kurmuyoruz.
+static void* few1n_methodBySigUnique(void* cls, const char* retType,
+                                     const char** params, int nparams,
+                                     const char* label) {
+    void* first = few1n_methodBySig(cls, retType, params, nparams, 0);
+    if (!first) return NULL;
+    if (few1n_methodBySig(cls, retType, params, nparams, 1)) {
+        FLog([NSString stringWithFormat:
+              @"⚠️ %s: imzaya birden fazla metot uyuyor — hook kurulmadi (yanlis hedef riski)",
+              label ?: "?"]);
+        return NULL;
+    }
+    return first;
+}
+
 // Bir kez cozulur, sonra sabit. -1 = henuz cozulmedi.
 // Varsayilanlar Offsets.h / 1.4.3 dump degerleri (fallback).
 static int OFFR_PH_PHOTONVIEW   = OFF_PLAYERHANDLER_PHOTONVIEW;   // HR_PlayerHandler.iza
@@ -1341,12 +1503,12 @@ static void few1n_resolveFieldOffsets(void) {
     void* c;
 
     if ((c = few1n_classAnyImage("", "HR_PlayerHandler"))) {
-        OFFR_PH_PHOTONVIEW  = few1n_fieldOffOn(c, "iza",         OFFR_PH_PHOTONVIEW);
+        OFFR_PH_PHOTONVIEW  = few1n_fieldSmart(c, "iza",         "PhotonView",         0, OFFR_PH_PHOTONVIEW);
         OFFR_PH_CANCRASH    = few1n_fieldOffOn(c, "canCrash",    OFFR_PH_CANCRASH);
         OFFR_PH_DAMAGE      = few1n_fieldOffOn(c, "damage",      OFFR_PH_DAMAGE);
         OFFR_PH_VEHICLENAME = few1n_fieldOffOn(c, "VehicleName", OFFR_PH_VEHICLENAME);
-        OFFR_PH_RCCP        = few1n_fieldOffOn(c, "ixy",         OFFR_PH_RCCP);
-        OFFR_PH_RIGIDBODY   = few1n_fieldOffOn(c, "ixz",         OFFR_PH_RIGIDBODY);
+        OFFR_PH_RCCP        = few1n_fieldSmart(c, "ixy",         "RCCP_CarController", 0, OFFR_PH_RCCP);
+        OFFR_PH_RIGIDBODY   = few1n_fieldSmart(c, "ixz",         "Rigidbody",          0, OFFR_PH_RIGIDBODY);
     }
     if ((c = few1n_classAnyImage("", "HR_UI_RoomListLine"))) {
         OFFR_RL_NAMETEXT    = few1n_fieldOffOn(c, "RoomNameText",    OFFR_RL_NAMETEXT);
@@ -1362,11 +1524,11 @@ static void few1n_resolveFieldOffsets(void) {
         OFFR_LOBBY_PWD_CONN = few1n_fieldOffOn(c, "passwordOnConnectInput",OFFR_LOBBY_PWD_CONN);
     }
     if ((c = few1n_classAnyImage("", "HR_PhotonLobbyManagerDummy")))
-        OFFR_DUMMY_KICKNAME = few1n_fieldOffOn(c, "jdz", OFFR_DUMMY_KICKNAME);
+        OFFR_DUMMY_KICKNAME = few1n_fieldSmart(c, "jdz", "String", 1, OFFR_DUMMY_KICKNAME);
 
     if ((c = few1n_classAnyImage("", "CarDriveSystem"))) {
-        OFFR_CDS_INPUT      = few1n_fieldOffOn(c, "jyr",                      OFFR_CDS_INPUT);
-        OFFR_CDS_RIGIDBODY  = few1n_fieldOffOn(c, "<jyt>k__BackingField",     OFFR_CDS_RIGIDBODY);
+        OFFR_CDS_INPUT      = few1n_fieldSmart(c, "jyr",                  "CarPlayerInput", 0, OFFR_CDS_INPUT);
+        OFFR_CDS_RIGIDBODY  = few1n_fieldSmart(c, "<jyt>k__BackingField", "Rigidbody",      0, OFFR_CDS_RIGIDBODY);
         OFFR_CDS_OVR_ACCEL  = few1n_fieldOffOn(c, "overrideAcceleration",     OFFR_CDS_OVR_ACCEL);
         OFFR_CDS_OVR_STEER  = few1n_fieldOffOn(c, "overrideSteering",         OFFR_CDS_OVR_STEER);
         OFFR_CDS_STEERPOWER = few1n_fieldOffOn(c, "overrideSteeringPower",    OFFR_CDS_STEERPOWER);
@@ -1375,12 +1537,12 @@ static void few1n_resolveFieldOffsets(void) {
         OFFR_CDS_CURSPEED   = few1n_fieldOffOn(c, "currentSpeed",             OFFR_CDS_CURSPEED);
     }
     if ((c = few1n_classAnyImage("", "CarPlayerInput"))) {
-        OFFR_CPI_DRIVE      = few1n_fieldOffOn(c, "kaq", OFFR_CPI_DRIVE);
-        OFFR_CPI_NITRO      = few1n_fieldOffOn(c, "kar", OFFR_CPI_NITRO);
+        OFFR_CPI_DRIVE      = few1n_fieldSmart(c, "kaq", "CarDriveSystem", 0, OFFR_CPI_DRIVE);
+        OFFR_CPI_NITRO      = few1n_fieldSmart(c, "kar", "CarNitro",       0, OFFR_CPI_NITRO);
     }
     if ((c = few1n_classAnyImage("", "CarNitro"))) {
-        OFFR_NITRO_DRIVE    = few1n_fieldOffOn(c, "kam",                  OFFR_NITRO_DRIVE);
-        OFFR_NITRO_AMOUNT   = few1n_fieldOffOn(c, "<kap>k__BackingField", OFFR_NITRO_AMOUNT);
+        OFFR_NITRO_DRIVE    = few1n_fieldSmart(c, "kam",                  "CarDriveSystem", 0, OFFR_NITRO_DRIVE);
+        OFFR_NITRO_AMOUNT   = few1n_fieldSmart(c, "<kap>k__BackingField", "Single",         0, OFFR_NITRO_AMOUNT);
     }
 
     if ((c = few1n_classAnyImage("", "RCCP_CarController"))) {
@@ -1398,11 +1560,11 @@ static void few1n_resolveFieldOffsets(void) {
         OFFR_LIGHTS_HIGHBEAM = few1n_fieldOffOn(c, "highBeamHeadlights", OFFR_LIGHTS_HIGHBEAM);
     }
     if ((c = few1n_classAnyImage("", "RCCP_MainComponent")))
-        OFFR_RCCPMAIN_RB    = few1n_fieldOffOn(c, "hnm", OFFR_RCCPMAIN_RB);
+        OFFR_RCCPMAIN_RB    = few1n_fieldSmart(c, "hnm", "Rigidbody", 0, OFFR_RCCPMAIN_RB);
     if ((c = few1n_classAnyImage("", "SmoothSyncRCC")))
         OFFR_SSRCC_RB       = few1n_fieldOffOn(c, "rb",  OFFR_SSRCC_RB);
     if ((c = few1n_classAnyImage("", "HR_Bomb")))
-        OFFR_BOMB_OWNER     = few1n_fieldOffOn(c, "iqo", OFFR_BOMB_OWNER);
+        OFFR_BOMB_OWNER     = few1n_fieldSmart(c, "iqo", "HR_PlayerHandler", 0, OFFR_BOMB_OWNER);
 
     if ((c = few1n_classAnyImage("Photon.Realtime", "RoomInfo"))) {
         OFFR_ROOM_NAME       = few1n_fieldOffOn(c, "name",           OFFR_ROOM_NAME);
@@ -1591,7 +1753,8 @@ static void  w_tmp_set_richText(void *self, bool on) {
 static void* w_chatGetInst(void) {
     // Obfuscated on 1.4.3: fzi(). Class isim korunmuş, method mangled.
     static void *m = NULL;
-    if (!m) { void *c = few1n_chatMgrClass(); m = few1n_resolveOn(c, "fzi", 0); }
+    if (!m) { static const char* const n[] = {"fzi","get_Instance","Instance",NULL};
+              m = few1n_singletonGetter(few1n_chatMgrClass(), n, "ChatManager", "ChatManager.get_Instance"); }
     if (!m || !i_runtime_invoke) return NULL;
     @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
 }
@@ -1604,31 +1767,38 @@ static void  w_chatSend(void *self, void *message) {
 // ====== PlayerManager (para — sunucu-kilitli ama getters visual için) ======
 static void* w_playerManagerGetInst(void) {
     static void *m = NULL;
-    if (!m) { void *c = few1n_playerMgrClass(); m = few1n_resolveOn(c, "gns", 0); }
+    if (!m) { static const char* const n[] = {"gns","get_Instance","Instance",NULL};
+              m = few1n_singletonGetter(few1n_playerMgrClass(), n, "PlayerManager", "PlayerManager.get_Instance"); }
     if (!m || !i_runtime_invoke) return NULL;
     @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
 }
 static int w_pm_getMoney(void *self) {
     static void *m = NULL;
-    if (!m) m = few1n_resolveOn(few1n_playerMgrClass(), "goc", 0);
+    if (!m) { static const char* const n[] = {"goc","get_Money","GetMoney",NULL};
+        m = few1n_methodSmart(few1n_playerMgrClass(), n, 0, "Int32", NULL, 0, "PlayerManager.get_Money"); }
     if (!m || !i_runtime_invoke || !self) return -1;
     @try { return few1n_unboxInt(i_runtime_invoke(m, self, NULL, NULL)); } @catch (...) { return -1; }
 }
 static void w_pm_addMoney(void *self, int amount) {
     static void *m = NULL;
-    if (!m) m = few1n_resolveOn(few1n_playerMgrClass(), "gor", 1);
+    if (!m) { static const char* const n[] = {"gor","AddMoney",NULL};
+        static const char* pr[] = {"Int32"};
+        m = few1n_methodSmart(few1n_playerMgrClass(), n, 1, "Void", pr, 1, "PlayerManager.AddMoney"); }
     if (!m || !i_runtime_invoke || !self) return;
     @try { void *args[1] = { &amount }; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
 }
 static void w_pm_syncWithServer(void *self) {
     static void *m = NULL;
-    if (!m) m = few1n_resolveOn(few1n_playerMgrClass(), "goo", 0);
+    if (!m) { static const char* const n[] = {"goo","SyncWithServer",NULL};
+        m = few1n_methodSmart(few1n_playerMgrClass(), n, 0, NULL, NULL, 0, "PlayerManager.SyncWithServer"); }
     if (!m || !i_runtime_invoke || !self) return;
     @try { i_runtime_invoke(m, self, NULL, NULL); } @catch (...) {}
 }
 static void w_pm_updateNicknameInternal(void *self, void *name) {
     static void *m = NULL;
-    if (!m) m = few1n_resolveOn(few1n_playerMgrClass(), "gos", 1);
+    if (!m) { static const char* const n[] = {"gos","UpdateNicknameInternal",NULL};
+        static const char* pr[] = {"String"};
+        m = few1n_methodSmart(few1n_playerMgrClass(), n, 1, "Void", pr, 0, "PlayerManager.UpdateNickname"); }
     if (!m || !i_runtime_invoke || !self || !name) return;
     @try { void *args[1] = { name }; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
 }
@@ -1636,7 +1806,8 @@ static void w_pm_updateNicknameInternal(void *self, void *name) {
 // ====== HR_PhotonLobbyManager (get_Instance obfuscated -> eov) ======
 static void* w_lobbyGetInst(void) {
     static void *m = NULL;
-    if (!m) { void *c = few1n_lobbyMgrClass(); m = few1n_resolveOn(c, "eov", 0); }
+    if (!m) { static const char* const n[] = {"eov","get_Instance","Instance",NULL};
+              m = few1n_singletonGetter(few1n_lobbyMgrClass(), n, "HR_PhotonLobbyManager", "Lobby.get_Instance"); }
     if (!m || !i_runtime_invoke) return NULL;
     @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
 }
@@ -1744,14 +1915,18 @@ static void* w_mbp_getPhotonView(void *self) {
 // ====== MapList.get_Instance (obf gtp) ======
 static void* w_mapList_getInstance(void) {
     static void *m = NULL;
-    if (!m) { void *c = few1n_mapListClass(); m = few1n_resolveOn(c, "gtp", 0); }
+    if (!m) { static const char* const n[] = {"gtp","get_Instance","Instance",NULL};
+              m = few1n_singletonGetter(few1n_mapListClass(), n, "MapList", "MapList.get_Instance"); }
     if (!m || !i_runtime_invoke) return NULL;
     @try { return i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) { return NULL; }
 }
 
 // ====== MapSelection.SelectMap ======
 static void w_mapSel_selectMap(void *self, void *name) {
-    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_mapSelClass(), "SelectMap", 1);
+    static void *m = NULL;
+    if (!m) { static const char* const n[] = {"SelectMap",NULL};
+              static const char* pr[] = {"String"};
+              m = few1n_methodSmart(few1n_mapSelClass(), n, 1, "Void", pr, 0, "MapSelection.SelectMap"); }
     if (!m || !i_runtime_invoke || !self) return;
     @try { void *args[1]={name}; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
 }
@@ -1768,15 +1943,18 @@ static void w_photonMgrLoadLevel(void *sceneStr, bool addressable) {
     static void *m = NULL;
     if (!m && !g_photonMgrLLResolved) {
         g_photonMgrLLResolved = true;
-        void *c = few1n_photonMgrClass();
-        if (c) {
-            static const char *cands[] = { "LoadLevel", "ese", "enp", NULL };
-            for (int i = 0; cands[i]; i++) {
-                m = few1n_resolveOn(c, cands[i], 2);
-                if (m) { FLog([NSString stringWithFormat:@"🗺️ PhotonManager.%s(string,bool) bulundu", cands[i]]); break; }
-            }
+        // Isim adaylari once; tutmazsa imza ile: static void(String, Boolean).
+        // Bu imza PhotonManager icinde tekil, obfuscation seed'i degisse de bulunur.
+        static const char* const cands[] = { "LoadLevel", "ese", "enp", NULL };
+        static const char* prm[] = { "String", "Boolean" };
+        m = few1n_methodSmart(few1n_photonMgrClass(), cands, 2, "Void", prm, 0,
+                              "PhotonManager.LoadLevel");
+        if (m) {
+            const char* nm = (i_method_get_name ? i_method_get_name(m) : NULL);
+            FLog([NSString stringWithFormat:@"🗺️ PhotonManager.%s(string,bool) bulundu", nm ?: "?"]);
+        } else {
+            FLog(@"🗺️ PhotonManager LoadLevel bulunamadi — PhotonNetwork.LoadLevel yedegi kullanilacak");
         }
-        if (!m) FLog(@"🗺️ PhotonManager LoadLevel adayi bulunamadi — PhotonNetwork.LoadLevel yedegi kullanilacak");
     }
     if (!m || !i_runtime_invoke || !sceneStr) return;
     @try {
@@ -2072,6 +2250,51 @@ static void safeHookByName(const char* ns, const char* class_name, const char* m
         hookFailCount++; return;
     }
     void* m = i_class_get_method_from_name(c, method_name, argc);
+    if (!m) {
+        FLog([NSString stringWithFormat:@"SKIP (method YOK) %s", logbuf]);
+        hookFailCount++; return;
+    }
+    void* addr = few1n_methodCodeAddr(m);
+    if (!addr) {
+        FLog([NSString stringWithFormat:@"SKIP (code addr NULL) %s", logbuf]);
+        hookFailCount++; return;
+    }
+    safeHook(addr, replacement, original, logbuf);
+}
+
+// v114.24: obfuscated isimli hook hedefleri icin — once isim adaylari, tutmazsa
+// TEKIL tip imzasi. Oyun yeniden obfuscate edildiginde (fgp/ghs/eqn -> baska
+// harfler) isim aramasi olur ama imza degismez, hook ayakta kalir.
+// Imza birden fazla metoda uyuyorsa hook KURULMAZ (yanlis hedef = crash).
+static void safeHookBySig(const char* ns, const char* class_name,
+                          const char* const* nameCands, int argc,
+                          const char* retType, const char** params,
+                          void* replacement, void** original, const char* label) {
+    char logbuf[256];
+    snprintf(logbuf, sizeof(logbuf), "%s [%s(%d args)]",
+             label ?: "", class_name ?: "?", argc);
+    if (!i_class_from_name || !i_class_get_method_from_name) {
+        FLog([NSString stringWithFormat:@"SKIP (il2cpp API yok) %s", logbuf]);
+        hookFailCount++; return;
+    }
+    void* c = few1n_classAnyImage(ns ?: "", class_name);
+    if (!c) {
+        FLog([NSString stringWithFormat:@"SKIP (class YOK) %s", logbuf]);
+        hookFailCount++; return;
+    }
+    void* m = NULL;
+    if (nameCands) {
+        for (int i = 0; nameCands[i] && !m; i++)
+            m = i_class_get_method_from_name(c, nameCands[i], argc);
+    }
+    if (!m) {
+        m = few1n_methodBySigUnique(c, retType, params, argc, label);
+        if (m) {
+            const char* nm = (i_method_get_name ? i_method_get_name(m) : NULL);
+            FLog([NSString stringWithFormat:@"🔎 %s: isim tutmadi, tekil imzayla bulundu -> %s",
+                  label ?: "?", nm ?: "?"]);
+        }
+    }
     if (!m) {
         FLog([NSString stringWithFormat:@"SKIP (method YOK) %s", logbuf]);
         hookFailCount++; return;
@@ -11340,11 +11563,23 @@ static void InstallEverything(uintptr_t b) {
     safeHookByName("", "RCCP_CarController", "Update", 0, (void*)h_rccpUpdate, (void**)&o_rccpUpdate, "RCCP_CarController.Update (rb yakala)");
 
     // Obfuscated metotlar (1.4.3 dump'tan mangled name)
-    safeHookByName("", "CarDriveSystem",       "fgp", 4, (void*)h_driveMove,     (void**)&o_driveMove,     "CarDriveSystem.Move (obf fgp)");
-    safeHookByName("", "PlateVariant",         "ghs", 1, (void*)h_plateChange,   (void**)&o_plateChange,   "PlateVariant.Change (obf ghs)");
+    { static const char* const n[] = {"fgp","Move",NULL};
+      static const char* pr[] = {"Single","Single","Single","Single"};
+      safeHookBySig("", "CarDriveSystem", n, 4, "Void", pr,
+                    (void*)h_driveMove, (void**)&o_driveMove, "CarDriveSystem.Move"); }
+    { static const char* const n[] = {"ghs","Change",NULL};
+      static const char* pr[] = {"PlateHolder"};
+      safeHookBySig("", "PlateVariant", n, 1, "Void", pr,
+                    (void*)h_plateChange, (void**)&o_plateChange, "PlateVariant.Change"); }
+    // NOT: void(String) imzasi ChatManager'da 3 metoda uyuyor (Send/SendRPC/fzk),
+    // bu yuzden imza fallback'i YOK — yanlis hook gelen chat yerine giden chat'i keserdi.
     safeHookByName("", "ChatManager",          "fzk", 1, (void*)h_chatFup,       (void**)&o_chatFup,       "ChatManager.fup (obf fzk — gelen chat)");
+    // NOT: void() imzasi bu sinifta 3 metoda uyuyor (Start/eqm/eqo) — imza fallback'i YOK.
     safeHookByName("", "HR_UI_RoomListLine",   "eqm", 0, (void*)h_roomConnect,   (void**)&o_roomConnect,   "HR_UI_RoomListLine.Connect (obf eqm)");
-    safeHookByName("", "HR_UI_RoomListLine",   "eqn", 6, (void*)h_roomLineSetup, (void**)&o_roomLineSetup, "HR_UI_RoomListLine.Setup (obf eqn)");
+    { static const char* const n[] = {"eqn","Setup",NULL};
+      static const char* pr[] = {"String","String","Byte","Byte","String","RoomInfo"};
+      safeHookBySig("", "HR_UI_RoomListLine", n, 6, "Void", pr,
+                    (void*)h_roomLineSetup, (void**)&o_roomLineSetup, "HR_UI_RoomListLine.Setup"); }
 
     // Nitro getterlari: RCCP_Nos.get/set_amount — obfuscated. Eski hardcoded offset (0x54CFE14/1C)
     // hâlâ 1.4.3'te bozuk olabilir. Skip — SONSUZ NOS özelliği zaten il2cpp field write ile de çalışıyor.
