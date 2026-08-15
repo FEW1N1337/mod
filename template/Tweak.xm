@@ -1633,15 +1633,12 @@ static void few1n_resolveFieldOffsets(void) {
     if (!dMapList && (c = few1n_classAnyImage("", "MapList"))) {
         dMapList = true;
         OFFR_MAPLIST_MAPS   = few1n_fieldOffOn(c, "maps", OFFR_MAPLIST_MAPS);
-        // MapList.Map value-type array'inin eleman boyu (stride). Struct'a alan
-        // eklenirse 0x20 kayar ve harita listesi cop okur — runtime'dan al.
-        void* mc = few1n_classAnyImage("", "MapList.Map");
-        if (!mc) mc = few1n_classAnyImage("", "Map");
-        if (mc && i_class_value_size) {
-            uint32_t align = 0;
-            int32_t vs = i_class_value_size(mc, &align);
-            if (vs >= 8 && vs <= 0x200) OFFR_MAP_STRIDE = (int)vs;
-        }
+        // v114.34 BUG FIX: MapList.Map stride'ini runtime'dan almaya calismak
+        // yanlisti — nested class il2cpp adi "Map", ve baska "Map" siniflari
+        // (Dictionary internal'i vs) once cozulup 0x10 donduruyordu. Sonuc: harita
+        // isimleri cop okunup harita degistirme kiriliyordu. MapList.Map layout'u
+        // (referenceName@0, mode@8, sprite@0x10, visualName@0x18) sabit -> 0x20.
+        OFFR_MAP_STRIDE = 0x20;
     }
 
     // Hepsi cozulunce bir kez ozet bas (her init turunda spam etme).
@@ -9028,6 +9025,11 @@ static void few1n_loadMap(NSString *scene, int idx) {
                 if (me) amMaster = ply_getIsMaster(me);
             }
             if (!amMaster) FLog(@"⚠️ Master gorunmuyorum — yine de deneniyor");
+            // v114.34: PhotonNetwork.LoadLevel sadece automaticallySyncScene=true iken
+            // diger oyunculara senkronlanir. Once bunu ac (yoksa harita sadece sende degisir).
+            if (pn_setAutomaticallySyncScene) {
+                @try { pn_setAutomaticallySyncScene(true); FLog(@"🗺️ automaticallySyncScene=true"); } @catch (...) {}
+            }
             // v114.23: eskiden photonMgrEnp NULL ise burada return ediliyordu —
             // asagidaki PhotonNetwork.LoadLevel yedegi hic denenmiyordu. Artik
             // birincil yol yoksa dogrudan yedege dusuyor.
