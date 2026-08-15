@@ -7485,7 +7485,7 @@ static NSString* rainbowWrap(NSString* text, int idx) {
     [ac addAction:[UIAlertAction actionWithTitle:@"🚗 Normal" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ few1n_setTrafficDensity(1); }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"🚙 Çok Kalabalık" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ few1n_setTrafficDensity(2); }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
-    if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.view; ac.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width/2, self.view.bounds.size.height/2, 1, 1); }
+    if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, self.panel.bounds.size.height/2, 1, 1); }
     [self present:ac];
 }
 - (void)boostScore {
