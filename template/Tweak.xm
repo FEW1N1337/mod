@@ -3453,6 +3453,95 @@ static bool few1n_setGlass(float value) {
     return true;
 }
 
+// ===== v114.33: STANCE/KAMBER + GOVDE PARCA + BITIS TELEPORT =====
+
+// Stance: WheelbaseTuner.Apply(10 float) — fCamber,rCamber,fDist,rDist,fOfs,rOfs,
+// fWid,rWid,fRad,rRad. Nötr = camber 0, dist/ofs 0, wid/rad 1. Tuner -> yayilir.
+static bool few1n_applyStance(float camber, float offset, float width, float radius) {
+    if (!i_runtime_invoke || !g_mFindObjectsPlural) return false;
+    void* cls = few1n_classAnyImage("", "WheelbaseTuner");
+    if (!cls) { FLog(@"Stance: WheelbaseTuner sinifi yok"); return false; }
+    void* type = few1n_typeObjOf(cls);
+    void* mApply = i_class_get_method_from_name(cls, "Apply", 10);
+    if (!type || !mApply) { FLog(@"Stance: WheelbaseTuner.Apply(10) yok"); return false; }
+    float fCamber=camber, rCamber=camber, fDist=0, rDist=0, fOfs=offset, rOfs=offset,
+          fWid=width, rWid=width, fRad=radius, rRad=radius;
+    int applied = 0;
+    @try {
+        void* a[1] = { type };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) { FLog(@"Stance: instance yok (garaj/tuning ac)"); return false; }
+        int cnt = *(int*)((uintptr_t)arr + 0x18);
+        if (cnt < 1 || cnt > 64) return false;
+        void** items = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < cnt; i++) {
+            void* pt = items[i];
+            if (!unityAlive(pt) || !few1n_pvIsMineFor(pt)) continue;
+            void* args[10] = { &fCamber,&rCamber,&fDist,&rDist,&fOfs,&rOfs,&fWid,&rWid,&fRad,&rRad };
+            @try { i_runtime_invoke(mApply, pt, args, NULL); applied++; } @catch (...) {}
+        }
+    } @catch (...) {}
+    if (applied == 0) { FLog(@"Stance: benim WheelbaseTuner yok"); return false; }
+    few1n_broadcastTuning("Stance");
+    FLog([NSString stringWithFormat:@"Stance camber=%.0f ofs=%.2f wid=%.2f rad=%.2f %d araca + yayin", camber, offset, width, radius, applied]);
+    return true;
+}
+
+// Govde parca: PartTuner.Apply(int partIndex, bool isAsync). Index tabanli (aralik
+// bilinmiyor) -> kullanici secer. Tuner -> yayilir.
+static bool few1n_applyBodyPart(int partIndex) {
+    if (!i_runtime_invoke || !g_mFindObjectsPlural) return false;
+    void* cls = few1n_classAnyImage("", "PartTuner");
+    if (!cls) { FLog(@"Parca: PartTuner sinifi yok"); return false; }
+    void* type = few1n_typeObjOf(cls);
+    void* mApply = i_class_get_method_from_name(cls, "Apply", 2);   // Apply(int, bool)
+    if (!type || !mApply) { FLog(@"Parca: PartTuner.Apply(2) yok"); return false; }
+    int idx = partIndex; unsigned char async = 0; int applied = 0;
+    @try {
+        void* a[1] = { type };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) { FLog(@"Parca: instance yok (garaj/tuning ac)"); return false; }
+        int cnt = *(int*)((uintptr_t)arr + 0x18);
+        if (cnt < 1 || cnt > 64) return false;
+        void** items = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < cnt; i++) {
+            void* pt = items[i];
+            if (!unityAlive(pt) || !few1n_pvIsMineFor(pt)) continue;
+            void* args[2] = { &idx, &async };
+            @try { i_runtime_invoke(mApply, pt, args, NULL); applied++; } @catch (...) {}
+        }
+    } @catch (...) {}
+    if (applied == 0) { FLog(@"Parca: benim PartTuner yok"); return false; }
+    few1n_broadcastTuning("Parca");
+    FLog([NSString stringWithFormat:@"Govde parca index=%d %d araca + yayin", partIndex, applied]);
+    return true;
+}
+
+// Bitis teleport (deneysel): HR_MultiplayerTeleport.eni() — parametresiz.
+static bool few1n_finishTeleport(void) {
+    if (!i_runtime_invoke || !g_mFindObjectsPlural) return false;
+    void* cls = few1n_classAnyImage("", "HR_MultiplayerTeleport");
+    if (!cls) { FLog(@"Bitis: HR_MultiplayerTeleport sinifi yok"); return false; }
+    void* type = few1n_typeObjOf(cls);
+    void* mEni = i_class_get_method_from_name(cls, "eni", 0);
+    if (!type || !mEni) { FLog(@"Bitis: eni() yok"); return false; }
+    int called = 0;
+    @try {
+        void* a[1] = { type };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) { FLog(@"Bitis: instance yok"); return false; }
+        int cnt = *(int*)((uintptr_t)arr + 0x18);
+        if (cnt < 1 || cnt > 16) return false;
+        void** items = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < cnt; i++) {
+            if (!unityAlive(items[i])) continue;
+            @try { i_runtime_invoke(mEni, items[i], NULL, NULL); called++; } @catch (...) {}
+        }
+    } @catch (...) {}
+    FLog([NSString stringWithFormat:@"Bitis teleport eni() %d cagri", called]);
+    return called > 0;
+}
+
 // ===== v114.28: NOS SUPER GUC =====
 // RCCP_Nos alanlari PUBLIC ve obfuscate DEGIL (nosInUse, torqueMultiplier, amount,
 // regenerateRate...) -> field API ile ISIMLE cozulur, surume dayanikli. Her frame
@@ -4780,6 +4869,9 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)setRimColor;
 - (void)setChromeMenu;
 - (void)setGlassMenu;
+- (void)setStanceMenu;
+- (void)setBodyPartMenu;
+- (void)finishTeleport;
 - (void)joinRoomByName;
 - (void)pickRoomsServerHide;
 - (void)present:(UIAlertController*)ac;
@@ -5386,6 +5478,9 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"💿  Jant Rengi — HERKESTE" color:C_GOLD atY:y action:@selector(setRimColor)];
     y = [self actionRow:@"✨  Krom Aç/Kapa — HERKESTE" color:C_GOLD atY:y action:@selector(setChromeMenu)];
     y = [self actionRow:@"🪟  Cam Koyuluğu — HERKESTE" color:C_GOLD atY:y action:@selector(setGlassMenu)];
+    y = [self actionRow:@"🏎️  Stance / Kamber — HERKESTE" color:C_GOLD atY:y action:@selector(setStanceMenu)];
+    y = [self actionRow:@"🦵  Gövde Parça (spoyler vb.) — HERKESTE" color:C_GOLD atY:y action:@selector(setBodyPartMenu)];
+    y = [self actionRow:@"🏁  Bitiş Çizgisine Işınlan (deneysel)" color:C_ON atY:y action:@selector(finishTeleport)];
     y = [self actionRow:@"🎨  Renkli Oda Kur (Dinamik Stil Paneli)" color:C_GOLD atY:y action:@selector(createColoredRoom)];
     y = [self actionRow:@"🧪  Exploit Ile Oda Kur (30 Yontem)" color:C_RED atY:y action:@selector(exploitCreateRoom)];
     y = [self actionRow:@"🏠  Düz Özel İsimli Oda Kur" color:C_CYAN atY:y action:@selector(createOneRoom)];
@@ -11403,6 +11498,58 @@ static void few1n_joinTargetRoom(NSString *nm) {
     [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
     if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, self.panel.bounds.size.height/2, 1, 1); }
     [self present:ac];
+}
+
+- (void)setStanceMenu {
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🏎️ Stance / Kamber (Herkeste)"
+        message:@"Aracın duruşu — herkes senin aracını böyle görür. Garaj/tuning ekranı açıkken." preferredStyle:UIAlertControllerStyleActionSheet];
+    // camber(derece, negatif=yatık), offset(dışa taşma), width(genişlik x), radius(jant boyu)
+    NSArray *presets = @[
+        @{@"n":@"😈 Aşırı Kamber",        @"c":@-25.0,@"o":@0.0, @"w":@1.0,@"r":@1.0},
+        @{@"n":@"🔥 Hellaflush (geniş)",   @"c":@-14.0,@"o":@0.22,@"w":@1.15,@"r":@1.0},
+        @{@"n":@"🛞 Devasa Jant",          @"c":@-6.0, @"o":@0.05,@"w":@1.3,@"r":@1.55},
+        @{@"n":@"🏁 Hafif Spor",           @"c":@-4.0, @"o":@0.05,@"w":@1.05,@"r":@1.0},
+        @{@"n":@"↩️ Normal (sıfırla)",      @"c":@0.0,  @"o":@0.0, @"w":@1.0,@"r":@1.0},
+    ];
+    for (NSDictionary *p in presets) {
+        [ac addAction:[UIAlertAction actionWithTitle:p[@"n"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+            if (!few1n_applyStance([p[@"c"] floatValue], [p[@"o"] floatValue], [p[@"w"] floatValue], [p[@"r"] floatValue])) {
+                UIAlertController *e = [UIAlertController alertControllerWithTitle:@"⚠️ Hazır değil" message:@"WheelbaseTuner bulunamadı. Garaj/tuning ekranını aç, tekrar dene." preferredStyle:UIAlertControllerStyleAlert];
+                [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+                [self present:e];
+            }
+        }]];
+    }
+    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, self.panel.bounds.size.height/2, 1, 1); }
+    [self present:ac];
+}
+
+- (void)setBodyPartMenu {
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🦵 Gövde Parça (Herkeste)"
+        message:@"Parça index'i seç (0-9). Hangisi ne, denemeyle bulunur — geçersiz index parça değiştirmez." preferredStyle:UIAlertControllerStyleActionSheet];
+    for (int i = 0; i <= 9; i++) {
+        int idx = i;
+        [ac addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"Parça #%d", idx] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+            if (!few1n_applyBodyPart(idx)) {
+                UIAlertController *e = [UIAlertController alertControllerWithTitle:@"⚠️ Hazır değil" message:@"PartTuner bulunamadı. Garaj/tuning ekranını aç, tekrar dene." preferredStyle:UIAlertControllerStyleAlert];
+                [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+                [self present:e];
+            }
+        }]];
+    }
+    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, self.panel.bounds.size.height/2, 1, 1); }
+    [self present:ac];
+}
+
+- (void)finishTeleport {
+    bool ok = few1n_finishTeleport();
+    UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"🏁 Denendi" : @"⚠️ Olmadı")
+        message:(ok ? @"Bitiş teleport çağrıldı. Ne yaptığı deneysel — sonucu oyunda gör." : @"HR_MultiplayerTeleport bulunamadı (sadece yarış içinde çalışır).")
+        preferredStyle:UIAlertControllerStyleAlert];
+    [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+    [self present:r];
 }
 
 // ===== REKLAM BOZUCU TOGGLE (CANLI / ANINDA) =====
