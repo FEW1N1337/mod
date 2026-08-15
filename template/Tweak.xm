@@ -1420,18 +1420,39 @@ static void* few1n_singletonGetter(void* cls, const char* const* nameCands,
 // edilebilir (en fazla yanlis deger okuruz). Hook'ta ayni sey felaket: yanlis
 // fonksiyonun uzerine yazariz ve oyun coker — v114.19 oncesi tam olarak boyle
 // oluyordu. Bu yuzden birden fazla eslesme varsa hic hook kurmuyoruz.
+// v114.26: `exclude` ile KARDES ELEME.
+//
+// Bazi sinifta imza tek basina yetmiyor ama kardesleri isimleriyle eleyebiliyoruz.
+// Ornek: ChatManager'da void(String) UC metoda uyuyor — Send, SendRPC, fzk.
+// Ama Send public API, SendRPC ise [PunRPC]: Photon onu calisma aninda ISIMLE
+// cozdugu icin obfuscate EDILEMEZ. Ikisini eleyince geriye tek basina obfuscated
+// olan kaliyor — ve bu, isim degisse bile dogru sonucu verir.
+// exclude NULL olabilir. .ctor/.cctor her zaman elenir.
 static void* few1n_methodBySigUnique(void* cls, const char* retType,
                                      const char** params, int nparams,
+                                     const char* const* exclude,
                                      const char* label) {
-    void* first = few1n_methodBySig(cls, retType, params, nparams, 0);
-    if (!first) return NULL;
-    if (few1n_methodBySig(cls, retType, params, nparams, 1)) {
-        FLog([NSString stringWithFormat:
-              @"⚠️ %s: imzaya birden fazla metot uyuyor — hook kurulmadi (yanlis hedef riski)",
-              label ?: "?"]);
-        return NULL;
+    void* found = NULL; int hits = 0;
+    for (int ord = 0; ord < 64; ord++) {
+        void* m = few1n_methodBySig(cls, retType, params, nparams, ord);
+        if (!m) break;
+        const char* nm = (i_method_get_name ? i_method_get_name(m) : NULL);
+        if (nm) {
+            if (strcmp(nm, ".ctor") == 0 || strcmp(nm, ".cctor") == 0) continue;
+            bool skip = false;
+            if (exclude) for (int i = 0; exclude[i] && !skip; i++)
+                if (strcmp(nm, exclude[i]) == 0) skip = true;
+            if (skip) continue;
+        }
+        if (++hits > 1) {
+            FLog([NSString stringWithFormat:
+                  @"⚠️ %s: eleme sonrasi hala %d metot uyuyor — hook kurulmadi (yanlis hedef riski)",
+                  label ?: "?", hits]);
+            return NULL;
+        }
+        found = m;
     }
-    return first;
+    return found;
 }
 
 // Bir kez cozulur, sonra sabit. -1 = henuz cozulmedi.
@@ -2314,6 +2335,7 @@ static void safeHookByName(const char* ns, const char* class_name, const char* m
 static void safeHookBySig(const char* ns, const char* class_name,
                           const char* const* nameCands, int argc,
                           const char* retType, const char** params,
+                          const char* const* exclude,
                           void* replacement, void** original, const char* label) {
     char logbuf[256];
     snprintf(logbuf, sizeof(logbuf), "%s [%s(%d args)]",
@@ -2333,7 +2355,7 @@ static void safeHookBySig(const char* ns, const char* class_name,
             m = i_class_get_method_from_name(c, nameCands[i], argc);
     }
     if (!m) {
-        m = few1n_methodBySigUnique(c, retType, params, argc, label);
+        m = few1n_methodBySigUnique(c, retType, params, argc, exclude, label);
         if (m) {
             const char* nm = (i_method_get_name ? i_method_get_name(m) : NULL);
             FLog([NSString stringWithFormat:@"🔎 %s: isim tutmadi, tekil imzayla bulundu -> %s",
@@ -11602,20 +11624,25 @@ static void InstallEverything(uintptr_t b) {
     // Obfuscated metotlar (1.4.3 dump'tan mangled name)
     { static const char* const n[] = {"fgp","Move",NULL};
       static const char* pr[] = {"Single","Single","Single","Single"};
-      safeHookBySig("", "CarDriveSystem", n, 4, "Void", pr,
+      safeHookBySig("", "CarDriveSystem", n, 4, "Void", pr, NULL,
                     (void*)h_driveMove, (void**)&o_driveMove, "CarDriveSystem.Move"); }
     { static const char* const n[] = {"ghs","Change",NULL};
       static const char* pr[] = {"PlateHolder"};
-      safeHookBySig("", "PlateVariant", n, 1, "Void", pr,
+      safeHookBySig("", "PlateVariant", n, 1, "Void", pr, NULL,
                     (void*)h_plateChange, (void**)&o_plateChange, "PlateVariant.Change"); }
-    // NOT: void(String) imzasi ChatManager'da 3 metoda uyuyor (Send/SendRPC/fzk),
-    // bu yuzden imza fallback'i YOK — yanlis hook gelen chat yerine giden chat'i keserdi.
-    safeHookByName("", "ChatManager",          "fzk", 1, (void*)h_chatFup,       (void**)&o_chatFup,       "ChatManager.fup (obf fzk — gelen chat)");
+    // v114.26: void(String) ChatManager'da 3 metoda uyuyor (Send/SendRPC/fzk).
+    // Send public API, SendRPC [PunRPC] — Photon onu ISIMLE cozdugu icin ikisi de
+    // obfuscate edilemez. Eleyince geriye tek basina obfuscated olan kaliyor.
+    { static const char* const n[]  = {"fzk",NULL};
+      static const char* pr[]       = {"String"};
+      static const char* const ex[] = {"Send","SendRPC",NULL};
+      safeHookBySig("", "ChatManager", n, 1, "Void", pr, ex,
+                    (void*)h_chatFup, (void**)&o_chatFup, "ChatManager.fup (gelen chat)"); }
     // NOT: void() imzasi bu sinifta 3 metoda uyuyor (Start/eqm/eqo) — imza fallback'i YOK.
     safeHookByName("", "HR_UI_RoomListLine",   "eqm", 0, (void*)h_roomConnect,   (void**)&o_roomConnect,   "HR_UI_RoomListLine.Connect (obf eqm)");
     { static const char* const n[] = {"eqn","Setup",NULL};
       static const char* pr[] = {"String","String","Byte","Byte","String","RoomInfo"};
-      safeHookBySig("", "HR_UI_RoomListLine", n, 6, "Void", pr,
+      safeHookBySig("", "HR_UI_RoomListLine", n, 6, "Void", pr, NULL,
                     (void*)h_roomLineSetup, (void**)&o_roomLineSetup, "HR_UI_RoomListLine.Setup"); }
 
     // Nitro getterlari: RCCP_Nos.get/set_amount — obfuscated. Eski hardcoded offset (0x54CFE14/1C)
