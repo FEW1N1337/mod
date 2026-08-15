@@ -2632,6 +2632,42 @@ static void few1n_kickPlayer(void* playerObj) {
             FLog(@"  → Lobby RPC kick: Gerekli pointer(lar) hazır değil");
         }
 
+        // 4.5 OYUNUN KENDI SATIR-KICK BUTONU (HR_UI_PlayerListLine.KickPlayer)
+        // Oyuncu listesindeki her satirin kendi kick butonu var; Register(nick) ile
+        // isme bagli. Hedef ismin satirini bulup KickPlayer() cagirmak, oyunda o
+        // butona basmakla birebir ayni RPC'yi yollar. Dummy manager bulunamasa bile
+        // bu yol calisabilir (oyuncu listesi UI'i sahnedeyse).
+        bool lineKicked = false;
+        if (targetNick && g_mFindObjectsPlural && i_runtime_invoke) {
+            void* llCls = few1n_classAnyImage("", "HR_UI_PlayerListLine");
+            if (llCls) {
+                void* llType = few1n_typeObjOf(llCls);
+                void* mLineKick = i_class_get_method_from_name(llCls, "KickPlayer", 0);
+                int offNick = few1n_fieldOffOn(llCls, "jfg", 0x38);   // Register'da yazilan nick
+                if (llType && mLineKick) {
+                    @try {
+                        void* a[1] = { llType };
+                        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+                        if (ptrOk(arr)) {
+                            int cnt = (int)(*(uintptr_t*)((uintptr_t)arr + 0x18));
+                            void** lines = (void**)((uintptr_t)arr + 0x20);
+                            for (int i = 0; i < cnt && i < 64; i++) {
+                                void* ln = lines[i]; if (!unityAlive(ln)) continue;
+                                NSString *lnNick = readStr(*(void**)((uintptr_t)ln + offNick));
+                                if (lnNick && [lnNick isEqualToString:targetNick]) {
+                                    i_runtime_invoke(mLineKick, ln, NULL, NULL);
+                                    lineKicked = true;
+                                    FLog(@"  → PlayerListLine.KickPlayer() (oyunun kendi butonu) ✓");
+                                    break;
+                                }
+                            }
+                        }
+                        if (!lineKicked) FLog(@"  → PlayerListLine: hedef satir bulunamadi (oyuncu listesi kapali olabilir)");
+                    } @catch (...) { FLog(@"  → PlayerListLine kick HATA"); }
+                }
+            }
+        }
+
         // 5. Hedef oyuncunun PhotonView/CPS nesnesine özel Teleport RPC Düşürme paketi
         //    DÜZELTME: Pointer karşılaştırması yerine ActorNumber karşılaştırması kullan
         bool rpcSent = false;
@@ -2677,8 +2713,13 @@ static void few1n_kickPlayer(void* playerObj) {
             else FLog(@"  → Teleport RPC: Gerekli pointer(lar) hazır değil");
         }
 
-        FLog([NSString stringWithFormat:@"💥 '%@' (Actor=%d) atma işlemi tamamlandı (kick=%@, rpc=%@)",
-              targetNick ?: @"?", targetActor, kicked ? @"✓" : @"✗", rpcSent ? @"✓" : @"✗"]);
+        FLog([NSString stringWithFormat:@"💥 '%@' (Actor=%d) atma: master-kick=%@ satir-kick=%@ rpc-crash=%@",
+              targetNick ?: @"?", targetActor,
+              kicked ? @"✓" : @"✗", lineKicked ? @"✓" : @"✗", rpcSent ? @"✓" : @"✗"]);
+        if (!kicked && !lineKicked && !rpcSent)
+            FLog(@"⚠️ Hiçbir kick yolu tutmadi. En garanti yol: SEN oda master'iysan atarsin. "
+                  "'👑 Oda Master Ol' dene, sonra tekrar at. Master degilsen oyun kick'i sadece "
+                  "oyuncu listesi ekraninda RPC ile calisir.");
     } @catch (...) { g_isManualKick = false; FLog(@"Kick hatası (exception)"); }
 }
 
