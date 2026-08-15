@@ -3490,20 +3490,11 @@ static char g_aiNameColorHex[8] = "00E5FF";  // cyan default
 static char g_aiReplyColorHex[8] = "FF00FF"; // magenta default
 
 // v113: Runtime il2cpp field enumerate + write helpers
-static void* (*i_class_get_fields)(void*, void**) = NULL;   // il2cpp_class_get_fields (iter)
-static const char* (*i_field_get_name)(void*) = NULL;       // il2cpp_field_get_name
-static void* (*i_field_get_type)(void*) = NULL;             // il2cpp_field_get_type
-static const char* (*i_type_get_name)(void*) = NULL;        // il2cpp_type_get_name
+// v114.24: bu pointer'lar artik dosya basinda (few1n_initIl2cpp icinde dlsym'leniyor)
+// — tip-imzasi aramasi da ayni API'yi kullaniyor. Buradaki yerel kopyalar kaldirildi.
 
 static NSString* few1n_dumpClassFields(NSString *className) {
     if (!className || className.length == 0 || !i_class_from_name) return @"class API yok";
-    // Class'i tum image'larda ara
-    if (!i_class_get_fields) {
-        i_class_get_fields = (void*(*)(void*,void**))dlsym(RTLD_DEFAULT, "il2cpp_class_get_fields");
-        i_field_get_name   = (const char*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_field_get_name");
-        i_field_get_type   = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_field_get_type");
-        i_type_get_name    = (const char*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_type_get_name");
-    }
     void* klass = NULL;
     // Bilinen namespace'lerde dene
     NSArray *ns = @[@"", @"Photon.Realtime", @"Photon.Pun", @"UnityEngine", @"UnityEngine.UI", @"TMPro"];
@@ -3520,7 +3511,8 @@ static NSString* few1n_dumpClassFields(NSString *className) {
         NSString *typ = @"?";
         if (i_field_get_type && i_type_get_name) {
             void* tp = i_field_get_type(f);
-            if (tp) { const char *tn = i_type_get_name(tp); if (tn) typ = [NSString stringWithUTF8String:tn]; }
+            // il2cpp_type_get_name malloc'lu string dondurur — kopyalayip free et.
+            if (tp) { char *tn = i_type_get_name(tp); if (tn) { typ = [NSString stringWithUTF8String:tn]; free(tn); } }
         }
         [out appendFormat:@"  %s @+%d (%@)\n", fname ?: "?", off, typ];
         cnt++;
