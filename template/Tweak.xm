@@ -3360,8 +3360,6 @@ static void few1n_forcePlate(void) {
         void* str = mkStr([NSString stringWithUTF8String:customPlateText]);
         if (!str) return;
         if (!g_plateEmptyStr) g_plateEmptyStr = mkStr(@"");
-        NSString *plateNS = [NSString stringWithUTF8String:customPlateText];
-        NSUInteger plen = plateNS.length;
         for (int i = 0; i < cnt; i++) {
             void* pv = plates[i];
             if (!ptrOk(pv)) continue;
@@ -3371,24 +3369,14 @@ static void few1n_forcePlate(void) {
             int pc = (int)(*(uintptr_t*)((uintptr_t)parts + 0x18));
             if (pc < 0 || pc > 32) continue;
             void** tp = (void**)((uintptr_t)parts + 0x20);
-            // v114.41 FIX: PlateVariant.parts[] MONOSPACE plakada HER PARCA BIR KARAKTER slotu
-            // (dump: enableMono + spacing[] + disableSplit). Eski kod tum metni part[0]'a
-            // yaziyordu -> dar/sag-hizali slotta "FERHAT" sadece "HAT" gorunuyordu. Dogrusu:
-            // her parcaya sirayla bir karakter dagit. (Tek alanli plaka ihtimali icin pc<=1
-            // yedegi: tam metni koy.)
-            if (pc <= 1) {
-                if (ptrOk(tp[0])) { void* pa[1]; pa[0] = str; i_runtime_invoke(g_mTmpSetText, tp[0], pa, NULL); }
-            } else {
-                for (int k = 0; k < pc; k++) {
-                    void* t = tp[k];
-                    if (!ptrOk(t)) continue;
-                    void* cs = ((NSUInteger)k < plen)
-                        ? mkStr([plateNS substringWithRange:NSMakeRange((NSUInteger)k, 1)])
-                        : g_plateEmptyStr;
-                    if (!cs) continue;
-                    void* pa[1]; pa[0] = cs;
-                    i_runtime_invoke(g_mTmpSetText, t, pa, NULL);
-                }
+            // v114.52: per-karakter (v114.41) GERI ALINDI. Kullanici "HAT gorunen ama
+            // CALISAN" surumu istiyor — basit yol: tum metni part[0]'a, digerleri bos.
+            // (Ekranda kayik/kesik gorunebilir ama plaka degisir ve COKME yok.)
+            for (int k = 0; k < pc; k++) {
+                void* t = tp[k];
+                if (!ptrOk(t)) continue;
+                void* pa[1]; pa[0] = (k == 0) ? str : g_plateEmptyStr;   // ilk parca=metin, digerleri bos
+                i_runtime_invoke(g_mTmpSetText, t, pa, NULL);
             }
         }
     } @catch (...) {}
@@ -3520,9 +3508,14 @@ static bool few1n_applyServerPlate(NSString *text) {
             if (!unityAlive(pt)) continue;
             if (!few1n_pvIsMineFor(pt)) continue;   // uzak oyuncunun plakasina dokunma
             // Mevcut ulke: Nullable<PlateHolder> inf @0x28 -> PlateHolder.c (country) @+0x28
-            // v114.51 CRASH FIX: pt+0x28 = Nullable<PlateHolder> STRUCT (pointer DEGIL).
-            // Onu country pointer'i sanip Apply'a vermek COP -> oyun cokuyordu. Sabit "TR".
-            void* country = mkStr(@"TR");
+            // v114.52: Country = OYUNDA SECILI plaka tipi. Nullable<PlateHolder> inf @0x28;
+            // PlateHolder = {string c(country)@0, string t@8} -> value.c tam pt+0x28'de.
+            // Yani buradaki string, kullanicinin oyunda sectigi tip (RUSYA/AVRUPA/ABD).
+            // v114.51'de "TR"'ye sabitlemek yanlisti -> hep Rus plakasi seciliyordu.
+            // Sen oyunda AVRUPA sec -> mod da AVRUPA kullanir. (Crash sebebi eaj/eac idi,
+            // o v114.51'de kaldirildi; bu country okumasi guvenli.)
+            void* country = *(void**)((uintptr_t)pt + 0x28);
+            if (!ptrOk(country)) continue;   // tip okunamadi -> zorlama, bu tuner'i atla
             void* args[2] = { country, textStr };
             @try { i_runtime_invoke(mApply, pt, args, NULL); applied++; } @catch (...) {}
         }
