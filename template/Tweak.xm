@@ -1846,6 +1846,21 @@ static void  w_tmp_set_text(void *self, void *value) {
     if (!m || !i_runtime_invoke || !self) return;
     @try { void *args[1]={value}; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
 }
+// v114.60 CRASH FIX: TMP_InputField.set_text — sifre kutulari (passwordInput /
+// passwordOnConnectInput) TMP_InputField'dir, TMP_Text DEGIL. TMP_Text.set_text'i
+// bir TMP_InputField'e cagirmak tip karisikligi -> il2cpp objeyi TMP_Text sanip
+// yanlis offsetlere yaziyor -> native crash (sifreli odaya girince). TMPro Unity
+// paketidir, obfuscate degil -> "set_text" gercek isim.
+static void  w_tmp_input_set_text(void *self, void *value) {
+    static void *m = NULL;
+    if (!m) {
+        void *c = few1n_classAnyImage("TMPro", "TMP_InputField");
+        if (!c) c = few1n_classAnyImage("", "TMP_InputField");
+        m = few1n_resolveOn(c, "set_text", 1);
+    }
+    if (!m || !i_runtime_invoke || !self) return;
+    @try { void *args[1]={value}; i_runtime_invoke(m, self, args, NULL); } @catch (...) {}
+}
 static void* w_tmp_get_text(void *self) {
     static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_tmpTextClass(), "get_text", 0);
     if (!m || !i_runtime_invoke || !self) return NULL;
@@ -4957,11 +4972,12 @@ static void h_roomConnect(void* self) {
             void* roomPwd = *(void**)((uintptr_t)self + OFFR_RL_PASSWORD);
             if (lobbyGetInst && roomPwd) {
                 void* lobby = lobbyGetInst();
-                if (lobby && tmp_set_text) {
+                if (lobby) {
+                    // v114.60: TMP_InputField.set_text (TMP_Text DEGIL) -> crash fix
                     void* pOnConnect = *(void**)((uintptr_t)lobby + OFFR_LOBBY_PWD_CONN);
-                    if (pOnConnect) tmp_set_text(pOnConnect, roomPwd);
+                    if (pOnConnect) w_tmp_input_set_text(pOnConnect, roomPwd);
                     void* pInput = *(void**)((uintptr_t)lobby + OFFR_LOBBY_PWD);
-                    if (pInput) tmp_set_text(pInput, roomPwd);
+                    if (pInput) w_tmp_input_set_text(pInput, roomPwd);
                 }
             }
         } @catch (...) {}
@@ -5110,9 +5126,9 @@ static void few1n_pollPasswordPrefill(void) {
         NSString *pw = readStr(pwdStr);
         if (pw.length == 0) return;                     // sifresiz oda -> doldurma
         void* pOnConnect = *(void**)((uintptr_t)lobby + OFFR_LOBBY_PWD_CONN);
-        if (ptrOk(pOnConnect)) tmp_set_text(pOnConnect, pwdStr);
+        if (ptrOk(pOnConnect)) w_tmp_input_set_text(pOnConnect, pwdStr);   // v114.60: TMP_InputField (crash fix)
         void* pInput = *(void**)((uintptr_t)lobby + OFFR_LOBBY_PWD);
-        if (ptrOk(pInput)) tmp_set_text(pInput, pwdStr);
+        if (ptrOk(pInput)) w_tmp_input_set_text(pInput, pwdStr);           // v114.60: TMP_InputField (crash fix)
         g_pwdFilledForRoom = pendRoom;
         FLog([NSString stringWithFormat:@"🔓 Hooksuz sifre otomatik dolduruldu (%@)", pw]);
     } @catch (...) {}
@@ -10525,15 +10541,16 @@ static NSString* few1n_roomPasswordPropertyKey(void) {
 
             // Oyunun iki TMP alanını da eşitle; bu, lobi panelinin doğru durumu
             // göstermesini sağlar fakat asıl koruma yukarıdaki sunucu özelliğidir.
-            if (lobbyGetInst && tmp_set_text) {
+            if (lobbyGetInst) {
                 void *lobby = lobbyGetInst();
                 if (ptrOk(lobby)) {
                     void *pwdInput = *(void **)((uintptr_t)lobby + OFFR_LOBBY_PWD);
                     void *pwdOnConnect = *(void **)((uintptr_t)lobby + OFFR_LOBBY_PWD_CONN);
                     void *pwdStr = mkStr(pwd);
                     if (ptrOk(pwdStr)) {
-                        if (ptrOk(pwdInput)) tmp_set_text(pwdInput, pwdStr);
-                        if (ptrOk(pwdOnConnect)) tmp_set_text(pwdOnConnect, pwdStr);
+                        // v114.60: TMP_InputField.set_text (TMP_Text DEGIL) -> crash fix
+                        if (ptrOk(pwdInput)) w_tmp_input_set_text(pwdInput, pwdStr);
+                        if (ptrOk(pwdOnConnect)) w_tmp_input_set_text(pwdOnConnect, pwdStr);
                     }
                 }
             }
