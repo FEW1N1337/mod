@@ -142,6 +142,9 @@ static char  announceText[512] = "FEW1N MOD MENU aktif!\nHerkese selam!\nIyi oyu
 static bool  isAutoGreetEnabled = false;
 static char  g_greetText[256] = "Selam millet! FEW1N burada 🔥";
 static bool  g_wasInRoom = false;          // oda giris/cikis kenar tespiti
+// v114.46: Anti-Kick — kicklenirsen odaya otomatik geri gir + master ol
+static bool  isAntiKickEnabled = false;
+static char  g_lastRoomName[128] = "";     // en son bulundugum odanin ismi (geri girmek icin)
 // ==== SARKI SOZU -> CHAT (altyazi gibi) ====
 static bool isLyricsEnabled = false;
 static int  g_lyricsIdx = 0;             // hangi satir
@@ -2833,6 +2836,35 @@ static void few1n_enforceBans(void) {
     } @catch (...) {}
 }
 
+// v114.46: ANTI-KICK — oda ismini takip et; kicklenirsen (beklenmedik cikis)
+// 1sn sonra ayni odaya geri gir, 2sn sonra master ol. Tick'ten cagrilir.
+// NOT: Kendin cikmak istersen once Anti-Kick'i kapat (aksi halde geri ceker).
+static void few1n_antiKickTick(void) {
+    if (!isAntiKickEnabled || !pn_getInRoom) return;
+    static bool wasIn = false;
+    bool inRoom = false;
+    @try { inRoom = pn_getInRoom(); } @catch (...) {}
+    if (inRoom) {
+        if (pn_getCurrentRoom && rinfo_getName) {
+            @try {
+                void* room = pn_getCurrentRoom();
+                if (ptrOk(room)) {
+                    NSString *nm = readStr(rinfo_getName(room));
+                    if (nm.length > 0) { strncpy(g_lastRoomName, nm.UTF8String, sizeof(g_lastRoomName)-1); g_lastRoomName[sizeof(g_lastRoomName)-1] = '\0'; }
+                }
+            } @catch (...) {}
+        }
+    } else if (wasIn && g_lastRoomName[0] && pn_joinRoom) {
+        NSString *rn = [NSString stringWithUTF8String:g_lastRoomName];
+        FLog([NSString stringWithFormat:@"🛡️ Anti-Kick: '%@' odasindan cikarildim -> geri giriliyor", rn]);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            @try { void* ns = mkStr(rn); if (ns) pn_joinRoom(ns, NULL); } @catch (...) {}
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ @try { few1n_claimMaster(); } @catch (...) {} });
+        });
+    }
+    wasIn = inRoom;
+}
+
 // ===== INFINITE NITRO =====
 static float (*o_getNitro)(void*) = NULL;
 static float h_getNitro(void* self) {
@@ -5337,6 +5369,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)tapRoomPassword;
 - (void)completeAllDailyTasks;
 - (void)tapAutoMaster;
+- (void)tapAntiKick;             // v114.46
 - (void)tapGameSpeed;
 - (void)tapFakeOnline;
 - (void)pickRoomMax:(UIButton*)b;
@@ -5974,6 +6007,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"👑  Oda Master Ol" color:C_GOLD atY:y action:@selector(tapRoomMaster)];
     y = [self actionRow:[NSString stringWithFormat:@"⚙️  Master Claim %@ (v70 modu)", isMasterClaimDisabled ? @"KAPALI ✅" : @"ACIK ⚠️"] color:C_CYAN atY:y action:@selector(toggleMasterClaim)];
     y = [self toggle:@"🤖  Otomatik Master" sub:@"Master gidince aninda geri al" key:@"automaster" atY:y action:@selector(tapAutoMaster)];
+    y = [self toggle:@"🛡️  Anti-Kick" sub:@"Kicklenirsen odaya otomatik geri gir + master ol" key:@"antikick" atY:y action:@selector(tapAntiKick)];
     y = [self actionRow:@"⏱️  Oyun Hızı (TimeScale)" color:C_CYAN atY:y action:@selector(tapGameSpeed)];
     y = [self actionRow:@"👥  Fake Çevrimici Sayısı (Lobi Görseli)" color:C_CYAN atY:y action:@selector(tapFakeOnline)];
     y = [self actionRow:@"🗺️  Odadayken Harita Değiştir (v233 minimal + master zorla)" color:C_ON atY:y action:@selector(changeMapInRoom)];
@@ -6306,6 +6340,7 @@ static UIViewController* few1n_topVC(void) {
     // v95 FIX: 4 buton EKSIK KALDI refreshUI'da — basınca iç state değişiyordu ama pill güncellenmiyordu
     // Kullanıcı "açılmıyor" sanıyordu. Şimdi eklendi.
     [self setToggle:@"automaster"     on:isAutoMasterEnabled];
+    [self setToggle:@"antikick"       on:isAntiKickEnabled];
     [self setToggle:@"brakeglow"      on:isBrakeGlowEnabled];  // eski favori anahtari
     [self setToggle:@"brakeglowdob"   on:isBrakeGlowDobEnabled];
     [self setToggle:@"brakeglowmin"   on:isBrakeGlowMinTempEnabled];
@@ -7265,6 +7300,7 @@ static UIViewController* few1n_topVC(void) {
     few1n_enforceBans(); // v114.37: banli oyuncular geri gelirse otomatik tekrar at
     few1n_pollIncomingChat();   // v114.38: hooksuz gelen-chat AI oto-cevap (sadece sideload/g_hooksDead)
     few1n_pollPasswordPrefill();// v114.38: hooksuz sifre otomatik doldurma (sadece sideload/g_hooksDead)
+    few1n_antiKickTick();       // v114.46: Anti-Kick — kicklenirsen otomatik geri gir + master ol
     // v92: BALATA SICAK TUT + HASAR YOK frame update GERI ALINDI — dokunmatik/input bug sebep olabilir
     // Toggle'lar UI'da duruyor ama etkisiz (placeholder). Bug root cause'u bulunca gercek fix gelecek.
     // arac rengi acikken materyalleri BIR KEZ al (tekrar fetch instance sizdirir/coker)
@@ -10202,6 +10238,17 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
     [ac addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
     [self present:ac];
     FLog([NSString stringWithFormat:@"🤖 AutoMaster: %d", isAutoMasterEnabled]);
+}
+
+- (void)tapAntiKick {
+    isAntiKickEnabled = !isAntiKickEnabled;
+    saveBool(@"antikick", isAntiKickEnabled);
+    NSString *durum = isAntiKickEnabled ? @"🛡️ AÇIK — kicklenirsen odaya geri girip master olursun" : @"❌ KAPALI";
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🛡️ Anti-Kick"
+        message:[NSString stringWithFormat:@"Durum: %@\n\nNot: Kendin çıkmak istersen önce bunu kapat (yoksa geri çeker). CloseConnection ile atılırsan geri giriş çalışır; kalıcı ban varsa çalışmaz.", durum] preferredStyle:UIAlertControllerStyleAlert];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+    [self present:ac];
+    FLog([NSString stringWithFormat:@"🛡️ AntiKick: %d", isAntiKickEnabled]);
 }
 
 // ===== OYUN HIZI (TIMESCALE) =====
