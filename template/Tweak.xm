@@ -5431,7 +5431,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)editPlate;
 - (void)spinServerPlate;
 - (void)setServerPlate;
-- (void)officialPlateEveryone;   // v114.42
+// v114.48: officialPlateEveryone (Resmi Plaka/goy) KALDIRILDI — oyunu cokertiyordu.
 - (void)instantWin;              // v114.42
 - (void)trafficStrike;           // v114.42
 - (void)cycleWheels;             // v114.43
@@ -5892,7 +5892,6 @@ static UIViewController* few1n_topVC(void) {
     [self.plateBtn addTarget:self action:@selector(editPlate) forControlEvents:UIControlEventTouchUpInside];
     y = [self actionRow:@"Sunucudan Rastgele Plaka Al" color:C_ON atY:y action:@selector(spinServerPlate)];
     y = [self actionRow:@"🔰  Özel Plaka — HERKESTE Göster (yaz + yayınla)" color:C_GOLD atY:y action:@selector(setServerPlate)];
-    y = [self actionRow:@"🆕  Resmi Plaka — SUNUCUYA Yaz (kalıcı, herkeste)" color:C_GOLD atY:y action:@selector(officialPlateEveryone)];
     y = [self actionRow:@"🏷️  Sunucu İsmi Değiştir (herkes görür)" color:C_GOLD atY:y action:@selector(officialNicknameEveryone)];
     y = [self actionRow:@"🏆  Anında Kazan (yarışı bitir + ödül)" color:C_ON atY:y action:@selector(instantWin)];
     y = [self actionRow:@"🚧  Trafik Fırlat (önüne trafik aracı — deneysel)" color:C_RED atY:y action:@selector(trafficStrike)];
@@ -12113,31 +12112,8 @@ static void few1n_joinTargetRoom(NSString *nm) {
 }
 
 // ===== v114.42: 3 YENI OZELLIK BUTONU =====
-- (void)officialPlateEveryone {
-    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🆕 Resmi Plaka (Sunucu)"
-        message:@"Yazdığın plaka SUNUCU profiline yazılır (kalıcı). Odaya girdiğinde herkes bunu görür. Garaj/ana menüde en güvenilir." preferredStyle:UIAlertControllerStyleAlert];
-    [ac addTextFieldWithConfigurationHandler:^(UITextField *tf){
-        tf.placeholder = @"Örn: FEW1N 34";
-        tf.text = [NSString stringWithUTF8String:customPlateText];
-        tf.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
-        tf.clearButtonMode = UITextFieldViewModeAlways;
-    }];
-    [ac addAction:[UIAlertAction actionWithTitle:@"Sunucuya Yaz" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        NSString *t = ac.textFields.firstObject.text;
-        if (!t || t.length == 0) return;
-        strncpy(customPlateText, t.UTF8String, sizeof(customPlateText)-1);
-        customPlateText[sizeof(customPlateText)-1] = '\0';
-        bool ok = few1n_officialPlate(@"TR", t);
-        UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Gönderildi" : @"⚠️ Olmadı")
-            message:(ok ? @"Sunucuya yazıldı. Odaya (yeniden) girince herkeste görünmeli. Görünmezse loga bak: '🔰 ResmiPlaka'."
-                        : @"PlayerManager.goy bulunamadı. Ana menü/garajdayken tekrar dene.")
-            preferredStyle:UIAlertControllerStyleAlert];
-        [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
-        [self present:r];
-    }]];
-    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
-    [self present:ac];
-}
+// v114.48: officialPlateEveryone (Resmi Plaka) KALDIRILDI — PlayerManager.goy
+// cagrisi oyunu cokertiyordu. Ozel Plaka (few1n_forcePlate, per-karakter) kullan.
 
 - (void)officialNicknameEveryone {
     UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🏷️ Sunucu İsmi"
