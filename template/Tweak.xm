@@ -9669,21 +9669,13 @@ static void few1n_loadMap(NSString *scene, int idx) {
     NSString *sceneCopy = [scene copy];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         @try {
-            bool amMaster = false;
-            if (pn_getLocalPlayer && ply_getIsMaster) {
-                void* me = pn_getLocalPlayer();
-                if (me) amMaster = ply_getIsMaster(me);
-            }
-            if (!amMaster) FLog(@"⚠️ Master gorunmuyorum — yine de deneniyor");
-            // v114.34: PhotonNetwork.LoadLevel sadece automaticallySyncScene=true iken
-            // diger oyunculara senkronlanir. Once bunu ac (yoksa harita sadece sende degisir).
             if (pn_setAutomaticallySyncScene) {
                 @try { pn_setAutomaticallySyncScene(true); FLog(@"🗺️ automaticallySyncScene=true"); } @catch (...) {}
             }
-            // v114.49: OYUNUN KENDI HARITA AKISI — v114.5'te (oyun guncellemesinden ONCE)
-            // CALISAN yontem buydu. lobby.mapSelection.SelectMap(scene) + StartGameButton().
-            // Oyunun kendi yolu -> sync + addressable yuklemesini OYUN dogru yapar.
-            // v114.50: TEK yontem bu (ese/LoadLevel kaldirildi).
+            // v114.53: ESKI (v114.5) COKLU-YONTEM yaklasimi geri getirildi. v114.50'de
+            // tek yonteme indirmistim, calismadi. Baglama gore (lobi vs oda-ici) hangisi
+            // gecerliyse OYUN calistirir; hepsi @try korumali, gecersiz olan sessizce atlanir.
+            // 1) Gercek lobi: MapSelection.SelectMap + StartGameButton (lobi/scene-secim ekrani)
             if (mapSel_selectMap && lobbyStartGame && lobbyGetInst) {
                 void* lobby = lobbyGetInst();
                 if (ptrOk(lobby)) {
@@ -9692,24 +9684,37 @@ static void few1n_loadMap(NSString *scene, int idx) {
                         void* s = mkStr(sceneCopy);
                         if (s) {
                             @try { mapSel_selectMap(mapSel, s); } @catch (...) {}
-                            FLog([NSString stringWithFormat:@"🗺️ [v249] MapSelection.SelectMap('%@') — oyun akisi (v114.5 yontemi)", sceneCopy]);
+                            FLog(@"🗺️ [v253] SelectMap gonderildi (gercek lobi)");
                             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                                @try { lobbyStartGame(lobby); FLog(@"🗺️ [v249] StartGameButton() — oyun haritayi yukluyor"); } @catch (...) {}
+                                @try { lobbyStartGame(lobby); FLog(@"🗺️ [v253] StartGameButton (gercek lobi)"); } @catch (...) {}
                             });
                         }
-                    } else {
-                        FLog(@"🗺️ [v249] mapSelection null — lobi/bekleme ekraninda dene (yarista degil)");
-                    }
+                    } else FLog(@"🗺️ [v253] gercek lobi mapSelection null (oda icindesin -> Dummy denenecek)");
                 }
             }
-            // v114.50: SADECE oyunun kendi akisi (SelectMap+StartGame). ese/LoadLevel
-            // yontemi KALDIRILDI (kullanici istegi — v114.5'teki yontem yeterli). Sonuc:
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            // 2) Gercek lobi: SetScene(scene) — eski Y3 yontemi
+            if (lobbySetScene && lobbyGetInst) {
+                void* lobby = lobbyGetInst();
+                if (ptrOk(lobby)) { void* s = mkStr(sceneCopy); if (s) { @try { lobbySetScene(lobby, s); FLog(@"🗺️ [v253] SetScene gonderildi"); } @catch (...) {} } }
+            }
+            // 3) Dummy lobi (ODA-ICI bekleme ekrani): StartGameButton
+            if (lobbyDummyStartGame) {
+                void* dummy = few1n_findLobbyMgr();
+                if (ptrOk(dummy)) {
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        @try { lobbyDummyStartGame(dummy); FLog(@"🗺️ [v253] Dummy StartGameButton (oda-ici)"); } @catch (...) {}
+                    });
+                }
+            }
+            // 4) Son care: PhotonNetwork.LoadLevel(string)
+            if (pn_loadLevelStr) { void* s = mkStr(sceneCopy); if (s) { @try { pn_loadLevelStr(s); FLog(@"🗺️ [v253] LoadLevel(str) son care"); } @catch (...) {} } }
+            // Sonuc kontrolu
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 NSString *cur = (pn_getActiveSceneName) ? readStr(pn_getActiveSceneName()) : @"?";
                 if (cur && [cur.lowercaseString containsString:sceneCopy.lowercaseString])
-                    FLog(@"✅ [v249] Sahne degisti — basarili (SelectMap+StartGame)");
+                    FLog(@"✅ [v253] Sahne degisti — basarili");
                 else
-                    FLog([NSString stringWithFormat:@"⚠️ Sahne hala '%@'. Kendi odanda (gercek master) + lobi/bekleme ekraninda dene.", cur]);
+                    FLog([NSString stringWithFormat:@"⚠️ Sahne hala '%@'. Kendi odanda + lobi/bekleme ekraninda dene.", cur]);
             });
         } @catch (...) { FLog(@"few1n_loadMap exception"); }
     });
