@@ -12085,10 +12085,16 @@ static void few1n_joinTargetRoom(NSString *nm) {
         if (!t || t.length == 0) return;
         strncpy(customPlateText, t.UTF8String, sizeof(customPlateText)-1);
         customPlateText[sizeof(customPlateText)-1] = '\0';
-        bool ok = few1n_applyServerPlate(t);
-        UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Gönderildi" : @"⚠️ Şimdi olmadı")
-            message:(ok ? @"Plaka uygulandı ve odaya yayınlandı. Diğer oyuncularda görünmeli."
-                        : @"PlateTuner bulunamadı. Aracın tuning/garaj ekranını aç, sonra tekrar dene.")
+        bool ok = few1n_applyServerPlate(t);   // PlateTuner + tuning yayini (varsa)
+        // v114.54: PlateTuner bulunmasa bile plaka HER ZAMAN degissin -> YEREL plakayi ac.
+        // few1n_forcePlate (tick) PlateVariant'a yazar; PlateTuner/garaj ekrani gerektirmez.
+        isCustomPlateEnabled = true;
+        saveBool(@"plateEnabled", true);
+        saveStr(@"plateText", t);
+        [self refreshUI];
+        UIAlertController *r = [UIAlertController alertControllerWithTitle:@"✅ Plaka ayarlandı"
+            message:(ok ? @"Tuning yayınıyla uygulandı + yerel plaka açıldı. Herkeste görünmesi için oyunun PLAKA ekranında AVRUPA seç."
+                        : @"PlateTuner yoktu → YEREL plaka açıldı (senin ekranında görünür). Plakan artık değişir. Herkeste için: oyunun PLAKA ekranını açıp tekrar bas.")
             preferredStyle:UIAlertControllerStyleAlert];
         [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
         [self present:r];
