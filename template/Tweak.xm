@@ -3497,12 +3497,13 @@ static bool few1n_applyServerPlate(NSString *text) {
     if (!ptType || !mApply) { FLog(@"OzelPlaka: PlateTuner.Apply(2) yok"); return false; }
     void* textStr = mkStr(text);
     if (!textStr) return false;
-    // v114.55: PLAKA TIPI SABIT "eu" (Avrupa). 114.51 gibi stabil calisir
-    // (eaj/eac native-crash zinciri few1n_broadcastTuning'de zaten kaldirildi),
-    // FARK: oyunda ne secili olursa olsun tip HEP Avrupa. Rus/ABD secilmez.
-    // country string tipi belirler; PlateUIElement'te eu GameObject var -> "eu".
-    // Onceki v114.52 pt+0x28'den okuyordu ve surekli Rus plakasi geliyordu.
-    void* euStr = mkStr(@"eu");
+    // v114.59: PLAKA TIPI SABIT "eu1" (Avrupa). "eu" YANLISTI -> oyun tanimayip
+    // Rus'a dusuyordu. Dogru deger dump'tan bulundu: PlateDetail'de
+    //   [Header("rus2, rus3, rusj2, rusj3, us1, eu1")]
+    // yani country degeri BASE+VARYANT-NUMARASI formatinda. Avrupa'nin tek varyanti
+    // "eu1". (PlateUIElement: FinishedStage1(country) + FinishedStage22(int style) ->
+    // ikisi birlesip "eu"+"1"="eu1" oluyor.) Rus="rus2/rus3", ABD="us1".
+    void* euStr = mkStr(@"eu1");
     if (!euStr) return false;
 
     int applied = 0;
@@ -3517,7 +3518,7 @@ static bool few1n_applyServerPlate(NSString *text) {
             void* pt = items[i];
             if (!unityAlive(pt)) continue;
             if (!few1n_pvIsMineFor(pt)) continue;   // uzak oyuncunun plakasina dokunma
-            // v114.55: country = "eu" -> tip HEP Avrupa (Rus/ABD degil).
+            // v114.59: country = "eu1" -> tip HEP Avrupa (Rus/ABD degil).
             void* args[2] = { euStr, textStr };
             @try { i_runtime_invoke(mApply, pt, args, NULL); applied++; } @catch (...) {}
         }
