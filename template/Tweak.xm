@@ -3494,6 +3494,13 @@ static bool few1n_applyServerPlate(NSString *text) {
     if (!ptType || !mApply) { FLog(@"OzelPlaka: PlateTuner.Apply(2) yok"); return false; }
     void* textStr = mkStr(text);
     if (!textStr) return false;
+    // v114.55: PLAKA TIPI SABIT "eu" (Avrupa). 114.51 gibi stabil calisir
+    // (eaj/eac native-crash zinciri few1n_broadcastTuning'de zaten kaldirildi),
+    // FARK: oyunda ne secili olursa olsun tip HEP Avrupa. Rus/ABD secilmez.
+    // country string tipi belirler; PlateUIElement'te eu GameObject var -> "eu".
+    // Onceki v114.52 pt+0x28'den okuyordu ve surekli Rus plakasi geliyordu.
+    void* euStr = mkStr(@"eu");
+    if (!euStr) return false;
 
     int applied = 0;
     @try {
@@ -3507,16 +3514,8 @@ static bool few1n_applyServerPlate(NSString *text) {
             void* pt = items[i];
             if (!unityAlive(pt)) continue;
             if (!few1n_pvIsMineFor(pt)) continue;   // uzak oyuncunun plakasina dokunma
-            // Mevcut ulke: Nullable<PlateHolder> inf @0x28 -> PlateHolder.c (country) @+0x28
-            // v114.52: Country = OYUNDA SECILI plaka tipi. Nullable<PlateHolder> inf @0x28;
-            // PlateHolder = {string c(country)@0, string t@8} -> value.c tam pt+0x28'de.
-            // Yani buradaki string, kullanicinin oyunda sectigi tip (RUSYA/AVRUPA/ABD).
-            // v114.51'de "TR"'ye sabitlemek yanlisti -> hep Rus plakasi seciliyordu.
-            // Sen oyunda AVRUPA sec -> mod da AVRUPA kullanir. (Crash sebebi eaj/eac idi,
-            // o v114.51'de kaldirildi; bu country okumasi guvenli.)
-            void* country = *(void**)((uintptr_t)pt + 0x28);
-            if (!ptrOk(country)) continue;   // tip okunamadi -> zorlama, bu tuner'i atla
-            void* args[2] = { country, textStr };
+            // v114.55: country = "eu" -> tip HEP Avrupa (Rus/ABD degil).
+            void* args[2] = { euStr, textStr };
             @try { i_runtime_invoke(mApply, pt, args, NULL); applied++; } @catch (...) {}
         }
     } @catch (...) {}
@@ -12085,16 +12084,11 @@ static void few1n_joinTargetRoom(NSString *nm) {
         if (!t || t.length == 0) return;
         strncpy(customPlateText, t.UTF8String, sizeof(customPlateText)-1);
         customPlateText[sizeof(customPlateText)-1] = '\0';
-        bool ok = few1n_applyServerPlate(t);   // PlateTuner + tuning yayini (varsa)
-        // v114.54: PlateTuner bulunmasa bile plaka HER ZAMAN degissin -> YEREL plakayi ac.
-        // few1n_forcePlate (tick) PlateVariant'a yazar; PlateTuner/garaj ekrani gerektirmez.
-        isCustomPlateEnabled = true;
-        saveBool(@"plateEnabled", true);
-        saveStr(@"plateText", t);
-        [self refreshUI];
-        UIAlertController *r = [UIAlertController alertControllerWithTitle:@"✅ Plaka ayarlandı"
-            message:(ok ? @"Tuning yayınıyla uygulandı + yerel plaka açıldı. Herkeste görünmesi için oyunun PLAKA ekranında AVRUPA seç."
-                        : @"PlateTuner yoktu → YEREL plaka açıldı (senin ekranında görünür). Plakan artık değişir. Herkeste için: oyunun PLAKA ekranını açıp tekrar bas.")
+        bool ok = few1n_applyServerPlate(t);
+        // v114.55: yerel fallback KALDIRILDI (kullanici istegi). Sadece HERKESTE yol.
+        UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Gönderildi" : @"⚠️ Şimdi olmadı")
+            message:(ok ? @"Plaka uygulandı ve odaya yayınlandı. Diğer oyuncularda görünmeli."
+                        : @"PlateTuner bulunamadı. Oyunun PLAKA ekranını (garajda alttaki PLAKA sekmesi) AÇ, sonra bu butona bas. PlateTuner sadece o ekranda var.")
             preferredStyle:UIAlertControllerStyleAlert];
         [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
         [self present:r];
