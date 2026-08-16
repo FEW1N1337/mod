@@ -9705,10 +9705,18 @@ static void few1n_loadMap(NSString *scene, int idx) {
                     });
                 }
             }
-            // 4) Son care: PhotonNetwork.LoadLevel(string)
+            // 4) v114.55 KRITIK: OYUNUN KENDI ADDRESSABLE YUKLEYICISI —
+            // PhotonManager.ese(scene, addressable=true). STATIC metod: aktif lobi/dummy
+            // instance GEREKMEZ, bu yuzden YARIS SIRASINDA da (sahne=HighwayPink) calisir.
+            // Haritalar Build Settings'te DEGIL, Addressable sahne -> PhotonNetwork.LoadLevel
+            // (build-settings isimli) bu yuzden sessizce fail ediyordu. ASIL dogru yol bu.
+            // Pointer 13018'de baglanmisti ama few1n_loadMap onu HIC cagirmiyordu (eksik parca).
+            // Isim de dogru: few1n_readMapNames() gercek referenceName veriyor.
+            if (photonMgrEnp) { void* s = mkStr(sceneCopy); if (s) { @try { photonMgrEnp(s, true); FLog(@"🗺️ [v253] PhotonManager.ese(scene,addressable) gonderildi ✅"); } @catch (...) {} } }
+            // 5) Son care: PhotonNetwork.LoadLevel(string) (build-settings adi)
             if (pn_loadLevelStr) { void* s = mkStr(sceneCopy); if (s) { @try { pn_loadLevelStr(s); FLog(@"🗺️ [v253] LoadLevel(str) son care"); } @catch (...) {} } }
-            // Sonuc kontrolu
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            // Sonuc kontrolu — Addressable async yukleme birkac saniye surebilir (3.5s bekle)
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 NSString *cur = (pn_getActiveSceneName) ? readStr(pn_getActiveSceneName()) : @"?";
                 if (cur && [cur.lowercaseString containsString:sceneCopy.lowercaseString])
                     FLog(@"✅ [v253] Sahne degisti — basarili");
