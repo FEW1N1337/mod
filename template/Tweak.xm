@@ -3544,6 +3544,26 @@ static bool few1n_officialPlate(NSString *country, NSString *text) {
     } @catch (...) { FLog(@"ResmiPlaka: goy exception"); return false; }
 }
 
+// 1b) SUNUCU ISMI: PlayerManager.gow(string) = [UpdateNickname] -> isim SUNUCU
+// profiline yazilir -> odadaki herkes yeni ismini gorur (plaka gibi kesin karsida).
+static bool few1n_officialNickname(NSString *name) {
+    if (!name || name.length == 0 || !i_runtime_invoke || !playerManagerGetInst || !i_class_get_method_from_name) return false;
+    void* pmCls = few1n_classAnyImage("", "PlayerManager");
+    if (!pmCls) { FLog(@"SunucuIsmi: PlayerManager sinifi yok"); return false; }
+    void* mGow = i_class_get_method_from_name(pmCls, "gow", 1);   // UniTask<bool> gow(string)
+    if (!mGow) { FLog(@"SunucuIsmi: gow(1) yok"); return false; }
+    void* pm = playerManagerGetInst();
+    if (!ptrOk(pm)) { FLog(@"SunucuIsmi: PlayerManager instance yok"); return false; }
+    void* nStr = mkStr(name);
+    if (!nStr) return false;
+    @try {
+        void* args[1] = { nStr };
+        i_runtime_invoke(mGow, pm, args, NULL);   // UniTask -> fire & forget
+        FLog([NSString stringWithFormat:@"🏷️ SunucuIsmi: gow('%@') sunucuya gonderildi", name]);
+        return true;
+    } @catch (...) { FLog(@"SunucuIsmi: gow exception"); return false; }
+}
+
 // 2) ANINDA KAZAN: HR_PhotonHandler won-RPC'sini kendi viewID'mle tetikle.
 static bool few1n_instantWin(void) {
     if (!g_hrPhotonHandlerTypeObj || !i_runtime_invoke || !i_class_get_method_from_name) return false;
@@ -5282,6 +5302,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)trafficStrike;           // v114.42
 - (void)cycleWheels;             // v114.43
 - (void)cycleTire;               // v114.43
+- (void)officialNicknameEveryone;// v114.44
 - (void)setServerColor;
 - (void)setRimColor;
 - (void)setChromeMenu;
@@ -5737,6 +5758,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"Sunucudan Rastgele Plaka Al" color:C_ON atY:y action:@selector(spinServerPlate)];
     y = [self actionRow:@"🔰  Özel Plaka — HERKESTE Göster (yaz + yayınla)" color:C_GOLD atY:y action:@selector(setServerPlate)];
     y = [self actionRow:@"🆕  Resmi Plaka — SUNUCUYA Yaz (kalıcı, herkeste)" color:C_GOLD atY:y action:@selector(officialPlateEveryone)];
+    y = [self actionRow:@"🏷️  Sunucu İsmi Değiştir (herkes görür)" color:C_GOLD atY:y action:@selector(officialNicknameEveryone)];
     y = [self actionRow:@"🏆  Anında Kazan (yarışı bitir + ödül)" color:C_ON atY:y action:@selector(instantWin)];
     y = [self actionRow:@"🚧  Trafik Fırlat (önüne trafik aracı — deneysel)" color:C_RED atY:y action:@selector(trafficStrike)];
     y = [self actionRow:@"🛞  Jant Modeli Değiştir (tuner — herkeste)" color:C_ON atY:y action:@selector(cycleWheels)];
@@ -11958,6 +11980,28 @@ static void few1n_joinTargetRoom(NSString *nm) {
         UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Gönderildi" : @"⚠️ Olmadı")
             message:(ok ? @"Sunucuya yazıldı. Odaya (yeniden) girince herkeste görünmeli. Görünmezse loga bak: '🔰 ResmiPlaka'."
                         : @"PlayerManager.goy bulunamadı. Ana menü/garajdayken tekrar dene.")
+            preferredStyle:UIAlertControllerStyleAlert];
+        [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:r];
+    }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    [self present:ac];
+}
+
+- (void)officialNicknameEveryone {
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🏷️ Sunucu İsmi"
+        message:@"Yazdığın isim SUNUCU profiline yazılır. Odadaki herkes yeni ismini görür (Photon nick'ten farklı, kalıcı)." preferredStyle:UIAlertControllerStyleAlert];
+    [ac addTextFieldWithConfigurationHandler:^(UITextField *tf){
+        tf.placeholder = @"Yeni isim";
+        tf.clearButtonMode = UITextFieldViewModeAlways;
+    }];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Sunucuya Yaz" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        NSString *t = ac.textFields.firstObject.text;
+        if (!t || t.length == 0) return;
+        bool ok = few1n_officialNickname(t);
+        UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Gönderildi" : @"⚠️ Olmadı")
+            message:(ok ? @"İsim sunucuya yazıldı. Herkeste güncellenmeli (birkaç saniye/yeniden giriş). Loga bak: '🏷️ SunucuIsmi'."
+                        : @"PlayerManager.gow bulunamadı. Ana menü/garajdayken tekrar dene.")
             preferredStyle:UIAlertControllerStyleAlert];
         [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
         [self present:r];
