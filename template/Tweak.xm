@@ -9693,7 +9693,7 @@ static void few1n_loadMap(NSString *scene, int idx) {
             // v114.49: OYUNUN KENDI HARITA AKISI — v114.5'te (oyun guncellemesinden ONCE)
             // CALISAN yontem buydu. lobby.mapSelection.SelectMap(scene) + StartGameButton().
             // Oyunun kendi yolu -> sync + addressable yuklemesini OYUN dogru yapar.
-            // BIRINCIL yol; ese/LoadLevel asagida yedek kalir.
+            // v114.50: TEK yontem bu (ese/LoadLevel kaldirildi).
             if (mapSel_selectMap && lobbyStartGame && lobbyGetInst) {
                 void* lobby = lobbyGetInst();
                 if (ptrOk(lobby)) {
@@ -9712,45 +9712,14 @@ static void few1n_loadMap(NSString *scene, int idx) {
                     }
                 }
             }
-            // v114.23: eskiden photonMgrEnp NULL ise burada return ediliyordu —
-            // asagidaki PhotonNetwork.LoadLevel yedegi hic denenmiyordu. Artik
-            // birincil yol yoksa dogrudan yedege dusuyor.
-            // v114.40 KOK SEBEP: Bu oyunun haritalari ADDRESSABLE sahneler
-            // (dump: Unity.Addressables.dll + Action<AsyncOperationHandle<SceneInstance>>).
-            // PhotonManager.ese(string name, bool addressable) — 2. parametre addressable bayragi.
-            // Eski kod her zaman FALSE geciyordu -> addressable sahne yolu atlaniyor -> harita
-            // DEGISMIYORDU. Ayrica PhotonNetwork.LoadLevel de calismaz cunku bu sahneler Build
-            // Settings'te DEGIL (Addressable key). Cozum: once ese(name, TRUE).
-            if (photonMgrEnp) {
-                void* s = mkStr(sceneCopy);
-                if (s) {
-                    photonMgrEnp(s, true);   // addressable=TRUE
-                    FLog([NSString stringWithFormat:@"🗺️ [v240] PhotonManager.ese('%@', addressable=true) gonderildi", sceneCopy]);
-                }
-            } else {
-                FLog(@"⚠️ PhotonManager.ese yok — PhotonNetwork.LoadLevel yedegine geciliyor");
-            }
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            // v114.50: SADECE oyunun kendi akisi (SelectMap+StartGame). ese/LoadLevel
+            // yontemi KALDIRILDI (kullanici istegi — v114.5'teki yontem yeterli). Sonuc:
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 NSString *cur = (pn_getActiveSceneName) ? readStr(pn_getActiveSceneName()) : @"?";
-                if (cur && [cur.lowercaseString containsString:sceneCopy.lowercaseString]) {
-                    FLog(@"✅ [v240] Sahne degisti — basarili (addressable=true)"); return;
-                }
-                FLog([NSString stringWithFormat:@"⚠️ Sahne hala '%@' — yedekler deneniyor", cur]);
-                // Yedek 1: ese(name, false) — addressable olmayan build sahnesi ihtimali
-                if (photonMgrEnp) {
-                    void* sf = mkStr(sceneCopy);
-                    if (sf) { photonMgrEnp(sf, false); FLog(@"🔁 [v240] ese(addressable=false) yedegi denendi"); }
-                }
-                // Yedek 2: PhotonNetwork.LoadLevel(string) — build settings sahnesi ise
-                if (pn_loadLevelStr) {
-                    void* s2 = mkStr(sceneCopy);
-                    if (s2) { pn_loadLevelStr(s2); FLog(@"🔁 [v240] LoadLevel(str) yedegi tetiklendi"); }
-                }
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    NSString *c2 = (pn_getActiveSceneName) ? readStr(pn_getActiveSceneName()) : @"?";
-                    if (c2 && [c2.lowercaseString containsString:sceneCopy.lowercaseString]) FLog(@"✅ [v240] Sahne degisti (yedek)");
-                    else FLog(@"❌ Sahne degismedi. Gercek master olmalisin (kendi odan) + addressable yol; log'daki 'ese' satirlarini paylas.");
-                });
+                if (cur && [cur.lowercaseString containsString:sceneCopy.lowercaseString])
+                    FLog(@"✅ [v249] Sahne degisti — basarili (SelectMap+StartGame)");
+                else
+                    FLog([NSString stringWithFormat:@"⚠️ Sahne hala '%@'. Kendi odanda (gercek master) + lobi/bekleme ekraninda dene.", cur]);
             });
         } @catch (...) { FLog(@"few1n_loadMap exception"); }
     });
