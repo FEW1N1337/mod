@@ -3484,19 +3484,15 @@ static void few1n_broadcastTuning(const char* who) {
         for (int i = 0; i < tc && i < 16; i++) {
             void* tm = tmi[i];
             if (!unityAlive(tm) || !few1n_pvIsMineFor(tm)) continue;
-            // 1) Guncel tuner durumlarindan TAZE TuningData kur ve currentData'ya yaz
-            if (mEaj) { @try {
-                void* data = i_runtime_invoke(mEaj, tm, NULL, NULL);
-                if (ptrOk(data) && mEac) { void* a[1]={data}; i_runtime_invoke(mEac, tm, a, NULL); }
-            } @catch (...) {} }
-            // 2) Serialize + RPC (LoadTuners) -> herkese
+            // v114.51 CRASH FIX: eaj->eac zinciri (v114.43) KALDIRILDI — TuningManager
+            // ic metodlarini dogrudan cagirmak null-deref/native crash uretebiliyordu
+            // (@try native segfault'u yakalamaz). Guvenli eah/ead/eae'ye geri donuldu.
             if (mEahBool) { @try { void* a[1]={&t}; i_runtime_invoke(mEahBool, tm, a, NULL); } @catch (...) {} }
-            // 3) Yedek yayin metodlari
             if (mEad)     { @try { i_runtime_invoke(mEad, tm, NULL, NULL); } @catch (...) {} }
             if (mEae)     { @try { i_runtime_invoke(mEae, tm, NULL, NULL); } @catch (...) {} }
             done++;
         }
-        FLog([NSString stringWithFormat:@"%s: %d TuningManager'a yayin (eaj->eac->eah+ead+eae)", who ?: "Tuning", done]);
+        FLog([NSString stringWithFormat:@"%s: %d TuningManager'a yayin (eah+ead+eae)", who ?: "Tuning", done]);
     } @catch (...) {}
 }
 
@@ -3524,8 +3520,9 @@ static bool few1n_applyServerPlate(NSString *text) {
             if (!unityAlive(pt)) continue;
             if (!few1n_pvIsMineFor(pt)) continue;   // uzak oyuncunun plakasina dokunma
             // Mevcut ulke: Nullable<PlateHolder> inf @0x28 -> PlateHolder.c (country) @+0x28
-            void* country = *(void**)((uintptr_t)pt + 0x28);
-            if (!ptrOk(country)) country = mkStr(@"TR");   // okunamadi -> varsayilan
+            // v114.51 CRASH FIX: pt+0x28 = Nullable<PlateHolder> STRUCT (pointer DEGIL).
+            // Onu country pointer'i sanip Apply'a vermek COP -> oyun cokuyordu. Sabit "TR".
+            void* country = mkStr(@"TR");
             void* args[2] = { country, textStr };
             @try { i_runtime_invoke(mApply, pt, args, NULL); applied++; } @catch (...) {}
         }
