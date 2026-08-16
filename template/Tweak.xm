@@ -9690,6 +9690,28 @@ static void few1n_loadMap(NSString *scene, int idx) {
             if (pn_setAutomaticallySyncScene) {
                 @try { pn_setAutomaticallySyncScene(true); FLog(@"🗺️ automaticallySyncScene=true"); } @catch (...) {}
             }
+            // v114.49: OYUNUN KENDI HARITA AKISI — v114.5'te (oyun guncellemesinden ONCE)
+            // CALISAN yontem buydu. lobby.mapSelection.SelectMap(scene) + StartGameButton().
+            // Oyunun kendi yolu -> sync + addressable yuklemesini OYUN dogru yapar.
+            // BIRINCIL yol; ese/LoadLevel asagida yedek kalir.
+            if (mapSel_selectMap && lobbyStartGame && lobbyGetInst) {
+                void* lobby = lobbyGetInst();
+                if (ptrOk(lobby)) {
+                    void* mapSel = *(void**)((uintptr_t)lobby + OFFR_LOBBY_MAPSEL);
+                    if (ptrOk(mapSel)) {
+                        void* s = mkStr(sceneCopy);
+                        if (s) {
+                            @try { mapSel_selectMap(mapSel, s); } @catch (...) {}
+                            FLog([NSString stringWithFormat:@"🗺️ [v249] MapSelection.SelectMap('%@') — oyun akisi (v114.5 yontemi)", sceneCopy]);
+                            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                                @try { lobbyStartGame(lobby); FLog(@"🗺️ [v249] StartGameButton() — oyun haritayi yukluyor"); } @catch (...) {}
+                            });
+                        }
+                    } else {
+                        FLog(@"🗺️ [v249] mapSelection null — lobi/bekleme ekraninda dene (yarista degil)");
+                    }
+                }
+            }
             // v114.23: eskiden photonMgrEnp NULL ise burada return ediliyordu —
             // asagidaki PhotonNetwork.LoadLevel yedegi hic denenmiyordu. Artik
             // birincil yol yoksa dogrudan yedege dusuyor.
