@@ -2290,9 +2290,15 @@ static void safeHook(void* target, void* replacement, void** original, const cha
                   insn, (insn != 0 && insn != 0xFFFFFFFF) ? @"(kod gibi)" : @"(BOS! adres yanlis)"]);
         } else { FLog(@"Hedef okunamiyor - adres gecersiz"); }
     }
-    if (g_msHook) g_msHook(target, replacement, original);   // dlsym ile bulunan gercek motor
-    else MSHookFunction(target, replacement, original);      // bagli sembol (stub olabilir)
-    // GERCEK dogrulama: MSHookFunction basarili olursa *original orijinal koda isaret eder.
+    // v114.39: Direkt MSHookFunction cagrisi KALDIRILDI.
+    // O cagri, dylib'e libsubstrate'e SABIT bag (LC_LOAD_DYLIB) ekliyordu; jailbreak'siz
+    // cihazda libsubstrate olmadigi icin oyun ACILISTA cokuyordu ("oyun atiyor").
+    // Artik hook motoru SADECE dlsym ile bulunur (g_msHook): jailbreak'te bulunur ve
+    // hooklar calisir; sideload'da NULL kalir -> *original NULL (yukarida set edildi) ->
+    // asagidaki FAIL dali g_hooksDead=true yapar -> il2cpp yolu devreye girer.
+    // Sonuc: substrate bagimliligi tamamen kalkti, sideload'da acilis cokmesi biter.
+    if (g_msHook) g_msHook(target, replacement, original);   // dlsym ile bulunan gercek motor (Substrate/ElleKit)
+    // GERCEK dogrulama: hook basarili olursa *original orijinal koda isaret eder.
     // Sideload'da (Substrate yok) MSHookFunction sessizce hicbir sey yapmaz -> *original NULL kalir.
     if (original && *original == NULL) {
         FLog([NSString stringWithFormat:@"FAIL (hook yazilamadi) %@", nm]);

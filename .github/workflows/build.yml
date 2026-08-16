@@ -107,7 +107,10 @@ jobs:
           FEW1NMod_FILES = Tweak.xm
           FEW1NMod_CFLAGS = -fobjc-arc -std=c++14 -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-function -Wno-format-invalid-specifier -Wno-unknown-warning-option
           FEW1NMod_FRAMEWORKS = UIKit Foundation QuartzCore CoreGraphics ImageIO PhotosUI
-          FEW1NMod_LIBRARIES = substrate
+          # v114.39: substrate KUTUPHANESI KALDIRILDI. Direkt MSHookFunction cagrisi
+          # Tweak.xm'den cikarildi (artik sadece dlsym ile bulunuyor), bu yuzden libsubstrate'e
+          # sabit bag gereksiz. Bu bag jailbreak'siz cihazda acilis cokmesine yol aciyordu.
+          # Kod yalnizca %ctor kullaniyor (%hook YOK) -> substrate olmadan derlenir/yuklenir.
 
           include $(THEOS_MAKE_PATH)/tweak.mk
           EOF
