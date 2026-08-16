@@ -9345,29 +9345,41 @@ static void few1n_loadMap(NSString *scene, int idx) {
             // v114.23: eskiden photonMgrEnp NULL ise burada return ediliyordu —
             // asagidaki PhotonNetwork.LoadLevel yedegi hic denenmiyordu. Artik
             // birincil yol yoksa dogrudan yedege dusuyor.
+            // v114.40 KOK SEBEP: Bu oyunun haritalari ADDRESSABLE sahneler
+            // (dump: Unity.Addressables.dll + Action<AsyncOperationHandle<SceneInstance>>).
+            // PhotonManager.ese(string name, bool addressable) — 2. parametre addressable bayragi.
+            // Eski kod her zaman FALSE geciyordu -> addressable sahne yolu atlaniyor -> harita
+            // DEGISMIYORDU. Ayrica PhotonNetwork.LoadLevel de calismaz cunku bu sahneler Build
+            // Settings'te DEGIL (Addressable key). Cozum: once ese(name, TRUE).
             if (photonMgrEnp) {
                 void* s = mkStr(sceneCopy);
                 if (s) {
-                    photonMgrEnp(s, false);
-                    FLog([NSString stringWithFormat:@"🗺️ [v233] PhotonManager.LoadLevel('%@') gonderildi", sceneCopy]);
+                    photonMgrEnp(s, true);   // addressable=TRUE
+                    FLog([NSString stringWithFormat:@"🗺️ [v240] PhotonManager.ese('%@', addressable=true) gonderildi", sceneCopy]);
                 }
             } else {
-                FLog(@"⚠️ PhotonManager.LoadLevel yok — PhotonNetwork.LoadLevel yedegine geciliyor");
+                FLog(@"⚠️ PhotonManager.ese yok — PhotonNetwork.LoadLevel yedegine geciliyor");
             }
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 NSString *cur = (pn_getActiveSceneName) ? readStr(pn_getActiveSceneName()) : @"?";
                 if (cur && [cur.lowercaseString containsString:sceneCopy.lowercaseString]) {
-                    FLog(@"✅ [v233] Sahne degisti — basarili"); return;
+                    FLog(@"✅ [v240] Sahne degisti — basarili (addressable=true)"); return;
                 }
-                FLog([NSString stringWithFormat:@"⚠️ Sahne hala '%@' — LoadLevel fallback", cur]);
+                FLog([NSString stringWithFormat:@"⚠️ Sahne hala '%@' — yedekler deneniyor", cur]);
+                // Yedek 1: ese(name, false) — addressable olmayan build sahnesi ihtimali
+                if (photonMgrEnp) {
+                    void* sf = mkStr(sceneCopy);
+                    if (sf) { photonMgrEnp(sf, false); FLog(@"🔁 [v240] ese(addressable=false) yedegi denendi"); }
+                }
+                // Yedek 2: PhotonNetwork.LoadLevel(string) — build settings sahnesi ise
                 if (pn_loadLevelStr) {
                     void* s2 = mkStr(sceneCopy);
-                    if (s2) { pn_loadLevelStr(s2); FLog(@"🔁 [v233] LoadLevel(str) fallback tetiklendi"); }
+                    if (s2) { pn_loadLevelStr(s2); FLog(@"🔁 [v240] LoadLevel(str) yedegi tetiklendi"); }
                 }
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     NSString *c2 = (pn_getActiveSceneName) ? readStr(pn_getActiveSceneName()) : @"?";
-                    if (c2 && [c2.lowercaseString containsString:sceneCopy.lowercaseString]) FLog(@"✅ [v233] Sahne degisti (LoadLevel)");
-                    else FLog(@"❌ Sahne degismedi — 'Oda Master Ol' bas, tekrar dene.");
+                    if (c2 && [c2.lowercaseString containsString:sceneCopy.lowercaseString]) FLog(@"✅ [v240] Sahne degisti (yedek)");
+                    else FLog(@"❌ Sahne degismedi. Gercek master olmalisin (kendi odan) + addressable yol; log'daki 'ese' satirlarini paylas.");
                 });
             });
         } @catch (...) { FLog(@"few1n_loadMap exception"); }
@@ -9488,8 +9500,8 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
             } else if (method == 2) {
                 if (!photonMgrEnp) { FLog(@"[Y2] photonMgrEnp NULL"); return; }
                 void* s = mkStr(inp); if (!s) return;
-                photonMgrEnp(s, false);
-                FLog([NSString stringWithFormat:@"[Y2] PhotonManager.enp('%@') gonderildi", inp]);
+                photonMgrEnp(s, true);   // v114.40: addressable=true (haritalar Addressable sahne)
+                FLog([NSString stringWithFormat:@"[Y2] PhotonManager.ese('%@', addressable=true) gonderildi", inp]);
             } else if (method == 3) {
                 if (!lobbySetScene || !lobbyGetInst) { FLog(@"[Y3] Pointerler yok"); return; }
                 void* lobby = lobbyGetInst(); if (!ptrOk(lobby)) { FLog(@"[Y3] Lobby yok"); return; }
@@ -10225,20 +10237,22 @@ static NSString* few1n_roomPasswordPropertyKey(void) {
             NSString *tgt = target;
             FLog([NSString stringWithFormat:@"🌤️ HAVA: %@ -> yukleniyor '%@'", wName, tgt]);
             @try {
+                // v114.40: Bu sahneler Addressable -> once ese(name, addressable=true).
+                // (LoadLevel/SetScene Build-Settings sahnesi bekler, addressable'da calismaz.)
+                if (photonMgrEnp) {
+                    void* s = mkStr(tgt);
+                    if (s) { photonMgrEnp(s, true); FLog(@"🌤️ ese(addressable=true) ile gonderildi"); return; }
+                }
                 if (pn_loadLevelStr) {
                     void* s = mkStr(tgt);
-                    if (s) { pn_loadLevelStr(s); FLog(@"🌤️ LoadLevel ile gonderildi"); return; }
+                    if (s) { pn_loadLevelStr(s); FLog(@"🌤️ LoadLevel yedegi ile gonderildi"); return; }
                 }
                 if (lobbySetScene && lobbyGetInst) {
                     void* lobby = lobbyGetInst();
                     if (ptrOk(lobby)) {
                         void* s = mkStr(tgt);
-                        if (s) { lobbySetScene(lobby, s); FLog(@"🌤️ SetScene ile gonderildi"); return; }
+                        if (s) { lobbySetScene(lobby, s); FLog(@"🌤️ SetScene yedegi ile gonderildi"); return; }
                     }
-                }
-                if (photonMgrEnp) {
-                    void* s = mkStr(tgt);
-                    if (s) { photonMgrEnp(s, false); FLog(@"🌤️ enp ile gonderildi"); }
                 }
             } @catch (...) { FLog(@"🌤️ Exception"); }
         }]];
