@@ -3467,6 +3467,125 @@ static bool few1n_applyServerPlate(NSString *text) {
     return true;
 }
 
+// ============================================================================
+// v114.42: 3 YENI OZELLIK — hepsi IZOLE + @try korumali (mevcut kodu etkilemez).
+// Kaynak: dump.cs HR_PhotonHandler [PunRPC]'leri + PlayerManager.goy.
+// Calismasalar bile digerlerini BOZMAZ (bagimsiz fonksiyonlar, guard'li).
+// ============================================================================
+
+// Kendi arabamin PhotonView'i (IsMine==true olan)
+static void* few1n_myPhotonView(void) {
+    if (!g_photonViewType || g_isMineOff <= 0 || !g_mFindObjectsPlural || !i_runtime_invoke) return NULL;
+    @try {
+        void* a[1]; a[0] = g_photonViewType;
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) return NULL;
+        int n = *(int*)((uintptr_t)arr + 0x18);
+        if (n < 1 || n > 512) return NULL;
+        void** pvs = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < n; i++) {
+            void* pv = pvs[i];
+            if (!unityAlive(pv)) continue;
+            if (*(unsigned char*)((uintptr_t)pv + g_isMineOff)) return pv;   // benim
+        }
+    } @catch (...) {}
+    return NULL;
+}
+
+// PhotonView.get_ViewID() -> int
+static int few1n_viewIDOf(void* pv) {
+    static void* mVID = NULL;
+    if (!pv || !i_runtime_invoke) return 0;
+    if (!mVID && i_class_get_method_from_name) {
+        void* cls = few1n_classAnyImage("Photon.Pun", "PhotonView");
+        if (!cls) cls = few1n_classAnyImage("", "PhotonView");
+        if (cls) mVID = i_class_get_method_from_name(cls, "get_ViewID", 0);
+    }
+    if (!mVID) return 0;
+    @try {
+        void* box = i_runtime_invoke(mVID, pv, NULL, NULL);
+        if (ptrOk(box)) return *(int*)((uintptr_t)box + 0x10);   // boxed int unbox
+    } @catch (...) {}
+    return 0;
+}
+
+// 1) RESMI PLAKA: PlayerManager.goy(int, ulke, metin) -> plaka SUNUCU profiline yazilir.
+// setServerPlate (tuner-broadcast) ile FARKLI: bu kalici + herkes spawn'da gorur.
+static bool few1n_officialPlate(NSString *country, NSString *text) {
+    if (!text || text.length == 0 || !i_runtime_invoke || !playerManagerGetInst || !i_class_get_method_from_name) return false;
+    void* pmCls = few1n_classAnyImage("", "PlayerManager");
+    if (!pmCls) { FLog(@"ResmiPlaka: PlayerManager sinifi yok"); return false; }
+    void* mGoy = i_class_get_method_from_name(pmCls, "goy", 3);   // UniTask<SpinPlateResponse> goy(int,string,string)
+    if (!mGoy) { FLog(@"ResmiPlaka: goy(3) yok"); return false; }
+    void* pm = playerManagerGetInst();
+    if (!ptrOk(pm)) { FLog(@"ResmiPlaka: PlayerManager instance yok"); return false; }
+    void* cStr = mkStr(country.length ? country : @"TR");
+    void* tStr = mkStr(text);
+    if (!cStr || !tStr) return false;
+    @try {
+        int price = 0;
+        void* args[3] = { &price, cStr, tStr };
+        i_runtime_invoke(mGoy, pm, args, NULL);   // UniTask -> fire & forget (istek sunucuya gider)
+        FLog([NSString stringWithFormat:@"🔰 ResmiPlaka: goy(0,'%@','%@') sunucuya gonderildi", country, text]);
+        return true;
+    } @catch (...) { FLog(@"ResmiPlaka: goy exception"); return false; }
+}
+
+// 2) ANINDA KAZAN: HR_PhotonHandler won-RPC'sini kendi viewID'mle tetikle.
+static bool few1n_instantWin(void) {
+    if (!g_hrPhotonHandlerTypeObj || !i_runtime_invoke || !i_class_get_method_from_name) return false;
+    void* inst = few1n_findByType(g_hrPhotonHandlerTypeObj);
+    if (!ptrOk(inst)) { FLog(@"AnindaKazan: HR_PhotonHandler instance yok (yarista dene)"); return false; }
+    void* cls = few1n_classAnyImage("", "HR_PhotonHandler");
+    if (!cls) return false;
+    void* pv = few1n_myPhotonView();
+    int vid = pv ? few1n_viewIDOf(pv) : 0;
+    @try {
+        // Once agli gonderici enz(PhotonView) — RpcTarget.All ile herkes + lokal
+        void* mEnz = i_class_get_method_from_name(cls, "enz", 1);
+        if (mEnz && ptrOk(pv)) {
+            void* a[1] = { pv };
+            i_runtime_invoke(mEnz, inst, a, NULL);
+            FLog([NSString stringWithFormat:@"🏆 AnindaKazan: enz(PhotonView) gonderildi (viewID=%d)", vid]);
+            return true;
+        }
+        // Yedek: lokal NetworkPlayerWonRPC(viewID)
+        void* mWon = i_class_get_method_from_name(cls, "NetworkPlayerWonRPC", 1);
+        if (mWon && vid > 0) {
+            void* a[1] = { &vid };
+            i_runtime_invoke(mWon, inst, a, NULL);
+            FLog([NSString stringWithFormat:@"🏆 AnindaKazan: NetworkPlayerWonRPC(%d) lokal tetiklendi", vid]);
+            return true;
+        }
+        FLog(@"AnindaKazan: enz/won metodu yok veya viewID alinamadi");
+    } @catch (...) { FLog(@"AnindaKazan: exception"); }
+    return false;
+}
+
+// 3) TRAFIK FIRLAT (DENEYSEL): onune trafik araci spawnla.
+// EnableTrafficvehicleRPC(int viewID, byte modelIndex, Vector3 position). Guard'li; tutmazsa no-op.
+static bool few1n_trafficStrike(void) {
+    if (!g_hrPhotonHandlerTypeObj || !i_runtime_invoke || !i_class_get_method_from_name) return false;
+    if (!unityAlive(g_rb)) { FLog(@"TrafikFirlat: once arabana bin"); return false; }
+    void* inst = few1n_findByType(g_hrPhotonHandlerTypeObj);
+    if (!ptrOk(inst)) { FLog(@"TrafikFirlat: HR_PhotonHandler yok"); return false; }
+    void* cls = few1n_classAnyImage("", "HR_PhotonHandler");
+    if (!cls) return false;
+    void* mEnable = i_class_get_method_from_name(cls, "EnableTrafficvehicleRPC", 3);
+    if (!mEnable) { FLog(@"TrafikFirlat: EnableTrafficvehicleRPC(3) yok"); return false; }
+    void* pv = few1n_myPhotonView();
+    int vid = pv ? few1n_viewIDOf(pv) : 0;
+    @try {
+        Vec3 pos = {0,0,0}; rbGetPosIl(g_rb, &pos);
+        Vec3 fwd; if (few1n_fwd(g_rb, &fwd)) { pos.x += fwd.x * 30.0f; pos.y += fwd.y * 30.0f; pos.z += fwd.z * 30.0f; }  // 30m ilerisi
+        unsigned char model = 0;
+        void* args[3] = { &vid, &model, &pos };
+        i_runtime_invoke(mEnable, inst, args, NULL);
+        FLog([NSString stringWithFormat:@"🚧 TrafikFirlat: EnableTrafficvehicleRPC(vid=%d, model=0) 30m ileriye gonderildi", vid]);
+        return true;
+    } @catch (...) { FLog(@"TrafikFirlat: exception"); return false; }
+}
+
 // ===== v114.29: OZEL RENK — HERKESTE GORUNUR =====
 // PaintTuner : MonoBehaviour, hs — plaka ile AYNI tuning yolunu kullanir, yani
 // TuningManager RPC'siyle herkese yayilir. PaintTuner.Apply(Color, int type)
@@ -5115,6 +5234,9 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)editPlate;
 - (void)spinServerPlate;
 - (void)setServerPlate;
+- (void)officialPlateEveryone;   // v114.42
+- (void)instantWin;              // v114.42
+- (void)trafficStrike;           // v114.42
 - (void)setServerColor;
 - (void)setRimColor;
 - (void)setChromeMenu;
@@ -5569,6 +5691,9 @@ static UIViewController* few1n_topVC(void) {
     [self.plateBtn addTarget:self action:@selector(editPlate) forControlEvents:UIControlEventTouchUpInside];
     y = [self actionRow:@"Sunucudan Rastgele Plaka Al" color:C_ON atY:y action:@selector(spinServerPlate)];
     y = [self actionRow:@"🔰  Özel Plaka — HERKESTE Göster (yaz + yayınla)" color:C_GOLD atY:y action:@selector(setServerPlate)];
+    y = [self actionRow:@"🆕  Resmi Plaka — SUNUCUYA Yaz (kalıcı, herkeste)" color:C_GOLD atY:y action:@selector(officialPlateEveryone)];
+    y = [self actionRow:@"🏆  Anında Kazan (yarışı bitir + ödül)" color:C_ON atY:y action:@selector(instantWin)];
+    y = [self actionRow:@"🚧  Trafik Fırlat (önüne trafik aracı — deneysel)" color:C_RED atY:y action:@selector(trafficStrike)];
 
     // v102: 6 yeni ozellik
     y = [self toggle:@"✨  Emissive Parlak Boya" sub:@"Aracın materyallerini HDR sarı-turuncu parlak yapar" key:@"emissive" atY:y action:@selector(tapEmissivePaint)];
@@ -11765,6 +11890,53 @@ static void few1n_joinTargetRoom(NSString *nm) {
     }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
     [self present:ac];
+}
+
+// ===== v114.42: 3 YENI OZELLIK BUTONU =====
+- (void)officialPlateEveryone {
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🆕 Resmi Plaka (Sunucu)"
+        message:@"Yazdığın plaka SUNUCU profiline yazılır (kalıcı). Odaya girdiğinde herkes bunu görür. Garaj/ana menüde en güvenilir." preferredStyle:UIAlertControllerStyleAlert];
+    [ac addTextFieldWithConfigurationHandler:^(UITextField *tf){
+        tf.placeholder = @"Örn: FEW1N 34";
+        tf.text = [NSString stringWithUTF8String:customPlateText];
+        tf.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
+        tf.clearButtonMode = UITextFieldViewModeAlways;
+    }];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Sunucuya Yaz" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        NSString *t = ac.textFields.firstObject.text;
+        if (!t || t.length == 0) return;
+        strncpy(customPlateText, t.UTF8String, sizeof(customPlateText)-1);
+        customPlateText[sizeof(customPlateText)-1] = '\0';
+        bool ok = few1n_officialPlate(@"TR", t);
+        UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Gönderildi" : @"⚠️ Olmadı")
+            message:(ok ? @"Sunucuya yazıldı. Odaya (yeniden) girince herkeste görünmeli. Görünmezse loga bak: '🔰 ResmiPlaka'."
+                        : @"PlayerManager.goy bulunamadı. Ana menü/garajdayken tekrar dene.")
+            preferredStyle:UIAlertControllerStyleAlert];
+        [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:r];
+    }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    [self present:ac];
+}
+
+- (void)instantWin {
+    bool ok = few1n_instantWin();
+    UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"🏆 Kazan gönderildi" : @"⚠️ Olmadı")
+        message:(ok ? @"Kazanma sinyali gönderildi. Yarış içindeyken en iyi çalışır. Olmadıysa loga bak: '🏆 AnindaKazan'."
+                    : @"Yarışta değilsin veya HR_PhotonHandler hazır değil. Yarışa girip tekrar dene.")
+        preferredStyle:UIAlertControllerStyleAlert];
+    [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+    [self present:r];
+}
+
+- (void)trafficStrike {
+    bool ok = few1n_trafficStrike();
+    UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"🚧 Fırlatıldı" : @"⚠️ Olmadı")
+        message:(ok ? @"Trafik aracı önüne gönderildi (deneysel). Tutmazsa loga bak: '🚧 TrafikFirlat'."
+                    : @"Arabana binmen ve yarışta olman lazım. Sonra tekrar dene.")
+        preferredStyle:UIAlertControllerStyleAlert];
+    [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+    [self present:r];
 }
 
 - (void)setServerColor {
