@@ -3472,24 +3472,18 @@ static void few1n_broadcastTuning(const char* who) {
         for (int i = 0; i < tc && i < 16; i++) {
             void* tm = tmi[i];
             if (!unityAlive(tm) || !few1n_pvIsMineFor(tm)) continue;
-            // v114.57: eaj->eac zinciri GERI GETIRILDI. v114.51'de "crash sebebi" diye
-            // cikarmistim ama asil cokme goy (Resmi Plaka) idi -> o zaten v114.48'de
-            // ayri olarak silinmisti. eaj/eac calisiyordu. Bu zincir currentData'yi TAZE
-            // tuner durumlarindan (uyguladigimiz plaka dahil) kurar; onsuz eah(true) ESKI/
-            // BOS datayi yayinlar -> karsi taraf plakayi GORMEZ (sadece lokal kalir).
-            // "Online/herkeste" gorunurluk icin bu zincir SART.
-            // 1) Guncel tuner durumlarindan TAZE TuningData kur ve currentData'ya yaz
-            if (mEaj) { @try {
-                void* data = i_runtime_invoke(mEaj, tm, NULL, NULL);
-                if (ptrOk(data) && mEac) { void* a[1]={data}; i_runtime_invoke(mEac, tm, a, NULL); }
-            } @catch (...) {} }
-            // 2) Serialize + RPC (LoadTuners) -> herkese
+            // v114.58: eaj->eac zinciri TEKRAR KALDIRILDI (kullanici v114.57'yi test etti
+            // -> COKME). eaj/eac TuningManager ic metodlarini dogrudan cagirmak null-deref/
+            // native crash uretiyor; @try native segfault'u yakalamaz. v114.51'deki STABIL
+            // eah/ead/eae yayinina geri donuldu. Plaka tipi "eu" (v114.55) korunuyor.
+            // NOT: eaj/eac olmadan yayin currentData'yi tazelemez -> plaka karsi tarafta
+            // gorunmeyebilir (lokal kalabilir). AMA COKMEZ. Oncelik: cokme yok + eu tipi.
             if (mEahBool) { @try { void* a[1]={&t}; i_runtime_invoke(mEahBool, tm, a, NULL); } @catch (...) {} }
             if (mEad)     { @try { i_runtime_invoke(mEad, tm, NULL, NULL); } @catch (...) {} }
             if (mEae)     { @try { i_runtime_invoke(mEae, tm, NULL, NULL); } @catch (...) {} }
             done++;
         }
-        FLog([NSString stringWithFormat:@"%s: %d TuningManager'a yayin (eaj->eac->eah+ead+eae)", who ?: "Tuning", done]);
+        FLog([NSString stringWithFormat:@"%s: %d TuningManager'a yayin (eah+ead+eae)", who ?: "Tuning", done]);
     } @catch (...) {}
 }
 
