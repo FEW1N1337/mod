@@ -3407,8 +3407,14 @@ static void few1n_broadcastTuning(const char* who) {
         void* mEad     = i_class_get_method_from_name(tmCls, "ead", 0);
         void* mEae     = i_class_get_method_from_name(tmCls, "eae", 0);
         void* mEai     = i_class_get_method_from_name(tmCls, "eai", 0);
-        FLog([NSString stringWithFormat:@"Yayin adaylari: eah(bool)=%@ ead=%@ eae=%@ eai=%@",
-              mEahBool?@"✓":@"✗", mEad?@"✓":@"✗", mEae?@"✓":@"✗", mEai?@"✓":@"✗"]);
+        // v114.43: TAZE TuningData zinciri. eaj() -> guncel tuner durumlarindan
+        // TuningData kurar; eac(data) -> currentData'ya yazar; eah(true) -> serialize+RPC.
+        // Eski kod sadece eah cagiriyordu -> muhtemelen ESKI/BOS currentData yayilıyordu
+        // (mod tuner'lari DOGRUDAN Apply ediyor, TuningManager.currentData guncellenmiyordu).
+        void* mEaj     = i_class_get_method_from_name(tmCls, "eaj", 0);   // TuningData eaj()
+        void* mEac     = i_class_get_method_from_name(tmCls, "eac", 1);   // void eac(TuningData)
+        FLog([NSString stringWithFormat:@"Yayin adaylari: eaj=%@ eac=%@ eah(bool)=%@ ead=%@ eae=%@ eai=%@",
+              mEaj?@"✓":@"✗", mEac?@"✓":@"✗", mEahBool?@"✓":@"✗", mEad?@"✓":@"✗", mEae?@"✓":@"✗", mEai?@"✓":@"✗"]);
         if (!tmType) return;
         void* b[1] = { tmType };
         void* tms = i_runtime_invoke(g_mFindObjectsPlural, NULL, b, NULL);
@@ -3420,12 +3426,19 @@ static void few1n_broadcastTuning(const char* who) {
         for (int i = 0; i < tc && i < 16; i++) {
             void* tm = tmi[i];
             if (!unityAlive(tm) || !few1n_pvIsMineFor(tm)) continue;
+            // 1) Guncel tuner durumlarindan TAZE TuningData kur ve currentData'ya yaz
+            if (mEaj) { @try {
+                void* data = i_runtime_invoke(mEaj, tm, NULL, NULL);
+                if (ptrOk(data) && mEac) { void* a[1]={data}; i_runtime_invoke(mEac, tm, a, NULL); }
+            } @catch (...) {} }
+            // 2) Serialize + RPC (LoadTuners) -> herkese
             if (mEahBool) { @try { void* a[1]={&t}; i_runtime_invoke(mEahBool, tm, a, NULL); } @catch (...) {} }
+            // 3) Yedek yayin metodlari
             if (mEad)     { @try { i_runtime_invoke(mEad, tm, NULL, NULL); } @catch (...) {} }
             if (mEae)     { @try { i_runtime_invoke(mEae, tm, NULL, NULL); } @catch (...) {} }
             done++;
         }
-        FLog([NSString stringWithFormat:@"%s: %d TuningManager'a yayin denendi (eah+ead+eae)", who ?: "Tuning", done]);
+        FLog([NSString stringWithFormat:@"%s: %d TuningManager'a yayin (eaj->eac->eah+ead+eae)", who ?: "Tuning", done]);
     } @catch (...) {}
 }
 
@@ -3584,6 +3597,36 @@ static bool few1n_trafficStrike(void) {
         FLog([NSString stringWithFormat:@"🚧 TrafikFirlat: EnableTrafficvehicleRPC(vid=%d, model=0) 30m ileriye gonderildi", vid]);
         return true;
     } @catch (...) { FLog(@"TrafikFirlat: exception"); return false; }
+}
+
+// v114.43: Generic Apply(int) tuner (hs) uygula + HERKESE yayinla.
+// Wheels/Tire gibi tuner'lar icin: benim aracimdaki tuner'a Apply(index), sonra broadcast.
+static bool few1n_applyTunerInt(const char* className, int index, const char* who) {
+    if (!i_runtime_invoke || !g_mFindObjectsPlural || !i_class_get_method_from_name) return false;
+    void* cls = few1n_classAnyImage("", className);
+    if (!cls) { FLog([NSString stringWithFormat:@"%s: sinif yok", who]); return false; }
+    void* tobj = few1n_typeObjOf(cls);
+    void* mApply = i_class_get_method_from_name(cls, "Apply", 1);   // Apply(int)
+    if (!tobj || !mApply) { FLog([NSString stringWithFormat:@"%s: Apply(1) yok", who]); return false; }
+    int applied = 0;
+    @try {
+        void* a[1] = { tobj };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) { FLog([NSString stringWithFormat:@"%s: tuner yok (garaj/arac ac)", who]); return false; }
+        int cnt = *(int*)((uintptr_t)arr + 0x18);
+        if (cnt < 1 || cnt > 64) return false;
+        void** items = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < cnt; i++) {
+            void* tn = items[i];
+            if (!unityAlive(tn) || !few1n_pvIsMineFor(tn)) continue;
+            void* args[1] = { &index };
+            @try { i_runtime_invoke(mApply, tn, args, NULL); applied++; } @catch (...) {}
+        }
+    } @catch (...) {}
+    if (applied == 0) { FLog([NSString stringWithFormat:@"%s: benim tuner bulunamadi", who]); return false; }
+    few1n_broadcastTuning(who);
+    FLog([NSString stringWithFormat:@"%s: index=%d %d tuner'a uygulandi + yayinlandi", who, index, applied]);
+    return true;
 }
 
 // ===== v114.29: OZEL RENK — HERKESTE GORUNUR =====
@@ -5237,6 +5280,8 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)officialPlateEveryone;   // v114.42
 - (void)instantWin;              // v114.42
 - (void)trafficStrike;           // v114.42
+- (void)cycleWheels;             // v114.43
+- (void)cycleTire;               // v114.43
 - (void)setServerColor;
 - (void)setRimColor;
 - (void)setChromeMenu;
@@ -5694,6 +5739,8 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"🆕  Resmi Plaka — SUNUCUYA Yaz (kalıcı, herkeste)" color:C_GOLD atY:y action:@selector(officialPlateEveryone)];
     y = [self actionRow:@"🏆  Anında Kazan (yarışı bitir + ödül)" color:C_ON atY:y action:@selector(instantWin)];
     y = [self actionRow:@"🚧  Trafik Fırlat (önüne trafik aracı — deneysel)" color:C_RED atY:y action:@selector(trafficStrike)];
+    y = [self actionRow:@"🛞  Jant Modeli Değiştir (tuner — herkeste)" color:C_ON atY:y action:@selector(cycleWheels)];
+    y = [self actionRow:@"🛢️  Lastik Değiştir (tuner — herkeste)" color:C_ON atY:y action:@selector(cycleTire)];
 
     // v102: 6 yeni ozellik
     y = [self toggle:@"✨  Emissive Parlak Boya" sub:@"Aracın materyallerini HDR sarı-turuncu parlak yapar" key:@"emissive" atY:y action:@selector(tapEmissivePaint)];
@@ -11934,6 +11981,30 @@ static void few1n_joinTargetRoom(NSString *nm) {
     UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"🚧 Fırlatıldı" : @"⚠️ Olmadı")
         message:(ok ? @"Trafik aracı önüne gönderildi (deneysel). Tutmazsa loga bak: '🚧 TrafikFirlat'."
                     : @"Arabana binmen ve yarışta olman lazım. Sonra tekrar dene.")
+        preferredStyle:UIAlertControllerStyleAlert];
+    [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+    [self present:r];
+}
+
+- (void)cycleWheels {
+    static int idx = 0;
+    idx = (idx + 1) % 16;   // sıradaki jant modeli
+    bool ok = few1n_applyTunerInt("WheelsITuner", idx, "Jant");
+    UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"🛞 Jant değişti" : @"⚠️ Olmadı")
+        message:(ok ? [NSString stringWithFormat:@"Jant modeli #%d uygulandı + yayınlandı. Diğer oyuncularda da görünmeli (tuner yayını).", idx]
+                    : @"WheelsITuner bulunamadı. Garaj/tuning ekranı açıkken tekrar dene.")
+        preferredStyle:UIAlertControllerStyleAlert];
+    [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+    [self present:r];
+}
+
+- (void)cycleTire {
+    static int idx = 0;
+    idx = (idx + 1) % 16;   // sıradaki lastik
+    bool ok = few1n_applyTunerInt("TireTuner", idx, "Lastik");
+    UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"🛢️ Lastik değişti" : @"⚠️ Olmadı")
+        message:(ok ? [NSString stringWithFormat:@"Lastik #%d uygulandı + yayınlandı. Diğer oyuncularda da görünmeli (tuner yayını).", idx]
+                    : @"TireTuner bulunamadı. Garaj/tuning ekranı açıkken tekrar dene.")
         preferredStyle:UIAlertControllerStyleAlert];
     [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
     [self present:r];
