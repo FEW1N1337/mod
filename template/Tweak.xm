@@ -3649,6 +3649,81 @@ static bool few1n_applyTunerInt(const char* className, int index, const char* wh
     return true;
 }
 
+// ============================================================================
+// v114.45: HEDEF OYUNCUNUN ARABASINI SENIN TUNING'INLE DEGISTIR (herkeste)
+// PUN2 sahibi olmadigin view'e de RPC yollamana izin verir. Oyunun kendi
+// zincirini kullaniyoruz: eaj(benimTM)->benim TuningData; eac(hedefTM,data)->
+// hedefin currentData'sina yaz; eah(hedefTM,true)-> hedefin photonView'inden
+// LoadTuners RPC -> tum client'lar benim tuning'i hedefin arabasina uygular.
+// DENEYSEL: LoadTuners icin sahiplik kontrolu varsa oyun reddedebilir.
+// ============================================================================
+
+// actorNumber'a ait TuningManager'i bul (photonView.Owner.ActorNumber ile).
+static void* few1n_tuningManagerOfActor(int actor) {
+    if (actor <= 0 || !g_mFindObjectsPlural || !i_runtime_invoke || !mbp_getPhotonView
+        || g_pvOwnerOff <= 0 || !ply_getActorNumber) return NULL;
+    void* cls = few1n_classAnyImage("", "TuningManager");
+    if (!cls) return NULL;
+    void* tobj = few1n_typeObjOf(cls);
+    if (!tobj) return NULL;
+    @try {
+        void* a[1] = { tobj };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) return NULL;
+        int n = *(int*)((uintptr_t)arr + 0x18); if (n < 1 || n > 64) return NULL;
+        void** el = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < n; i++) {
+            void* tm = el[i]; if (!unityAlive(tm)) continue;
+            void* pv = NULL; @try { pv = mbp_getPhotonView(tm); } @catch (...) {}
+            if (!ptrOk(pv)) continue;
+            void* owner = *(void**)((uintptr_t)pv + g_pvOwnerOff);
+            if (!ptrOk(owner)) continue;
+            @try { if (ply_getActorNumber(owner) == actor) return tm; } @catch (...) {}
+        }
+    } @catch (...) {}
+    return NULL;
+}
+
+// Benim tuning'imi hedefin arabasina uygula + hedefin view'inden HERKESE yayinla.
+static bool few1n_copyTuningToTarget(int targetActor) {
+    if (!i_runtime_invoke || !i_class_get_method_from_name || !g_mFindObjectsPlural) return false;
+    void* cls = few1n_classAnyImage("", "TuningManager");
+    if (!cls) { FLog(@"HedefTuning: TuningManager sinifi yok"); return false; }
+    void* mEaj = i_class_get_method_from_name(cls, "eaj", 0);
+    void* mEac = i_class_get_method_from_name(cls, "eac", 1);
+    void* mEah = i_class_get_method_from_name(cls, "eah", 1);
+    if (!mEaj || !mEac || !mEah) { FLog(@"HedefTuning: eaj/eac/eah yok"); return false; }
+    void* tobj = few1n_typeObjOf(cls);
+    // 1) benim TuningManager (IsMine)
+    void* myTM = NULL;
+    @try {
+        void* a[1] = { tobj };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (ptrOk(arr)) {
+            int n = *(int*)((uintptr_t)arr + 0x18);
+            void** el = (void**)((uintptr_t)arr + 0x20);
+            for (int i = 0; i < n && i < 64; i++) { void* tm = el[i]; if (unityAlive(tm) && few1n_pvIsMineFor(tm)) { myTM = tm; break; } }
+        }
+    } @catch (...) {}
+    if (!ptrOk(myTM)) { FLog(@"HedefTuning: benim TuningManager yok (araca bin/garaj)"); return false; }
+    // 2) benim tuning verim
+    void* myData = NULL;
+    @try { myData = i_runtime_invoke(mEaj, myTM, NULL, NULL); } @catch (...) {}
+    if (!ptrOk(myData)) { FLog(@"HedefTuning: benim TuningData alinamadi"); return false; }
+    // 3) hedefin TuningManager'i
+    void* tgtTM = few1n_tuningManagerOfActor(targetActor);
+    if (!ptrOk(tgtTM)) { FLog([NSString stringWithFormat:@"HedefTuning: actor=%d TuningManager bulunamadi (hedef yarista/gorunur olmali)", targetActor]); return false; }
+    // 4) hedefin currentData = benim data; sonra hedefin view'inden yayinla
+    @try {
+        void* a1[1] = { myData };
+        i_runtime_invoke(mEac, tgtTM, a1, NULL);            // eac(myData)
+        unsigned char t = 1; void* a2[1] = { &t };
+        i_runtime_invoke(mEah, tgtTM, a2, NULL);            // eah(true) -> LoadTuners RPC
+        FLog([NSString stringWithFormat:@"🎭 HedefTuning: actor=%d arabasina benim tuning yayinlandi", targetActor]);
+        return true;
+    } @catch (...) { FLog(@"HedefTuning: eac/eah exception"); return false; }
+}
+
 // ===== v114.29: OZEL RENK — HERKESTE GORUNUR =====
 // PaintTuner : MonoBehaviour, hs — plaka ile AYNI tuning yolunu kullanir, yani
 // TuningManager RPC'siyle herkese yayilir. PaintTuner.Apply(Color, int type)
@@ -5303,6 +5378,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)cycleWheels;             // v114.43
 - (void)cycleTire;               // v114.43
 - (void)officialNicknameEveryone;// v114.44
+- (void)hijackTargetTuning;      // v114.45
 - (void)setServerColor;
 - (void)setRimColor;
 - (void)setChromeMenu;
@@ -5761,6 +5837,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"🏷️  Sunucu İsmi Değiştir (herkes görür)" color:C_GOLD atY:y action:@selector(officialNicknameEveryone)];
     y = [self actionRow:@"🏆  Anında Kazan (yarışı bitir + ödül)" color:C_ON atY:y action:@selector(instantWin)];
     y = [self actionRow:@"🚧  Trafik Fırlat (önüne trafik aracı — deneysel)" color:C_RED atY:y action:@selector(trafficStrike)];
+    y = [self actionRow:@"🎭  Oyuncunun Aracını Ele Geçir (senin tuning'in — deneysel)" color:C_RED atY:y action:@selector(hijackTargetTuning)];
     y = [self actionRow:@"🛞  Jant Modeli Değiştir (tuner — herkeste)" color:C_ON atY:y action:@selector(cycleWheels)];
     y = [self actionRow:@"🛢️  Lastik Değiştir (tuner — herkeste)" color:C_ON atY:y action:@selector(cycleTire)];
 
@@ -12052,6 +12129,54 @@ static void few1n_joinTargetRoom(NSString *nm) {
         preferredStyle:UIAlertControllerStyleAlert];
     [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
     [self present:r];
+}
+
+// v114.45: Hedef oyuncu seç -> arabasına SENİN tuning'ini bas (herkeste, deneysel)
+- (void)hijackTargetTuning {
+    void* pa = pn_getPlayerListOthers ? pn_getPlayerListOthers() : NULL;
+    BOOL useAll = NO;
+    if (!ptrOk(pa) && pn_getPlayerList) { pa = pn_getPlayerList(); useAll = YES; }
+    if (!ptrOk(pa)) {
+        UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🎭 Aracını Ele Geçir"
+            message:@"Odada başka oyuncu yok veya Photon hazır değil. Yarışta/odada dene." preferredStyle:UIAlertControllerStyleAlert];
+        [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:e]; return;
+    }
+    @try {
+        int cnt = (int)(*(uintptr_t*)((uintptr_t)pa + 0x18));
+        void* me = (useAll && pn_getLocalPlayer) ? pn_getLocalPlayer() : NULL;
+        if (cnt <= 0 || cnt > 64) {
+            UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🎭 Aracını Ele Geçir"
+                message:@"Odada başka oyuncu yok." preferredStyle:UIAlertControllerStyleAlert];
+            [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+            [self present:e]; return;
+        }
+        void** ps = (void**)((uintptr_t)pa + 0x20);
+        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🎭 Aracını Ele Geçir"
+            message:@"Seç → onun arabası SENİN rengin/plakan olur (herkeste, deneysel). Önce kendine renk/plaka ver." preferredStyle:UIAlertControllerStyleActionSheet];
+        for (int i = 0; i < cnt && i < 32; i++) {
+            void* p = ps[i]; if (!ptrOk(p)) continue;
+            if (me && p == me) continue;
+            int actor = ply_getActorNumber ? ply_getActorNumber(p) : -1;
+            void* nsObj = ply_getNickName ? ply_getNickName(p) : NULL;
+            NSString *nm = ptrOk(nsObj) ? (readStr(nsObj) ?: @"") : @"";
+            if (nm.length == 0) nm = [NSString stringWithFormat:@"actor%d", actor];
+            NSString *nmClean = stripRichTextTags(nm) ?: nm;
+            [ac addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"🎯 %@", nmClean] style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){
+                bool ok = few1n_copyTuningToTarget(actor);
+                UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"🎭 Gönderildi" : @"⚠️ Olmadı")
+                    message:(ok ? @"Senin tuning'in hedefin arabasına yayınlandı. Herkeste görünürse tuttu; görünmezse oyun sahiplik kontrolü yapıyor (log: '🎭 HedefTuning')."
+                                : @"Hedefin TuningManager'ı bulunamadı veya senin tuning'in alınamadı. İkiniz de yarışta/görünür olun.")
+                    preferredStyle:UIAlertControllerStyleAlert];
+                [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+                [self present:r];
+            }]];
+        }
+        [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+        [self present:ac];
+    } @catch (...) {
+        FLog(@"🎭 HedefTuning picker exception");
+    }
 }
 
 - (void)setServerColor {
