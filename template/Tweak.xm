@@ -227,6 +227,7 @@ static void* g_rccpDetachTypeObj = NULL;
 // v114.4: HR_PhotonLobbyManagerDummy - chain sonu oda listesi ekrani icin
 static void* g_hrLobbyMgrDummyType = NULL;
 static void* g_mGoSetActive = NULL;      // UnityEngine.GameObject.SetActive(bool)
+static void* g_mGoActiveInHierarchy = NULL;  // UnityEngine.GameObject.get_activeInHierarchy() -> bool (hooksuz sifre panel tespiti)
 static int g_offRoomListPanel = 0;
 static int g_offRoomListContent = 0;
 static int g_offDetachStrength = 0, g_offDetachIsDetachable = 0;
@@ -982,9 +983,13 @@ static void few1n_initIl2cpp(void) {
             }
         }
         // UnityEngine.GameObject.SetActive(bool) resolve - chain sonu panel switch icin
-        if (!g_mGoSetActive) {
+        if (!g_mGoSetActive || !g_mGoActiveInHierarchy) {
             void* gc = i_class_from_name(img, "UnityEngine", "GameObject");
-            if (gc && i_class_get_method_from_name) g_mGoSetActive = i_class_get_method_from_name(gc, "SetActive", 1);
+            if (gc && i_class_get_method_from_name) {
+                if (!g_mGoSetActive)        g_mGoSetActive        = i_class_get_method_from_name(gc, "SetActive", 1);
+                // get_activeInHierarchy() -> bool : hooksuz sifre panel aktiflik tespiti
+                if (!g_mGoActiveInHierarchy) g_mGoActiveInHierarchy = i_class_get_method_from_name(gc, "get_activeInHierarchy", 0);
+            }
         }
         if (g_rccpExhaustTypeObj && !g_offExhaustFlameCutoff) {
             void* c = i_class_from_name(img, "", "RCCP_Exhaust");
@@ -1335,6 +1340,30 @@ static int few1n_fieldOffByType(void* cls, const char* typeName, int ordinal, in
     return fallback;
 }
 
+// Generic tipler ("System.Collections.Generic.List`1<System.String>") icin: few1n_typeIs
+// son-nokta karsilastirmasi ic-generic yuzunden tutmaz. strstr ile alt-dize eslestir.
+// Ornek: ChatManager'da TEK List alani var -> "List`1" ile guvenle bulunur (isim drift'ine bagimsiz).
+static int few1n_fieldOffByTypeContains(void* cls, const char* sub, int ordinal, int fallback) {
+    if (!cls || !sub) return fallback;
+    if (!i_class_get_fields || !i_field_get_type || !i_type_get_name || !i_field_get_offset) return fallback;
+    void* iter = NULL; int seen = 0;
+    @try {
+        void* f;
+        while ((f = i_class_get_fields(cls, &iter)) != NULL) {
+            void* t = i_field_get_type(f); if (!t) continue;
+            char* tn = i_type_get_name(t);  if (!tn) continue;
+            bool hit = (strstr(tn, sub) != NULL);
+            free(tn);
+            if (!hit) continue;
+            if (seen++ != ordinal) continue;
+            size_t off = i_field_get_offset(f);
+            if (off < 0x10 || off > 0x4000) return fallback;
+            return (int)off;
+        }
+    } @catch (...) {}
+    return fallback;
+}
+
 // Once isim, olmazsa tip imzasi, o da olmazsa sabit.
 static int few1n_fieldSmart(void* cls, const char* name,
                             const char* typeName, int ordinal, int fallback) {
@@ -1474,7 +1503,11 @@ static int OFFR_LOBBY_MAPSEL    = 0x28;   // HR_PhotonLobbyManager.mapSelection
 static int OFFR_LOBBY_ROOMNAME  = 0x48;   // .roomNameInput
 static int OFFR_LOBBY_PWD       = OFF_LOBBY_PWD_INPUT;
 static int OFFR_LOBBY_PWD_CONN  = OFF_LOBBY_PWD_ON_CONN_INPUT;
+static int OFFR_LOBBY_PWDPANEL  = 0x98;   // HR_PhotonLobbyManager.passwordPanel (GameObject) — hooksuz sifre dolduru tetigi
+static int OFFR_LOBBY_PENDROOM  = 0xE0;   // HR_PhotonLobbyManager.jdt (internal RoomInfo — baglanilacak bekleyen oda)
 static int OFFR_DUMMY_KICKNAME  = 0x108;  // HR_PhotonLobbyManagerDummy.jdz (kick hedef ismi)
+
+static int OFFR_CHAT_MSGLIST    = 0x40;   // ChatManager.kss (List<string> — tum chat mesajlari, hooksuz gelen-chat)
 
 static int OFFR_CDS_INPUT       = 0x20;   // CarDriveSystem.jyr (CarPlayerInput)
 static int OFFR_CDS_RIGIDBODY   = 0x48;   // .<jyt>k__BackingField (Rigidbody)
@@ -1533,7 +1566,7 @@ static void few1n_resolveFieldOffsets(void) {
     static bool dPH=false, dRL=false, dLobby=false, dDummy=false, dCDS=false,
                 dCPI=false, dNitro=false, dRCCP=false, dLights=false, dMain=false,
                 dSS=false, dBomb=false, dRoomInfo=false, dPlayer=false, dOpts=false,
-                dMapList=false;
+                dMapList=false, dChat=false;
     void* c;
 
     if (!dPH && (c = few1n_classAnyImage("", "HR_PlayerHandler"))) {
@@ -1559,6 +1592,8 @@ static void few1n_resolveFieldOffsets(void) {
         OFFR_LOBBY_ROOMNAME = few1n_fieldOffOn(c, "roomNameInput",         OFFR_LOBBY_ROOMNAME);
         OFFR_LOBBY_PWD      = few1n_fieldOffOn(c, "passwordInput",         OFFR_LOBBY_PWD);
         OFFR_LOBBY_PWD_CONN = few1n_fieldOffOn(c, "passwordOnConnectInput",OFFR_LOBBY_PWD_CONN);
+        OFFR_LOBBY_PWDPANEL = few1n_fieldOffOn(c, "passwordPanel",         OFFR_LOBBY_PWDPANEL);
+        OFFR_LOBBY_PENDROOM = few1n_fieldSmart(c, "jdt", "RoomInfo", 0,    OFFR_LOBBY_PENDROOM);
     }
     if (!dDummy && (c = few1n_classAnyImage("", "HR_PhotonLobbyManagerDummy"))) {
         dDummy = true;
@@ -1639,6 +1674,13 @@ static void few1n_resolveFieldOffsets(void) {
         // isimleri cop okunup harita degistirme kiriliyordu. MapList.Map layout'u
         // (referenceName@0, mode@8, sprite@0x10, visualName@0x18) sabit -> 0x20.
         OFFR_MAP_STRIDE = 0x20;
+    }
+    if (!dChat && (c = few1n_classAnyImage("", "ChatManager"))) {
+        dChat = true;
+        // kss = List<string> (tum chat mesajlari). Isim drift eder; ChatManager'da
+        // TEK List alani var -> once isim, olmazsa "List`1" tipiyle guvenle bulunur.
+        int v = few1n_fieldOffOn(c, "kss", -1);
+        OFFR_CHAT_MSGLIST = (v > 0) ? v : few1n_fieldOffByTypeContains(c, "List`1", 0, OFFR_CHAT_MSGLIST);
     }
 
     // Hepsi cozulunce bir kez ozet bas (her init turunda spam etme).
@@ -4639,6 +4681,114 @@ static void h_tmpSetText(void* self, void* textStr) {
     if (o_tmpSetText) o_tmpSetText(self, textStr);
 }
 
+// ===== v114.38: HOOKSUZ GELEN CHAT (sideload icin il2cpp polling) =====
+//
+// Sideload'da (ESign/.dylib) MSHookFunction calismiyor -> h_chatFup olu -> gelen
+// mesajlara AI oto-cevap kirilmisti. Cozum: ChatManager.kss (List<string>) her
+// tick'te okunur, yeni satirlar h_chatFup ile AYNI mantikla islenir.
+//
+// KRITIK: sadece g_hooksDead iken calisir. Jailbreak'te (.deb) hooklar canli ->
+// h_chatFup zaten isliyor -> poller kapali -> CIFT ISLEM YOK, sifir regresyon.
+static int g_lastChatCount = -1;
+static void few1n_pollIncomingChat(void) {
+    if (!g_hooksDead) return;                 // hooklar canliysa h_chatFup yapiyor
+    if (!chatGetInst) return;
+    void* mgr = NULL;
+    @try { mgr = chatGetInst(); } @catch (...) { return; }
+    if (!ptrOk(mgr)) { g_lastChatCount = -1; return; }   // oda disi -> sifirla
+    @try {
+        void* list = *(void**)((uintptr_t)mgr + OFFR_CHAT_MSGLIST);   // List<string>
+        if (!ptrOk(list)) { g_lastChatCount = -1; return; }
+        int size = *(int*)((uintptr_t)list + 0x18);                   // List._size
+        if (size < 0 || size > 100000) { g_lastChatCount = -1; return; }
+        if (g_lastChatCount < 0)        { g_lastChatCount = size; return; } // ilk gorus: gecmisi isleme
+        if (size < g_lastChatCount)     { g_lastChatCount = size; return; } // liste temizlendi (oda degisti)
+        if (size == g_lastChatCount) return;                               // yeni mesaj yok
+        void* items = *(void**)((uintptr_t)list + 0x10);             // String[]
+        if (!ptrOk(items)) { g_lastChatCount = size; return; }
+        int arrLen = (int)(*(uintptr_t*)((uintptr_t)items + 0x18));  // Array.Length
+        for (int i = g_lastChatCount; i < size && i < arrLen; i++) {
+            void* el = *(void**)((uintptr_t)items + 0x20 + (uintptr_t)i * 8);
+            if (!ptrOk(el)) continue;
+            NSString *line = readStr(el);
+            if (line.length == 0) continue;
+            // Kendi gonderdiklerimi ve bot mesajlarini atla (h_chatFup ile ayni filtre)
+            BOOL isBotMsg = [line containsString:@"[AI "] || [line containsString:@"[🤖"];
+            if (isBotMsg) continue;
+            BOOL isMine = NO;
+            if (g_recentlySentByMe) {
+                @synchronized(g_recentlySentByMe) {
+                    for (NSString *sent in g_recentlySentByMe)
+                        if (sent.length && [line containsString:sent]) { isMine = YES; break; }
+                }
+            }
+            if (isMine) continue;
+            NSString *prompt = few1n_aiPromptFromChat(line);
+            if (prompt) { few1n_replyToRoomAiPrompt(prompt); continue; }
+            if (isAiChatModeEnabled) {
+                NSString *lower = [line.lowercaseString stringByReplacingOccurrencesOfString:@"ı" withString:@"i"];
+                BOOL mentioned = [lower containsString:@" ai"] || [lower hasPrefix:@"ai "] ||
+                                 [lower containsString:@"bot"] || [lower containsString:@"grok"] ||
+                                 [lower containsString:@"few1n ai"];
+                if (mentioned) few1n_replyToRoomAiPrompt(line);
+            }
+        }
+        g_lastChatCount = size;
+    } @catch (...) {}
+}
+
+// ===== v114.38: HOOKSUZ SIFRE OTOMATIK DOLDURMA (sideload icin il2cpp polling) =====
+//
+// Sideload'da h_roomConnect olu -> sifreli odaya girerken cached sifre inputa
+// yazilmiyordu. Cozum: passwordPanel (GameObject) aktif oldugunda, baglanilacak
+// oda (lobby.jdt = RoomInfo) icin cached sifreyi RoomListLine'dan bul ve inputlara yaz.
+// Yine sadece g_hooksDead iken calisir (jailbreak'te h_roomConnect zaten yapiyor).
+static void* g_pwdFilledForRoom = NULL;
+static void few1n_pollPasswordPrefill(void) {
+    if (!g_hooksDead) return;
+    if (!isBypassPasswordEnabled) { g_pwdFilledForRoom = NULL; return; }
+    if (!lobbyGetInst || !tmp_set_text) return;
+    void* lobby = NULL;
+    @try { lobby = lobbyGetInst(); } @catch (...) { return; }
+    if (!ptrOk(lobby)) return;
+    @try {
+        // Sifre paneli acik mi? (kapaliyken doldurma -> gereksiz yazma yok)
+        void* panel = *(void**)((uintptr_t)lobby + OFFR_LOBBY_PWDPANEL);
+        if (!unityAlive(panel)) { g_pwdFilledForRoom = NULL; return; }
+        if (g_mGoActiveInHierarchy && i_runtime_invoke) {
+            void* box = i_runtime_invoke(g_mGoActiveInHierarchy, panel, NULL, NULL);
+            bool active = box && *(unsigned char*)((uintptr_t)box + 0x10);
+            if (!active) { g_pwdFilledForRoom = NULL; return; }
+        }
+        void* pendRoom = *(void**)((uintptr_t)lobby + OFFR_LOBBY_PENDROOM);  // jdt (RoomInfo)
+        if (!ptrOk(pendRoom)) return;
+        if (pendRoom == g_pwdFilledForRoom) return;                         // bu oda icin zaten dolduruldu
+        // pendRoom'a ait RoomListLine'i bul -> cached sifresini oku
+        if (!g_roomLineType || !g_mFindObjectsPlural || !i_runtime_invoke) return;
+        void* a[1]; a[0] = g_roomLineType;
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) return;
+        int cnt = (int)(*(uintptr_t*)((uintptr_t)arr + 0x18));
+        if (cnt < 0 || cnt > 256) return;
+        void** lines = (void**)((uintptr_t)arr + 0x20);
+        void* pwdStr = NULL;
+        for (int i = 0; i < cnt; i++) {
+            void* ln = lines[i]; if (!unityAlive(ln)) continue;
+            void* rinfo = *(void**)((uintptr_t)ln + OFFR_RL_ROOMINFO);
+            if (rinfo == pendRoom) { pwdStr = *(void**)((uintptr_t)ln + OFFR_RL_PASSWORD); break; }
+        }
+        if (!ptrOk(pwdStr)) return;
+        NSString *pw = readStr(pwdStr);
+        if (pw.length == 0) return;                     // sifresiz oda -> doldurma
+        void* pOnConnect = *(void**)((uintptr_t)lobby + OFFR_LOBBY_PWD_CONN);
+        if (ptrOk(pOnConnect)) tmp_set_text(pOnConnect, pwdStr);
+        void* pInput = *(void**)((uintptr_t)lobby + OFFR_LOBBY_PWD);
+        if (ptrOk(pInput)) tmp_set_text(pInput, pwdStr);
+        g_pwdFilledForRoom = pendRoom;
+        FLog([NSString stringWithFormat:@"🔓 Hooksuz sifre otomatik dolduruldu (%@)", pw]);
+    } @catch (...) {}
+}
+
 // ===== ODA ISMI RICH TEXT ACIGI + ZORLA RENKLI (CLIENT-SIDE) =====
 static bool isColorRoomForce = false;  // TUM oda isimlerini renkli yap (client-side)
 static bool isMapTextOverrideEnabled = false;
@@ -6821,6 +6971,8 @@ static UIViewController* few1n_topVC(void) {
     few1n_forcePlate(); // ozel plaka acikken il2cpp ile zorla (hook olu)
     few1n_forceNos();    // v114.28: NOS super guc acikken her frame max nitro
     few1n_enforceBans(); // v114.37: banli oyuncular geri gelirse otomatik tekrar at
+    few1n_pollIncomingChat();   // v114.38: hooksuz gelen-chat AI oto-cevap (sadece sideload/g_hooksDead)
+    few1n_pollPasswordPrefill();// v114.38: hooksuz sifre otomatik doldurma (sadece sideload/g_hooksDead)
     // v92: BALATA SICAK TUT + HASAR YOK frame update GERI ALINDI — dokunmatik/input bug sebep olabilir
     // Toggle'lar UI'da duruyor ama etkisiz (placeholder). Bug root cause'u bulunca gercek fix gelecek.
     // arac rengi acikken materyalleri BIR KEZ al (tekrar fetch instance sizdirir/coker)
