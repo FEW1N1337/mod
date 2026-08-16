@@ -2720,6 +2720,71 @@ static void few1n_kickPlayer(void* playerObj) {
     } @catch (...) { g_isManualKick = false; FLog(@"Kick hatası (exception)"); }
 }
 
+// ===== v114.37: BAN LISTESI + OTOMATIK TEKRAR-KICK =====
+// Kick tek seferlik; oyuncu geri girebiliyor (Photon CloseConnection baglantiyi
+// kesmiyor). Cozum: banlı isimleri sakla, her ~2sn odayi tara, banlı biri varsa
+// otomatik tekrar at. Kendi odanda (gercek master) kesin calisir; geri geleni
+// surekli disari atar = pratikte kalici ban.
+static NSString* stripRichTextTags(NSString *text);   // tanim asagida (~4049)
+static NSMutableArray<NSString*> *g_banNicks = nil;   // banli nick'ler (kalici)
+static bool isAutoBanEnabled = true;                  // ban listesi zorlamasi acik
+static void few1n_loadBans(void) {
+    if (g_banNicks) return;
+    NSArray *a = [[NSUserDefaults standardUserDefaults] arrayForKey:@"few1n_bans"];
+    g_banNicks = a ? [a mutableCopy] : [NSMutableArray array];
+}
+static void few1n_saveBans(void) {
+    if (!g_banNicks) return;
+    [[NSUserDefaults standardUserDefaults] setObject:g_banNicks forKey:@"few1n_bans"];
+}
+static bool few1n_isBanned(NSString *nick) {
+    if (!nick || nick.length == 0) return false;
+    few1n_loadBans();
+    NSString *clean = stripRichTextTags(nick) ?: nick;
+    for (NSString *b in g_banNicks) {
+        if ([b caseInsensitiveCompare:clean] == NSOrderedSame) return true;
+        if ([b caseInsensitiveCompare:nick] == NSOrderedSame) return true;
+    }
+    return false;
+}
+static void few1n_addBan(NSString *nick) {
+    if (!nick || nick.length == 0) return;
+    few1n_loadBans();
+    NSString *clean = stripRichTextTags(nick) ?: nick;
+    if (!few1n_isBanned(clean)) { [g_banNicks addObject:clean]; few1n_saveBans(); }
+}
+
+// Her ~2sn: odadaki banlı oyunculari otomatik tekrar at (tick'ten cagrilir).
+static double g_lastBanScan = 0;
+static void few1n_enforceBans(void) {
+    if (!isAutoBanEnabled) return;
+    if (!pn_getInRoom || !pn_getInRoom()) return;
+    if (!pn_getPlayerListOthers || !i_runtime_invoke || !ply_getNickName) return;
+    double now = CACurrentMediaTime();
+    if (now - g_lastBanScan < 2.0) return;   // throttle
+    g_lastBanScan = now;
+    few1n_loadBans();
+    if (g_banNicks.count == 0) return;
+    @try {
+        void* pa = pn_getPlayerListOthers();
+        if (!ptrOk(pa)) return;
+        int c = (int)(*(uintptr_t*)((uintptr_t)pa + 0x18));
+        if (c <= 0 || c > 64) return;
+        void** ps = (void**)((uintptr_t)pa + 0x20);
+        for (int i = 0; i < c; i++) {
+            void* p = ps[i]; if (!ptrOk(p)) continue;
+            void* nsObj = ply_getNickName(p);
+            NSString *nm = ptrOk(nsObj) ? readStr(nsObj) : nil;
+            if (few1n_isBanned(nm)) {
+                FLog([NSString stringWithFormat:@"🚫 Ban: '%@' odada — otomatik tekrar atiliyor", nm]);
+                few1n_forceEnableKick();
+                if (pn_setMasterClient && pn_getLocalPlayer) { void* me = pn_getLocalPlayer(); if (me) @try { pn_setMasterClient(me); } @catch (...) {} }
+                few1n_kickPlayer(p);
+            }
+        }
+    } @catch (...) {}
+}
+
 // ===== INFINITE NITRO =====
 static float (*o_getNitro)(void*) = NULL;
 static float h_getNitro(void* self) {
@@ -4852,6 +4917,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)nativeKickAll;
 - (void)nativeKickByName;
 - (void)nativeKickPick;
+- (void)manageBans;
 - (void)targetBombCrashPick;
 - (void)showPlayerIDs;
 - (void)editAiApiKey;
@@ -5481,6 +5547,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"\U0001F4A5  ODAYI KAPAT (Herkesi At & Odayi Sonlandir)" color:C_RED atY:y action:@selector(nukeRoom)];
     y = [self actionRow:@"💥  Odadaki Herkesi At (Mass Kick)" color:C_RED atY:y action:@selector(tapRoomKickAll)];
     y = [self actionRow:@"🎯  Belirli Oyuncuyu At (Sec ve Kick)" color:C_RED atY:y action:@selector(nativeKickPick)];
+    y = [self actionRow:@"🚫  Ban Listesi (geri geleni otomatik at)" color:C_RED atY:y action:@selector(manageBans)];
     y = [self actionRow:@"💣  HEDEFLİ BOMBA + CRASH (Sec)" color:C_RED atY:y action:@selector(targetBombCrashPick)];
     y = [self actionRow:@"🆔  Oyuncu ID Listesi (ActorNumber + UserId)" color:C_ON atY:y action:@selector(showPlayerIDs)];
     y = [self toggle:@"🕵️  İsim Değişikliği Takibi (Auto)" sub:@"ActorNumber -> NickName eşleşmesini izler, değişirse alert" key:@"nametrack" atY:y action:@selector(tapNameTrack)];
@@ -6284,6 +6351,42 @@ static UIViewController* few1n_topVC(void) {
 }
 // Odadaki oyuncularu LISTELE, secilen(ler)i at
 // v91: SIFIRDAN YAZILMIS KICK — Master ol → 3 kick metodunu sirayla dene → tuttugun kadar guclu
+- (void)manageBans {
+    few1n_loadBans();
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🚫 Ban Listesi"
+        message:[NSString stringWithFormat:@"Banli isimler odaya girince otomatik atilir (kendi odanda, gercek master iken).\n\nOtomatik zorlama: %@\nBanli: %lu kisi", isAutoBanEnabled ? @"AÇIK" : @"KAPALI", (unsigned long)g_banNicks.count]
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    [ac addAction:[UIAlertAction actionWithTitle:(isAutoBanEnabled ? @"⏸️ Otomatik Zorlamayı Kapat" : @"▶️ Otomatik Zorlamayı Aç") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        isAutoBanEnabled = !isAutoBanEnabled;
+        FLog(isAutoBanEnabled ? @"🚫 Ban zorlama ACIK" : @"🚫 Ban zorlama KAPALI");
+    }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"✏️ Elle İsim Banla" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        UIAlertController *in = [UIAlertController alertControllerWithTitle:@"✏️ İsim Banla" message:@"Banlanacak nick:" preferredStyle:UIAlertControllerStyleAlert];
+        [in addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.placeholder = @"nick"; }];
+        [in addAction:[UIAlertAction actionWithTitle:@"Banla" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a2){
+            NSString *t = in.textFields.firstObject.text;
+            if (t.length > 0) { few1n_addBan(t); FLog([NSString stringWithFormat:@"🚫 '%@' elle banlandi", t]); }
+        }]];
+        [in addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+        [self present:in];
+    }]];
+    // Mevcut banli isimleri listele -> dokununca kaldir
+    for (NSString *b in [g_banNicks copy]) {
+        [ac addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"❌ Kaldır: %@", b] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+            [g_banNicks removeObject:b]; few1n_saveBans();
+            FLog([NSString stringWithFormat:@"🚫 '%@' ban listesinden cikarildi", b]);
+        }]];
+    }
+    if (g_banNicks.count > 0) {
+        [ac addAction:[UIAlertAction actionWithTitle:@"🗑️ Tümünü Temizle" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){
+            [g_banNicks removeAllObjects]; few1n_saveBans(); FLog(@"🚫 Ban listesi temizlendi");
+        }]];
+    }
+    [ac addAction:[UIAlertAction actionWithTitle:@"Kapat" style:UIAlertActionStyleCancel handler:nil]];
+    if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, self.panel.bounds.size.height/2, 1, 1); }
+    [self present:ac];
+}
+
 - (void)nativeKickPick {
     if (!pn_getInRoom || !pn_getInRoom()) {
         UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🎯 Kick" message:@"Odada olmalisin." preferredStyle:UIAlertControllerStyleAlert];
@@ -6435,6 +6538,11 @@ static UIViewController* few1n_topVC(void) {
                             FLog([NSString stringWithFormat:@"❌ '%@' HALA odada (actor=%d) — sunucu kick'i reddetti (gercek master degilsin)", nmCopy, tgtActor]);
                         }
                         UIAlertController *r = [UIAlertController alertControllerWithTitle:title message:msg preferredStyle:UIAlertControllerStyleAlert];
+                        NSString *banNm = [nmCopy copy];
+                        [r addAction:[UIAlertAction actionWithTitle:@"🚫 Kalıcı Banla (geri gelirse otomatik at)" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *ba){
+                            few1n_addBan(banNm);
+                            FLog([NSString stringWithFormat:@"🚫 '%@' ban listesine eklendi", banNm]);
+                        }]];
                         [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
                         [self present:r];
                     });
@@ -6712,6 +6820,7 @@ static UIViewController* few1n_topVC(void) {
     few1n_findCar();   // sadece arama (throttle'li); uygulama frameTick'te
     few1n_forcePlate(); // ozel plaka acikken il2cpp ile zorla (hook olu)
     few1n_forceNos();    // v114.28: NOS super guc acikken her frame max nitro
+    few1n_enforceBans(); // v114.37: banli oyuncular geri gelirse otomatik tekrar at
     // v92: BALATA SICAK TUT + HASAR YOK frame update GERI ALINDI — dokunmatik/input bug sebep olabilir
     // Toggle'lar UI'da duruyor ama etkisiz (placeholder). Bug root cause'u bulunca gercek fix gelecek.
     // arac rengi acikken materyalleri BIR KEZ al (tekrar fetch instance sizdirir/coker)
