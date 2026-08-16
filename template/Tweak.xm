@@ -2865,6 +2865,32 @@ static void few1n_antiKickTick(void) {
     wasIn = inRoom;
 }
 
+// v114.47: HOOKSUZ RENKLI ODA ISMI. Sideload'da room-line setup hook'u olu ->
+// TMP_Text'lerde richText zorlanmiyor -> <color=..> etiketleri DUZ METIN gorunuyor
+// ("kodu ekrana render ediyor"). Cozum: lobby'deki room line'lari polling ile bul,
+// RoomNameText/MapNameText/PlayerCountText'e richText=true zorla.
+static void few1n_forceRoomRichText(void) {
+    if (!g_hooksDead) return;   // jailbreak'te hook zaten yapiyor
+    if (!g_roomLineType || !g_mFindObjectsPlural || !i_runtime_invoke || !g_mSetRichText) return;
+    @try {
+        void* a[1] = { g_roomLineType };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) return;
+        int cnt = *(int*)((uintptr_t)arr + 0x18);
+        if (cnt < 1 || cnt > 128) return;
+        void** lines = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < cnt; i++) {
+            void* ln = lines[i]; if (!unityAlive(ln)) continue;
+            void* nameText = *(void**)((uintptr_t)ln + OFFR_RL_NAMETEXT);
+            void* mapText  = *(void**)((uintptr_t)ln + OFFR_RL_MAPTEXT);
+            void* pCount   = *(void**)((uintptr_t)ln + OFFR_RL_PLAYERCOUNT);
+            if (unityAlive(nameText)) setRichTextIl(nameText, true);
+            if (unityAlive(mapText))  setRichTextIl(mapText, true);
+            if (unityAlive(pCount))   setRichTextIl(pCount, true);
+        }
+    } @catch (...) {}
+}
+
 // ===== INFINITE NITRO =====
 static float (*o_getNitro)(void*) = NULL;
 static float h_getNitro(void* self) {
@@ -7301,6 +7327,7 @@ static UIViewController* few1n_topVC(void) {
     few1n_pollIncomingChat();   // v114.38: hooksuz gelen-chat AI oto-cevap (sadece sideload/g_hooksDead)
     few1n_pollPasswordPrefill();// v114.38: hooksuz sifre otomatik doldurma (sadece sideload/g_hooksDead)
     few1n_antiKickTick();       // v114.46: Anti-Kick — kicklenirsen otomatik geri gir + master ol
+    few1n_forceRoomRichText();  // v114.47: hooksuz renkli oda ismi (richText zorla, sideload)
     // v92: BALATA SICAK TUT + HASAR YOK frame update GERI ALINDI — dokunmatik/input bug sebep olabilir
     // Toggle'lar UI'da duruyor ama etkisiz (placeholder). Bug root cause'u bulunca gercek fix gelecek.
     // arac rengi acikken materyalleri BIR KEZ al (tekrar fetch instance sizdirir/coker)
