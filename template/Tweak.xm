@@ -3302,6 +3302,8 @@ static void few1n_forcePlate(void) {
         void* str = mkStr([NSString stringWithUTF8String:customPlateText]);
         if (!str) return;
         if (!g_plateEmptyStr) g_plateEmptyStr = mkStr(@"");
+        NSString *plateNS = [NSString stringWithUTF8String:customPlateText];
+        NSUInteger plen = plateNS.length;
         for (int i = 0; i < cnt; i++) {
             void* pv = plates[i];
             if (!ptrOk(pv)) continue;
@@ -3311,11 +3313,24 @@ static void few1n_forcePlate(void) {
             int pc = (int)(*(uintptr_t*)((uintptr_t)parts + 0x18));
             if (pc < 0 || pc > 32) continue;
             void** tp = (void**)((uintptr_t)parts + 0x20);
-            for (int k = 0; k < pc; k++) {
-                void* t = tp[k];
-                if (!ptrOk(t)) continue;
-                void* pa[1]; pa[0] = (k == 0) ? str : g_plateEmptyStr;   // ilk parca=metin, digerleri bos
-                i_runtime_invoke(g_mTmpSetText, t, pa, NULL);
+            // v114.41 FIX: PlateVariant.parts[] MONOSPACE plakada HER PARCA BIR KARAKTER slotu
+            // (dump: enableMono + spacing[] + disableSplit). Eski kod tum metni part[0]'a
+            // yaziyordu -> dar/sag-hizali slotta "FERHAT" sadece "HAT" gorunuyordu. Dogrusu:
+            // her parcaya sirayla bir karakter dagit. (Tek alanli plaka ihtimali icin pc<=1
+            // yedegi: tam metni koy.)
+            if (pc <= 1) {
+                if (ptrOk(tp[0])) { void* pa[1]; pa[0] = str; i_runtime_invoke(g_mTmpSetText, tp[0], pa, NULL); }
+            } else {
+                for (int k = 0; k < pc; k++) {
+                    void* t = tp[k];
+                    if (!ptrOk(t)) continue;
+                    void* cs = ((NSUInteger)k < plen)
+                        ? mkStr([plateNS substringWithRange:NSMakeRange((NSUInteger)k, 1)])
+                        : g_plateEmptyStr;
+                    if (!cs) continue;
+                    void* pa[1]; pa[0] = cs;
+                    i_runtime_invoke(g_mTmpSetText, t, pa, NULL);
+                }
             }
         }
     } @catch (...) {}
