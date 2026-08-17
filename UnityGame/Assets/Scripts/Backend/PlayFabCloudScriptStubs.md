@@ -116,6 +116,91 @@ handlers.submitRaceResult = function (args, context) {
 };
 ```
 
+## 4. Oyuncu raporu (submitReport)
+
+Rapor edilen kullanıcıyı server-side `PlayerInternalData`'ya PlayFabId eşleşmeli olarak kaydeder. Aynı hedef için 24 saatte tekrarlı rapor sayılmaz (spam engel).
+
+```javascript
+handlers.submitReport = function (args, context) {
+    const targetId = String(args.targetPlayFabId || "");
+    const reason   = String(args.reason || "").substring(0, 60);
+    const detail   = String(args.detail || "").substring(0, 500);
+    if (!targetId || targetId === currentPlayerId) return { ok: false, reason: "invalid_target" };
+
+    const key = "report_" + targetId;
+    const readRes = server.GetUserInternalData({ PlayFabId: currentPlayerId, Keys: [key] });
+    const now = Math.floor(Date.now() / 1000);
+    const last = Number((readRes.Data[key] || {}).Value || 0);
+    if (now - last < 24 * 60 * 60) return { ok: false, reason: "already_reported_recently" };
+
+    server.UpdateUserInternalData({
+        PlayFabId: currentPlayerId,
+        Data: { [key]: String(now) }
+    });
+
+    // Rapor edilen kullanıcının statistic sayacını arttır (moderasyon paneli izleyebilir).
+    server.UpdatePlayerStatistics({
+        PlayFabId: targetId,
+        Statistics: [{ StatisticName: "reportsReceived", Value: 1 }]
+    });
+
+    server.WritePlayerEvent({
+        PlayFabId: currentPlayerId,
+        EventName: "player_reported",
+        Body: { targetPlayFabId: targetId, reason: reason, detail: detail }
+    });
+
+    return { ok: true };
+};
+```
+
+## 5. Davet kodu kullan (redeemReferral)
+
+Verilen kod başka bir oyuncunun `PlayerReadOnlyData.referralCode`'una eşleşirse iki tarafa da bonus verilir. Aynı oyuncu iki kere kullanamaz.
+
+**Ön koşul**: Her yeni oyuncu için `PlayerReadOnlyData.referralCode` alanı server-side login trigger'ında oluşturulmalı (Login rule). Alternatif: client `PlayerData`'ya kod yazar ama bu güvenli değil — read-only alan olması gerek.
+
+```javascript
+handlers.redeemReferral = function (args, context) {
+    const code = String(args.code || "").toUpperCase();
+    if (code.length !== 8) return { ok: false, reason: "invalid_code" };
+
+    const myData = server.GetUserReadOnlyData({ PlayFabId: currentPlayerId, Keys: ["referralRedeemed", "referralCode"] });
+    if ((myData.Data["referralRedeemed"] || {}).Value === "1") return { ok: false, reason: "already_redeemed" };
+    if ((myData.Data["referralCode"] || {}).Value === code) return { ok: false, reason: "own_code" };
+
+    // Sahibi bul: PlayerTitleId endeksi yerine hızlı yol — SegmentPlayers veya kendi Redis'in.
+    // Prod'da bir "referral_code_index" segment'i veya external DB kullan. Basit örnek:
+    const owner = findPlayerByReferralCode(code);
+    if (!owner) return { ok: false, reason: "code_not_found" };
+
+    server.UpdateUserReadOnlyData({
+        PlayFabId: currentPlayerId,
+        Data: { referralRedeemed: "1", referrer: owner }
+    });
+
+    handlers.addMoney({ source: "referral_referee", amount: 3000 }, context);
+    // Sahibine de ödül:
+    server.ExecuteCloudScript({
+        FunctionName: "grantReferralBonusToOwner",
+        PlayFabId: owner,
+        FunctionParameter: { amount: 5000 }
+    });
+
+    return { ok: true };
+};
+
+// referralCode aramasi için pratik yaklaşım: her yeni oyuncu için
+// PublisherData/TitleData'da bir index tutup burada okuyabilirsin.
+// Prod'da kesinlikle Azure Functions + Cosmos DB / bir external index kullan.
+function findPlayerByReferralCode(code) {
+    // Placeholder — projeye özgü implement edilecek.
+    return null;
+}
+```
+
+`addMoney` rate limit'ine `referral_referee` (max 3000, cooldown 24h) + `referral_referrer` (max 5000, cooldown 24h) satırları eklenmeli.
+
 ## Kurulum kontrol listesi
 
 1. PlayFab Title oluştur → **Title ID**'yi `PlayFabAuth.titleId` alanına gir.

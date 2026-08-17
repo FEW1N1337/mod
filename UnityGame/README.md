@@ -370,15 +370,76 @@ Game sahnesine ek:
 
 ---
 
-## 9) Kalan iterasyonlar (v0.4+)
+## 9) v0.4 — Görsel eksikler + yayın esasları + sosyal + AppMeta
+
+Dream Road parity max için 18 yeni script + minik modifler.
+
+### 9a) Paket A — Görsel eksikler (`Effects/`, `Vehicle/`)
+
+- `Effects/TurnSignals.cs` — Sol/sağ sinyal + dörtlü flaşör. RPC ile sync. Emissive + Light 0.5 sn blink. Prefab'a bağla, `.Left()` / `.Right()` / `.Hazard()` metotlarını buton onClick'ine at.
+- `Effects/HighBeamController.cs` — `H` tuşu ile uzun huzme. Range/intensity 2x + beam mesh emissive.
+- `Effects/WindshieldWipers.cs` — Iki wiper mesh sin-curve animasyon. `Weather.Rain` aktifken otomatik başlar. 3 hız seviyesi.
+- `Vehicle/RearViewMirror.cs` — Küçük kamera + RenderTexture. Sağ üst RawImage veya gerçek ayna mesh'ine bind.
+- `Vehicle/RepairPanel.cs` — Hasar bar + Tamir butonu. Fiyat hasar oranından hesaplanır, `PlayerMoney` düşer, `CarDamage.Repair()` çağrılır.
+
+### 9b) Paket B — Yayın esasları (`UI/`, `Rewards/`, `Moderation/`)
+
+- `UI/PauseMenu.cs` — `Esc` → `Time.timeScale=0`, panel açılır. "Devam / Ayarlar / Odadan Çık / Ana Menü".
+- `Rewards/DailyReward.cs` + `Rewards/LoginStreak.cs` — İlk açılışta bugün ödül alındı mı bak. Streak +1 → 3. günden itibaren 2x, 7. günden itibaren 3x çarpan.
+- `Moderation/BanList.cs` — Master ban'lediğinde PlayerPrefs'e yazılır, aynı UserId odaya girmeye çalışırsa otomatik kick.
+- `Moderation/ReportPlayer.cs` — Sebep dropdown + PlayFab CloudScript `submitReport` çağrısı.
+- `UI/ChatProfanityFilter.cs` — TR + EN dahili küfür listesi, `Resources/ProfanityList.txt` ile genişletilir. `RichChatUI` gönderirken çağırılır (bu turda entegre edildi).
+
+### 9c) Paket C — Sosyal (`Social/`, `Backend/`)
+
+- `Backend/PlayFabAchievements.cs` + `Social/AchievementCatalog.cs` — SO ile achievement tanımla (statistic + threshold), unlock'ta toast + para ödülü. RaceManager yarış bitince, DriftScore combo'da otomatik bildirim (bu turda entegre edildi).
+- `Social/ReferralSystem.cs` — 8 karakter unique kod. CloudScript `redeemReferral` ile iki tarafa bonus.
+- `Social/PlayFabFriends.cs` — Nickname veya PlayFabId ile arkadaş ekle, listele, çıkar.
+- `UI/PlayedWithList.cs` — Son 20 oyuncu (UserId, nickname, oda) PlayerPrefs cache. Ana menüde "Beraber oynadıkların" listesi, her satırda "Arkadaş Ekle" butonu.
+
+### 9d) Yayın metadata (`AppMeta/`)
+
+- `AppMeta/PrivacyPolicyScreen.cs` — URL varsa `Application.OpenURL`, yoksa dahili TextAsset panel içinde. KVKKConsent'ten link bağla.
+- `AppMeta/SupportEmailLink.cs` — Ayarlar → Destek → `mailto:` (versiyon + cihaz + PlayFabId otomatik konu).
+- `AppMeta/RateAppPopup.cs` — N yarış (default 5) sonra popup. Evet → App Store review link (`itms-apps://`). Hayır → geri bildirim. "Bir daha sorma" flag.
+
+### 9e) CloudScript ek handler'lar
+
+`Assets/Scripts/Backend/PlayFabCloudScriptStubs.md` içine iki yeni handler eklendi: `submitReport` (24h cooldown ile spam engel), `redeemReferral` (kod eşleşme + iki tarafa bonus). Dashboard'a revision olarak deploy et.
+
+### 9f) Sahne bağlama özeti
+
+MainMenu sahnesine ek:
+- `DailyReward` (popup panel + amount/streak label + Claim button)
+- `LoginStreak` (görünmez singleton)
+- `ReferralSystem` (görünmez) + UI: kod göster + input + "Kullan" button
+- `PlayedWithList` (listParent + entryPrefab)
+- `PlayFabFriends` (görünmez)
+- `PlayFabAchievements` (Catalog SO referansı)
+- `AchievementCatalog.asset` (Editor'de doldur: id, isim, statistic, threshold, ödül)
+- `RateAppPopup` (popup + feedback panel + iosAppId)
+- `PrivacyPolicyScreen` (KVKK ekranından link)
+- `SupportEmailLink` (Ayarlar → Destek)
+- `BanList` (görünmez singleton)
+
+Game sahnesine ek:
+- Araç prefab'ına: `TurnSignals`, `HighBeamController`, `WindshieldWipers`
+- HUD'a: `RearViewMirror`, `RepairPanel`, `PauseMenu`, `ReportPlayer`
+- `ChatProfanityFilter` (görünmez singleton — RichChatUI otomatik bulur)
+
+---
+
+## 10) Kalan iterasyonlar (v0.5+)
 
 - Bomb modu (bomba pas mini oyunu)
+- Sürücü avatarı (TurnTheGameOn IKAvatarDriver eşdeğeri)
 - Ek haritalar (asset geldikçe: 9 harita × 6 varyant = 54)
-- RCCP Tuner ($75 → $52 indirim) — visual customization (body kit, decal, spoiler)
-- Cloud save + arkadaş sistemi (PlayFab Friends API)
-- Push notification (Firebase Messaging / OneSignal — günlük ödül)
-- Photon Server Plugin (self-host) — fizik doğrulama, hile önleme
-- CAS ad mediation (Unity Ads yerine multi-network)
+- RCCP Tuner ($52 indirim) — visual customization (body kit, decal, spoiler)
+- Refuel station UI (fuel meter + ücret onay panel)
+- Push notification (Firebase Messaging / OneSignal — günlük ödül hatırlatma)
+- Photon Server Plugin (self-host) — fizik doğrulama
+- CAS ad mediation (multi-network)
+- Voice chat aktifleştirme (Photon Voice import + Recorder + Speaker prefab kurulumu)
 - Marka-özgür gerçek 3D asset entegrasyonu (senin işin)
 
 ---

@@ -37,6 +37,7 @@ namespace DreamCar.UI
             string msg = inputField.text.Trim();
             if (msg.Length > maxLength) msg = msg.Substring(0, maxLength);
             msg = Sanitize(msg);
+            if (ChatProfanityFilter.Instance != null) msg = ChatProfanityFilter.Instance.Sanitize(msg);
             photonView.RPC(nameof(RPC_Receive), RpcTarget.All, PhotonNetwork.NickName, msg);
             inputField.text = string.Empty;
             inputField.ActivateInputField();
