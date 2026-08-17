@@ -1,0 +1,52 @@
+using Photon.Pun;
+using Photon.Realtime;
+using UnityEngine;
+
+namespace DreamCar.Network
+{
+    public class PhotonConnector : MonoBehaviourPunCallbacks
+    {
+        public static PhotonConnector Instance { get; private set; }
+
+        [Tooltip("Bump this when releasing a breaking version — players on different versions won't matchmake together.")]
+        public string gameVersion = "0.1";
+
+        public bool autoConnectOnStart = true;
+        public string preferredRegion = "";
+
+        public bool IsConnected => PhotonNetwork.IsConnectedAndReady;
+
+        void Awake()
+        {
+            if (Instance && Instance != this) { Destroy(gameObject); return; }
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+        }
+
+        void Start()
+        {
+            PhotonNetwork.AutomaticallySyncScene = true;
+            if (autoConnectOnStart) Connect();
+        }
+
+        public void Connect()
+        {
+            if (PhotonNetwork.IsConnected) return;
+            PhotonNetwork.GameVersion = gameVersion;
+            if (!string.IsNullOrEmpty(preferredRegion))
+                PhotonNetwork.PhotonServerSettings.AppSettings.FixedRegion = preferredRegion;
+            PhotonNetwork.ConnectUsingSettings();
+        }
+
+        public override void OnConnectedToMaster()
+        {
+            Debug.Log($"[Photon] Connected to master. Region={PhotonNetwork.CloudRegion}");
+            if (!PhotonNetwork.InLobby) PhotonNetwork.JoinLobby();
+        }
+
+        public override void OnDisconnected(DisconnectCause cause)
+        {
+            Debug.LogWarning($"[Photon] Disconnected: {cause}");
+        }
+    }
+}
