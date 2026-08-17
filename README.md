@@ -429,7 +429,53 @@ Game sahnesine ek:
 
 ---
 
-## 10) Kalan iterasyonlar (v0.5+)
+## 10) v0.5 — Editor Setup Wizard + Refuel UI + CI
+
+### 10a) Sahne/prefab tek tıkla kurulum
+
+Yeni: `Assets/Editor/DreamCarSetup.cs`. Unity Editor'de menü:
+
+- **DreamCar → Setup → Run All** — hepsini tek seferde yapar.
+- **DreamCar → Setup → Create Car Prefab** — `Assets/Resources/Car.prefab` (Rigidbody + 4 WheelCollider + tekerlek mesh'leri + CarController axles + PhotonView + CarNetworkSync + Nitro + Damage + Paint + CruiseControl + GearBox + FuelSystem + Engine/Screech Audio + HornController).
+- **DreamCar → Setup → Create MainMenu Scene** — `Assets/Scenes/MainMenu.unity` (Canvas + nickname input + Play button + Lobby panel + Toast + PhotonConnector + PlayerMoney + PlayFab + Referral + BanList + ChatProfanityFilter + RateAppPopup + IAP/Ads + LoginStreak).
+- **DreamCar → Setup → Create Game Scene** — `Assets/Scenes/Game.unity` (Plane + Sun + Camera + CarCameraFollow + CameraModeController + 4 spawn point + RoomManager + Weather + DayNightCycle + MapSelector + HUD Canvas: speed/ping/room/leave + Chat + Controls panel + Nitro bar + Fuel meter + Refuel station panel + Pause menu + Toast).
+- **DreamCar → Setup → Add Scenes To Build Settings** — MainMenu + Game Build Settings'e eklenir.
+
+Kullanım: yeni Unity aç → hiç sahne dokunmadan → menü → Run All → PhotonAppId'yi PhotonServerSettings'e yapıştır → Play.
+
+**Not**: 3D asset gelmez; araç yerine cube+cylinder placeholder. Kendi araba modelini prefab'a swap edeceksin.
+
+### 10b) Refuel UI (Vehicle/UI)
+
+- `UI/FuelMeter.cs` — HUD yakıt barı. FuelSystem.Percent'i takip eder, %30 altında sarı, %15 altında kırmızı + tek seferlik "Yakıt az" toast.
+- `UI/RefuelStationPanel.cs` — İstasyon trigger'ına girince açılan panel. Doldurma fiyatı = eksik litre × pricePerLiter. "Öde ve Doldur" → PlayerMoney düşer, TryFillTank, kapan. "İptal" veya trigger'dan çıkış → kapan.
+- `Vehicle/RefuelStation.cs` — Otomatik doldurma yerine sadece panel açar. Sadece owner araç için (PhotonView.IsMine).
+
+### 10c) GitHub Actions CI
+
+`.github/workflows/unity-ios-build.yml` — iki job:
+
+- **compile-check** — Linux hosted runner, GameCI unity-test-runner ile derleme + EditMode test validasyonu. Ücretsiz.
+- **ios-build** — Self-hosted macOS runner (label `macos-dreamcar`), Unity iOS build → Xcode archive → `.ipa` artifact. Sertifika secret'ları gerekli.
+
+Detaylı kurulum: `.github/workflows/CI_SETUP.md` — Unity lisansı `.alf`→`.ulf`, Apple `.p12` + provisioning profile base64, self-hosted runner ekleme, sorun giderme.
+
+`Variables → UNITY_CI_ENABLED=true` ve `IOS_BUILD_ENABLED=true` set edene kadar workflow skip. Böylece PR açtığında yanlışlıkla tetiklenmez.
+
+### 10d) Kalan v0.6+ işleri
+
+- Bomb modu (sen atlamıştın)
+- Sürücü avatarı (sen atlamıştın)
+- CAS ad mediation (Unity Ads yeterli değilse)
+- Cloud save extended (garaj/plaka/renk hepsi PlayFab UserData'ya)
+- Voice chat kurulum rehberi (Photon Voice import)
+- Push notification (Firebase / OneSignal)
+- Analytics event coverage genişletme
+- Localization JSON asset bazlı hale getirme
+
+---
+
+## 11) Kalan iterasyonlar (v0.6+)
 
 - Bomb modu (bomba pas mini oyunu)
 - Sürücü avatarı (TurnTheGameOn IKAvatarDriver eşdeğeri)
