@@ -1,0 +1,141 @@
+name: Unity iOS Build
+
+on:
+  push:
+    branches:
+      - main
+      - 'claude/**'
+    paths:
+      - 'UnityGame/**'
+      - '.github/workflows/unity-ios-build.yml'
+  pull_request:
+    paths:
+      - 'UnityGame/**'
+  workflow_dispatch:
+
+concurrency:
+  group: unity-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UNITY_PROJECT_PATH: UnityGame
+
+jobs:
+
+  # Ücretsiz Linux hosted runner. Sadece derleme + editmode test. IPA üretmez.
+  # UNITY_LICENSE secret'ı gerekli. Kurulum: .github/workflows/CI_SETUP.md
+  compile-check:
+    name: Compile check (Linux hosted)
+    runs-on: ubuntu-latest
+    if: ${{ vars.UNITY_CI_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.UNITY_PROJECT_PATH }}/Library
+          key: Library-${{ hashFiles(format('{0}/Assets/**', env.UNITY_PROJECT_PATH), format('{0}/Packages/**', env.UNITY_PROJECT_PATH), format('{0}/ProjectSettings/**', env.UNITY_PROJECT_PATH)) }}
+          restore-keys: |
+            Library-
+
+      - name: Validate script compilation
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: ${{ env.UNITY_PROJECT_PATH }}
+          testMode: EditMode
+          artifactsPath: artifacts
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          checkName: EditMode test results
+
+      - name: Upload compile artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: editmode-results
+          path: artifacts
+          retention-days: 7
+
+  # Self-hosted macOS runner. Runner'a "macos-dreamcar" label ekle.
+  # Yoksa job runner-not-found ile pasif olur; hosted-runner iOS build şu an
+  # game-ci Linux'ta desteklenmiyor (Xcode gerekir).
+  ios-build:
+    name: iOS build (self-hosted macOS)
+    needs: compile-check
+    runs-on: [self-hosted, macos-dreamcar]
+    if: ${{ vars.UNITY_CI_ENABLED == 'true' && vars.IOS_BUILD_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.UNITY_PROJECT_PATH }}/Library
+          key: Library-iOS-${{ hashFiles(format('{0}/Assets/**', env.UNITY_PROJECT_PATH), format('{0}/Packages/**', env.UNITY_PROJECT_PATH), format('{0}/ProjectSettings/**', env.UNITY_PROJECT_PATH)) }}
+          restore-keys: |
+            Library-iOS-
+            Library-
+
+      - name: Build iOS Xcode project
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: ${{ env.UNITY_PROJECT_PATH }}
+          targetPlatform: iOS
+          buildName: DreamCar
+          buildsPath: build
+
+      - name: Import signing certificate
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_P12_PASSWORD: ${{ secrets.APPLE_CERT_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "$APPLE_CERT_P12" | base64 --decode > /tmp/cert.p12
+          KEYCHAIN=build.keychain
+          KEYPASS=$(uuidgen)
+          security create-keychain -p "$KEYPASS" $KEYCHAIN
+          security default-keychain -s $KEYCHAIN
+          security unlock-keychain -p "$KEYPASS" $KEYCHAIN
+          security import /tmp/cert.p12 -k $KEYCHAIN -P "$APPLE_CERT_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYPASS" $KEYCHAIN
+          rm /tmp/cert.p12
+
+      - name: Import provisioning profile
+        env:
+          APPLE_PROVISION_PROFILE: ${{ secrets.APPLE_PROVISION_PROFILE }}
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$APPLE_PROVISION_PROFILE" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/dreamcar.mobileprovision
+
+      - name: Xcode archive + export
+        working-directory: build/iOS/iOS
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project Unity-iPhone.xcodeproj \
+            -scheme Unity-iPhone \
+            -configuration Release \
+            -archivePath $PWD/build/DreamCar.xcarchive \
+            archive
+          xcodebuild \
+            -exportArchive \
+            -archivePath $PWD/build/DreamCar.xcarchive \
+            -exportOptionsPlist ../../../.github/exportOptions.plist \
+            -exportPath $PWD/build/ipa
+
+      - name: Upload .ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DreamCar-iOS-${{ github.sha }}
+          path: build/iOS/iOS/build/ipa/*.ipa
+          retention-days: 30

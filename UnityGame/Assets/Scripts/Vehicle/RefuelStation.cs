@@ -1,32 +1,36 @@
+using Photon.Pun;
 using UnityEngine;
 using DreamCar.UI;
 
 namespace DreamCar.Vehicle
 {
-    // Benzin istasyonu trigger volume. Araç girince tam depo doldurur.
+    // Benzin istasyonu trigger volume. Owner araç girince RefuelStationPanel açar.
+    // Çıkınca panel kapanır.
     [RequireComponent(typeof(Collider))]
     public class RefuelStation : MonoBehaviour
     {
-        public float refuelDelay = 2f;
-        float _lastRefuel;
-
         void Awake() { var c = GetComponent<Collider>(); c.isTrigger = true; }
 
-        void OnTriggerStay(Collider other)
+        void OnTriggerEnter(Collider other)
         {
-            if (Time.time - _lastRefuel < refuelDelay) return;
             var fuel = other.GetComponentInParent<FuelSystem>();
             if (!fuel) return;
-            if (fuel.TryFillTank())
-            {
-                _lastRefuel = Time.time;
-                ToastNotification.Show("Depo dolduruldu");
-            }
-            else if (fuel.Percent < 0.99f)
-            {
-                _lastRefuel = Time.time;
-                ToastNotification.Show("Yetersiz para");
-            }
+            if (!IsLocalOwnedCar(fuel.gameObject)) return;
+            if (RefuelStationPanel.Instance != null) RefuelStationPanel.Instance.Open(fuel);
+        }
+
+        void OnTriggerExit(Collider other)
+        {
+            var fuel = other.GetComponentInParent<FuelSystem>();
+            if (!fuel) return;
+            if (!IsLocalOwnedCar(fuel.gameObject)) return;
+            if (RefuelStationPanel.Instance != null) RefuelStationPanel.Instance.Close();
+        }
+
+        static bool IsLocalOwnedCar(GameObject go)
+        {
+            var pv = go.GetComponentInParent<PhotonView>();
+            return pv == null || pv.IsMine;
         }
     }
 }
