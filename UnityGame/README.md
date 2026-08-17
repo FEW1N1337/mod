@@ -204,15 +204,77 @@ Zorunlu: bir araba modeli + bir harita/zemin.
 
 ---
 
-## 7) Sonraki iterasyonlar (bu iskelette YOK)
+## 7) Genişletilmiş sistemler (v0.2 — eklendi)
 
-- Ekonomi (para, garaj, satın alma) — `PlayerMoney.cs`, mağaza UI
-- Plaka kişiselleştirme (Dream Road'daki `PlateVariant` gibi)
-- Voice chat (Photon Voice paketi)
-- Birden fazla harita seçimi
-- Anti-cheat (Photon sunucu tarafı validation — Photon Server Plugin)
-- Yarış modu (checkpoint, tur sayacı)
-- Arkadaş sistemi, davetiye
+Bu iskelet artık aşağıdaki Dream Road-tarzı sistemleri de içeriyor:
+
+**Ekonomi & garaj** (`Assets/Scripts/Economy/`)
+- `PlayerMoney.cs` — PlayerPrefs + Photon custom prop (leaderboard için görünür)
+- `CarCatalog.cs` — ScriptableObject araç kataloğu + `CarDefinition` (fiyat, ikon, stat)
+- `CarInventory.cs` — Sahip olunan araçlar, aktif araç
+- `ShopUI.cs` — Mağaza listesi + satın al butonu
+
+**Odalar & moderasyon** (`Assets/Scripts/Network/`)
+- `RoomPassword.cs` — Şifreli oda (Dream Road'daki `pWd` custom property)
+- `PlayerListPanel.cs` — Oyuncu listesi + ping + master client kick butonu
+
+**Kişiselleştirme** (`Assets/Scripts/Customization/`)
+- `LicensePlate.cs` — Plaka texture (Dream Road'daki `PlateVariant.Change`), Photon prop sync
+
+**Yarış modu** (`Assets/Scripts/Race/`)
+- `Checkpoint.cs`, `RaceManager.cs`, `DriftScore.cs`, `LeaderboardUI.cs`
+
+**Voice chat + emote** (`Assets/Scripts/Voice/`, `Emote/`)
+- `VoiceChatController.cs` — Photon Voice 2 (PHOTON_VOICE_DEFINED define ile)
+- `EmoteSystem.cs` — RPC ile korna/el sallama/alkış
+- `HornController.cs`
+
+**Monetizasyon & yayın** (`Assets/Scripts/Monetization/`, `Consent/`, `Tutorial/`)
+- `IAPManager.cs` — Unity IAP (para paketleri, VIP subscription) — UNITY_PURCHASING define
+- `AdsManager.cs` — Unity Ads rewarded video — UNITY_ADS define
+- `Analytics.cs` — Firebase/Unity Analytics scaffold
+- `KVKKConsent.cs` — KVKK/GDPR + iOS ATT (App Tracking Transparency) izin
+- `TutorialManager.cs` — İlk açılış step-by-step rehber
+
+**Kamera & çevre** (`Assets/Scripts/CameraModes/`, `Environment/`)
+- `CameraModeController.cs` — Chase / Hood / Bumper / Free / Cinematic geçişi
+- `Weather.cs` — Rain / Snow + `_GlobalWetness` shader property
+
+**HUD ekstra** (`Assets/Scripts/UI/`)
+- `Minimap.cs` — Top-down kamera → RenderTexture → RawImage
+- `PingIndicator.cs`
+- `ToastNotification.cs` — Kısa bilgi mesajları
+
+**Araç sistemleri** (`Assets/Scripts/Vehicle/`)
+- `GearBox.cs` — Otomatik şanzıman + vites göstergesi (R/N/1/2/…)
+- `FuelSystem.cs` — Yakıt sarfiyatı + boşalınca motor keser
+- `RefuelStation.cs` — Trigger volume, para düşer, depo dolar
+- `CarDamage.cs` — Çarpma birikimi + duman + tamir
+
+**Lokalizasyon & ayarlar** (`Assets/Scripts/Localization/`, `Settings/`)
+- `LocalizationManager.cs` — TR/EN yerleşik, `LocalizedText` component
+- `GameSettings.cs` — Grafik kalite, FPS, master/music/sfx volume, direksiyon hassasiyeti
+
+### Paket bağımlılıkları (opsiyonel — sadece import edince aktif olurlar)
+
+| Sistem | Gerekli paket | Define symbol |
+|---|---|---|
+| Voice chat | Photon Voice 2 (Asset Store) | `PHOTON_VOICE_DEFINED` |
+| IAP | com.unity.purchasing (Package Manager) | `UNITY_PURCHASING` (auto) |
+| Ads | com.unity.ads (Package Manager) | `UNITY_ADS` (auto) |
+| Firebase Analytics | Firebase SDK (Google) | `FIREBASE_ANALYTICS` |
+
+Define eklemek için: Project Settings → Player → **Other Settings** → **Scripting Define Symbols**.
+
+---
+
+## 8) Kalan iterasyonlar
+
+- Sunucu tarafı anti-cheat (Photon Server Plugin — self-host)
+- Arkadaş sistemi, davet
+- Cloud save (PlayFab / Firebase Realtime DB)
+- Push notification (günlük ödül)
+- Marka-özgür gerçek 3D asset entegrasyonu (senin işin)
 
 ---
 
