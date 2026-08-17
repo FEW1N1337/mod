@@ -1,20 +1,31 @@
 using Photon.Pun;
 using Photon.Realtime;
 using UnityEngine;
+using DreamCar.GameModes;
+using DreamCar.Maps;
 
 namespace DreamCar.Network
 {
     public class RoomManager : MonoBehaviourPunCallbacks
     {
-        [Tooltip("Prefab name that lives under Assets/Resources/ (Photon looks it up by name).")]
+        [Tooltip("Prefab name that lives under Assets/Resources/ (Photon looks it up by name). Aktif araç varsa CarInventory.ActiveCar.resourcePrefabName ile override edilir.")]
         public string carPrefabName = "Car";
 
         public Transform[] spawnPoints;
+        public bool addGameModeManager = true;
+        public bool applyMapPreset = true;
 
         GameObject _localCar;
 
         void Start()
         {
+            if (addGameModeManager && !FindFirstObjectByType<GameModeManager>())
+                gameObject.AddComponent<GameModeManager>();
+            if (applyMapPreset)
+            {
+                var sel = FindFirstObjectByType<MapSelector>();
+                if (sel) sel.ApplyForRoom();
+            }
             if (PhotonNetwork.InRoom) SpawnLocalCar();
         }
 
@@ -31,7 +42,11 @@ namespace DreamCar.Network
             Vector3 pos = spawn ? spawn.position : Vector3.up * 1f;
             Quaternion rot = spawn ? spawn.rotation : Quaternion.identity;
 
-            _localCar = PhotonNetwork.Instantiate(carPrefabName, pos, rot);
+            string prefab = carPrefabName;
+            var active = Economy.CarInventory.Instance ? Economy.CarInventory.Instance.ActiveCar : null;
+            if (active && !string.IsNullOrEmpty(active.resourcePrefabName)) prefab = active.resourcePrefabName;
+
+            _localCar = PhotonNetwork.Instantiate(prefab, pos, rot);
 
             var follow = Camera.main ? Camera.main.GetComponent<Car.CarCameraFollow>() : null;
             if (follow) follow.target = _localCar.transform;

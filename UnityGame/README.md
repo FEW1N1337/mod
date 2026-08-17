@@ -268,12 +268,117 @@ Define eklemek için: Project Settings → Player → **Other Settings** → **S
 
 ---
 
-## 8) Kalan iterasyonlar
+## 8) v0.3 — Dream Road parity (RCCP + PlayFab + oyun modu + harita sistemi)
 
-- Sunucu tarafı anti-cheat (Photon Server Plugin — self-host)
-- Arkadaş sistemi, davet
-- Cloud save (PlayFab / Firebase Realtime DB)
-- Push notification (günlük ödül)
+Bu iterasyon Dream Road'un gözlemlenebilir mimarisiyle kod düzeyinde fonksiyonel parity kurar. Grafik/asset kopyalanmaz — mekanikler kod olarak yazılır, sen kendi görsel varlıklarını sağlarsın.
+
+### 8a) RCCP kurulumu (opsiyonel, önerilen)
+
+Fizik motoru olarak RCCP'yi (Realistic Car Controller Pro, BoneCracker Games) kullanmak istersen:
+
+1. Unity Asset Store → **Realistic Car Controller Pro** al ($50 civarı).
+2. Editor'de import et.
+3. Player Settings → Other Settings → **Scripting Define Symbols** → `RCCP_INSTALLED` ekle.
+4. Test aracına RCCP prefab'ını hazırla (BoneCracker demo aracı temel alınabilir).
+5. Aynı GameObject'e ek olarak `RCCPCarAdapter` + `RCCPNitroBridge` + `RCCPDamageBridge` + `RCCPDetachableBridge` bileşenlerini ekle. Bunlar RCCP API'sini bizim `IDriveInput` arayüzümüz altında sarar; `MobileTouchInput`, `NitroBar`, damage HUD hepsi RCCP moduyla otomatik çalışır.
+6. `RCCPWheelGlowBridge` bileşeni de eklenirse bizim `WheelGlow.cs`'i devre dışı bırakır (çift emissive olmasın).
+
+RCCP alma → adapter aktif; almazsan mevcut `CarController` (WheelCollider tabanlı) çalışmaya devam eder. Her ikisi de `IDriveInput` arayüzünü uyguladığı için oyunun geri kalanı fizik motorundan bağımsız.
+
+### 8b) PlayFab backend
+
+Anti-cheat için sunucu tarafı para/satın alma doğrulaması PlayFab ile yapılır.
+
+1. Unity Asset Store → **PlayFab SDK** (ücretsiz) import et.
+2. [developer.playfab.com](https://developer.playfab.com) → hesap → yeni Title oluştur → **Title ID** kopyala.
+3. Sahnede `PlayFabAuth` bileşenine Title ID'yi gir.
+4. Player Settings → Scripting Define Symbols → `PLAYFAB_INSTALLED` ekle.
+5. `PlayFabMoneySync` bileşenini `PlayerMoney` ile aynı GameObject'e ekle → otomatik login sonrası money PlayFab'dan geri yüklenir, her değişiklik 2 sn debounce ile server'a yazılır.
+6. **Server tarafı validation kodları**: `Assets/Scripts/Backend/PlayFabCloudScriptStubs.md` içindeki üç handler'ı (`addMoney`, `buyCar`, `submitRaceResult`) PlayFab dashboard → Automation → Revisions → paste + Deploy.
+7. `PlayFabInventoryBridge` bileşeni `CarInventory` ile aynı GameObject'e → araç satın alma CloudScript üstünden validate edilir (client hile ile araç alamaz).
+8. Leaderboard: PlayFab dashboard → Game Manager → Leaderboards → `raceBestLap` (Maximum), `driftScore` (Maximum) tanımla.
+
+### 8c) Oyun modu sistemi
+
+Dream Road'daki `Drift` / `Free` / `Race` modları (Bomb hariç, v0.4'e bırakıldı).
+
+- **Room custom property `mode`** ile hangi mod yazılır (0=Free, 1=Race, 2=Drift).
+- Sahne yüklendiğinde `GameModeManager` otomatik uygun `GameModeBase` bileşenini spawn eder.
+- **Race**: 3-2-1-GO sayacı, `RaceManager` bağlanır, bitişte `PlayerMoney` ödül.
+- **Drift**: 3 dakikalık oturum, `DriftScore` bank'ından her 1000 puana ödül.
+- **Free**: Kural yok.
+
+### 8d) Harita sistemi (1 harita + 3 varyant)
+
+Tek gerçek Unity sahnesi + weather/time-of-day preset ile 3 varyant.
+
+1. Editor → Assets → Create → DreamCar → **Map Definition** ile 3 SO oluştur:
+   - `Map_City` — sceneName=`Game`, weather=Clear, timeOfDay=0.5
+   - `Map_CityNight` — sceneName=`Game`, weather=Clear, timeOfDay=0.85
+   - `Map_CityRainy` — sceneName=`Game`, weather=Rain, timeOfDay=0.5
+2. Assets → Create → DreamCar → **Map Catalog** → içine 3 map SO'yu sürükle.
+3. `RoomCreatorUI` bileşeninde `mapCatalog` alanına catalog'u ata.
+4. Sahnedeki `MapSelector` bileşenine de aynı catalog + `Weather` ve `DayNightCycle` referansları.
+5. Room creator'dan varyant seçince aynı sahne yüklenir ama preset uygulanır → 3 farklı görünüm, tek asset yükü.
+
+Yeni harita eklemek için: (a) Editor'de yeni sahne, Build Settings'e ekle, (b) yeni `MapDefinition` SO oluştur, catalog'a ekle.
+
+### 8e) Advanced Room Creator UI
+
+`RoomCreatorUI.cs` — mevcut basit oda oluşturmanın yerine genişletilmiş form:
+- TMP_InputField (oda adı, şifre)
+- TMP_Dropdown (mod: Free/Race/Drift)
+- TMP_Dropdown (harita: MapCatalog'dan otomatik doldurulur)
+- Slider (max oyuncu 2-16)
+- Toggle (görünür/gizli)
+- Create butonu → `RoomPassword.CreateWithPassword(name, password, maxPlayers, mode, mapId, visible)`
+
+`RoomOptions.CustomRoomProperties` = `{ pWd, mode, map }` — hepsi lobby'de görünür → oda listesinde ikon çıkarılabilir.
+
+### 8f) Dream Road ekstra sistemleri
+
+- `Vehicle/CruiseControl.cs` — `C` tuşu (varsayılan) ile sabit hız tutucu.
+- `Vehicle/InteriorCamera.cs` — 1. şahıs kokpit; steer input'una göre direksiyon döner. `CameraModeController`'ın yeni `Interior` moduyla otomatik açılır. `V` tuşu mod cycle.
+- `Vehicle/TrafficSpawner.cs` — Waypoint chain'ler üzerinde belirli aralıklarla trafik aracı spawn'lar, oyuncu uzaklaşınca despawn (pool). `HR_TrafficSettings` eşdeğeri.
+- `Customization/CarPaintHDR.cs` — Emissive/HDR boya, rainbow modu opsiyonel. URP + Bloom ile parlar. Photon prop sync.
+- `Customization/SplitLicensePlate.cs` — 2 parçalı plaka (34 | FEW 1337). Dream Road'daki `disableSplit@0x29` mekaniği.
+- `Emote/AirHorn.cs` — Ritmik korna, 4 farklı nota deseni. RPC ile herkes duyar.
+- `UI/RichChatUI.cs` — TMP rich text + emoji sprite atlas (`:grin:` → sprite). Zararlı `<size=9999%>` tag'ları filtrelenir.
+- `UI/GarageCarousel.cs` — Ana menü/garage'da sol/sağ ok butonlarıyla araç değiştirme + 3D turntable preview.
+- `Environment/TimeOfDayPreset.cs` — SO. `DayNightCycle`'a instant snapshot uygular (freeze).
+
+### 8g) Yeni bileşenlerin sahneye bağlanması
+
+MainMenu sahnesine ek:
+- Boş GameObject → `PlayFabAuth` (Title ID yaz)
+- Aynı objeye → `PlayFabMoneySync`, `PlayFabInventoryBridge`, `PlayFabLeaderboards`
+- Garage paneli için `GarageCarousel` + 3D preview mount
+- Room creator paneli için `RoomCreatorUI` (MapCatalog referansı)
+
+Game sahnesine ek:
+- `RoomManager` zaten `GameModeManager` + `MapSelector` otomatik spawn/uygular
+- Araç prefab'ına `CruiseControl`, `InteriorCamera` (varsa kokpit anchor), `CarPaintHDR`, `SplitLicensePlate`, `AirHorn`, `RCCPCarAdapter` (RCCP moduysa)
+- Sahneye `TrafficSpawner` + lane waypoint zincirleri
+
+### 8h) Sorun giderme (v0.3)
+
+- **`RCCP_INSTALLED` tanımlı ama derleme hatası**: RCCP namespace'i `RCCP` mi yoksa `BCG.RCCP` mi kontrol et. Farklıysa `#if RCCP_INSTALLED` bloklarındaki `using` satırını güncelle.
+- **PlayFab login başarısız**: Title ID doğru mu? İnternet var mı? Console'daki `ErrorMessage`'a bak.
+- **PlayFab CloudScript "handler not found"**: Revision deploy edildi mi (dashboard → Revisions listesinde aktif olmalı)?
+- **Oyun modu spawn olmuyor**: Room custom property `mode` yazılmamış → RoomCreatorUI kullan (eski manual `LobbyManager.CreateRoom` mode yazmaz).
+- **Harita varyantı geceye geçmiyor**: `MapSelector.applyMapPreset` true mu? Sahnede `DayNightCycle` var mı?
+
+---
+
+## 9) Kalan iterasyonlar (v0.4+)
+
+- Bomb modu (bomba pas mini oyunu)
+- Ek haritalar (asset geldikçe: 9 harita × 6 varyant = 54)
+- RCCP Tuner ($75 → $52 indirim) — visual customization (body kit, decal, spoiler)
+- Cloud save + arkadaş sistemi (PlayFab Friends API)
+- Push notification (Firebase Messaging / OneSignal — günlük ödül)
+- Photon Server Plugin (self-host) — fizik doğrulama, hile önleme
+- CAS ad mediation (Unity Ads yerine multi-network)
 - Marka-özgür gerçek 3D asset entegrasyonu (senin işin)
 
 ---
@@ -307,6 +412,36 @@ Define eklemek için: Project Settings → Player → **Other Settings** → **S
 | `Scripts/Customization/CarPaint.cs` | Boya (renk/metallic/smoothness) + Photon custom prop sync |
 | `Scripts/Game/GameBootstrap.cs` | Her sahnede setup |
 | `link.xml` | IL2CPP stripping için Photon namespace preserve |
+| **v0.3 dosyaları** | |
+| `Scripts/Car/IDriveInput.cs` | Fizik motor bağımsız input arayüzü |
+| `Scripts/RCCPBridge/RCCPCarAdapter.cs` | RCCP_CarController → IDriveInput sarımı |
+| `Scripts/RCCPBridge/RCCPNitroBridge.cs` | RCCP_Nos ↔ NitroBar UI köprü |
+| `Scripts/RCCPBridge/RCCPWheelGlowBridge.cs` | Custom WheelGlow'u devre dışı bırakır |
+| `Scripts/RCCPBridge/RCCPDamageBridge.cs` | RCCP_Damage ↔ CarDamage API köprü |
+| `Scripts/RCCPBridge/RCCPDetachableBridge.cs` | Hasar eşiğinde parça düşürme |
+| `Scripts/GameModes/GameMode.cs` | Enum + abstract base |
+| `Scripts/GameModes/FreeRoamMode.cs` | Kuralsız serbest sürüş |
+| `Scripts/GameModes/RaceMode.cs` | 3-2-1-GO + tur + ödül |
+| `Scripts/GameModes/DriftMode.cs` | 3 dk drift oturumu + ödül |
+| `Scripts/GameModes/GameModeManager.cs` | Room prop'a göre mod spawn |
+| `Scripts/Maps/MapDefinition.cs` | SO — sahne + weather + TOD |
+| `Scripts/Maps/MapCatalog.cs` | SO — tüm haritalar |
+| `Scripts/Maps/MapSelector.cs` | Sahne yüklendiğinde preset uygular |
+| `Scripts/UI/RoomCreatorUI.cs` | Genişletilmiş oda oluşturucu (mode+map+password) |
+| `Scripts/UI/RichChatUI.cs` | TMP rich text + emoji sprite chat |
+| `Scripts/UI/GarageCarousel.cs` | Ok butonlarıyla araç değiştirme + 3D preview |
+| `Scripts/Backend/PlayFabAuth.cs` | Anonim CustomID login |
+| `Scripts/Backend/PlayFabMoneySync.cs` | Money cloud persist |
+| `Scripts/Backend/PlayFabLeaderboards.cs` | Race + drift leaderboard |
+| `Scripts/Backend/PlayFabInventoryBridge.cs` | Server-authoritative araç satın alma |
+| `Scripts/Backend/PlayFabCloudScriptStubs.md` | Dashboard'a yapıştırılacak JS handler'lar |
+| `Scripts/Vehicle/CruiseControl.cs` | Sabit hız tutucu |
+| `Scripts/Vehicle/InteriorCamera.cs` | 1. şahıs kokpit + direksiyon |
+| `Scripts/Vehicle/TrafficSpawner.cs` | Waypoint chain trafik pool |
+| `Scripts/Customization/CarPaintHDR.cs` | Emissive/rainbow boya |
+| `Scripts/Customization/SplitLicensePlate.cs` | 2 parçalı plaka |
+| `Scripts/Emote/AirHorn.cs` | Ritmik korna 4 nota deseni |
+| `Scripts/Environment/TimeOfDayPreset.cs` | SO — DayNightCycle snapshot |
 
 ---
 
