@@ -9,23 +9,28 @@ namespace DreamCar.Network
     // custom prop olarak yayımlar. Katılmak isteyen aynı password'ü girmeli — yoksa reddedilir.
     public static class RoomPassword
     {
-        const string PwdKey = "pWd";
-        static readonly string[] Lobby = { PwdKey };
+        public const string PwdKey = "pWd";
+        public const string ModeKey = "mode";
+        public const string MapKey = "map";
+        static readonly string[] Lobby = { PwdKey, ModeKey, MapKey };
 
         public static void Register()
         {
             PhotonNetwork.PhotonServerSettings.AppSettings.EnableLobbyStatistics = true;
         }
 
-        public static void CreateWithPassword(string roomName, string password, byte maxPlayers = 16)
+        public static void CreateWithPassword(string roomName, string password, byte maxPlayers = 16,
+                                              int mode = 0, string mapId = null, bool visible = true)
         {
             var props = new Hashtable();
             if (!string.IsNullOrEmpty(password)) props[PwdKey] = password;
+            props[ModeKey] = mode;
+            if (!string.IsNullOrEmpty(mapId)) props[MapKey] = mapId;
 
             var opts = new RoomOptions
             {
                 MaxPlayers = maxPlayers,
-                IsVisible = true,
+                IsVisible = visible,
                 IsOpen = true,
                 CustomRoomProperties = props,
                 CustomRoomPropertiesForLobby = Lobby

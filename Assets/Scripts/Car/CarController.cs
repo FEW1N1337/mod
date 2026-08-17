@@ -3,8 +3,13 @@ using UnityEngine;
 namespace DreamCar.Car
 {
     [RequireComponent(typeof(Rigidbody))]
-    public class CarController : MonoBehaviour
+    public class CarController : MonoBehaviour, IDriveInput
     {
+        public float TopSpeedKmh => topSpeedKmh;
+        public float ThrottleInput => throttleInput;
+        public float BrakeInput => brakeInput;
+        public float SteerInput => steerInput;
+
         [System.Serializable]
         public class AxleInfo
         {

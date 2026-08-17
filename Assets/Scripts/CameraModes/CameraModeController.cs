@@ -1,18 +1,22 @@
 using UnityEngine;
 using DreamCar.Car;
+using DreamCar.Vehicle;
 
 namespace DreamCar.CameraModes
 {
-    // Chase / Hood / Bumper / Free-look / Cinematic mod geçişi.
+    // Chase / Hood / Bumper / Interior / Free-look / Cinematic mod geçişi.
     public class CameraModeController : MonoBehaviour
     {
-        public enum Mode { Chase, Hood, Bumper, Free, Cinematic }
+        public enum Mode { Chase, Hood, Bumper, Interior, Free, Cinematic }
         public Mode current = Mode.Chase;
 
         public Transform target;
         public Transform hoodAnchor;
         public Transform bumperAnchor;
+        public Transform interiorAnchor;
+        public InteriorCamera interior;
         public CarCameraFollow follow;
+        public KeyCode cycleKey = KeyCode.V;
 
         public Vector3 chaseOffset = new Vector3(0f, 3f, -6f);
         public float freeRotSpeed = 90f;
@@ -22,10 +26,13 @@ namespace DreamCar.CameraModes
 
         float _cineT;
 
+        void Update() { if (Input.GetKeyDown(cycleKey)) Cycle(); }
+
         void LateUpdate()
         {
             if (!target || !follow) return;
             follow.target = target;
+            if (interior) interior.SetActive(current == Mode.Interior);
 
             switch (current)
             {
@@ -40,6 +47,10 @@ namespace DreamCar.CameraModes
                 case Mode.Bumper:
                     follow.enabled = false;
                     if (bumperAnchor) transform.SetPositionAndRotation(bumperAnchor.position, bumperAnchor.rotation);
+                    break;
+                case Mode.Interior:
+                    follow.enabled = false;
+                    if (interiorAnchor) transform.SetPositionAndRotation(interiorAnchor.position, interiorAnchor.rotation);
                     break;
                 case Mode.Free:
                     follow.enabled = false;
@@ -56,6 +67,6 @@ namespace DreamCar.CameraModes
             }
         }
 
-        public void Cycle() => current = (Mode)(((int)current + 1) % 5);
+        public void Cycle() => current = (Mode)(((int)current + 1) % 6);
     }
 }
