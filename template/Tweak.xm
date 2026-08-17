@@ -5904,7 +5904,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"🏷️  Sunucu İsmi Değiştir (herkes görür)" color:C_GOLD atY:y action:@selector(officialNicknameEveryone)];
     y = [self actionRow:@"🏆  Anında Kazan (yarışı bitir + ödül)" color:C_ON atY:y action:@selector(instantWin)];
     y = [self actionRow:@"🚧  Trafik Fırlat (önüne trafik aracı — deneysel)" color:C_RED atY:y action:@selector(trafficStrike)];
-    y = [self actionRow:@"🎭  Oyuncunun Aracını Ele Geçir (senin tuning'in — deneysel)" color:C_RED atY:y action:@selector(hijackTargetTuning)];
+    // v114.61: 'Oyuncunun Aracını Ele Geçir' SILINDI (calismiyor - kullanici istegi)
     y = [self actionRow:@"🛞  Jant Modeli Değiştir (tuner — herkeste)" color:C_ON atY:y action:@selector(cycleWheels)];
     y = [self actionRow:@"🛢️  Lastik Değiştir (tuner — herkeste)" color:C_ON atY:y action:@selector(cycleTire)];
 
@@ -5912,9 +5912,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self toggle:@"✨  Emissive Parlak Boya" sub:@"Aracın materyallerini HDR sarı-turuncu parlak yapar" key:@"emissive" atY:y action:@selector(tapEmissivePaint)];
     y = [self toggle:@"🔥  Egzoz Alev Sürekli" sub:@"RCCP_Exhaust.flameOnCutOff=true" key:@"exhaustflame" atY:y action:@selector(tapExhaustFlame)];
     y = [self toggle:@"📺  Vidyo İsim Modu" sub:@"Rich text oyuncu isimlerini vidyo yap" key:@"vidyonames" atY:y action:@selector(tapVidyoNames)];
-    y = [self actionRow:@"🔧  Parça Sök & Fırlat (kapı/spoyler koparsın)" color:C_RED atY:y action:@selector(tapDetachParts)];
-    y = [self actionRow:@"🚀  Herkesi Sana Teleport Et" color:C_ON atY:y action:@selector(tapTeleportAllToMe)];
-    y = [self actionRow:@"🎮  Yabancı Aracı Ele Geçir (isMine=true)" color:C_GOLD atY:y action:@selector(tapHijackCar)];
+    // v114.61: 'Parça Sök & Fırlat' + 'Herkesi Sana Teleport' + 'Yabancı Aracı Ele Geçir' SILINDI (calismiyor)
     y = [self actionRow:@"✏️  Selektor Hizi Ayarla" color:C_CYAN atY:y action:@selector(editSelektorSpeed)];
     y = [self actionRow:@"\U0001F53C  ZIPLA (bas)" color:C_ON atY:y action:@selector(jumpTap)];
     y = [self actionRow:@"\U0001F680  Hiz Patlamasi (boost)" color:C_ON atY:y action:@selector(boostTap)];
@@ -5924,7 +5922,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"\U0001F4CD  Konum Kaydet" color:C_GOLD atY:y action:@selector(saveTeleportPos)];
     y = [self actionRow:@"\U0001F680  Kayitli Konuma Isinlan" color:C_GOLD atY:y action:@selector(teleportSaved)];
     y = [self actionRow:@"\U0001F3AF  Oyuncuya Isinlan (yanina git)" color:C_ON atY:y action:@selector(teleportToPlayer)];
-    y = [self actionRow:@"\U0001F9F2  Oyuncuyu Yanima Cek (RPC Isinla)" color:C_ON atY:y action:@selector(bringPlayerToMe)];
+    // v114.61: 'Oyuncuyu Yanima Cek (RPC)' SILINDI (calismiyor)
 
     y = [self header:@"\U0001F4AC  CHAT" atY:y];
     y = [self actionRow:@"💬  AI'ye Dogrudan Soru Sor (Pencereden)" color:C_GOLD atY:y action:@selector(askAiDirect)];
@@ -6045,7 +6043,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"⏱️  Oyun Hızı (TimeScale)" color:C_CYAN atY:y action:@selector(tapGameSpeed)];
     y = [self actionRow:@"👥  Fake Çevrimici Sayısı (Lobi Görseli)" color:C_CYAN atY:y action:@selector(tapFakeOnline)];
     y = [self actionRow:@"🗺️  Odadayken Harita Değiştir (v233 minimal + master zorla)" color:C_ON atY:y action:@selector(changeMapInRoom)];
-    y = [self actionRow:@"🚗  Kişi Aracı Klonla (deneysel race glitch)" color:C_GOLD atY:y action:@selector(cloneCarPicker)];
+    // v114.61: 'Kişi Aracı Klonla' SILINDI (calismiyor)
     y = [self actionRow:@"🌤️  Hava Durumu & Zaman Seç (Aktarmasız Canlı)" color:C_ON atY:y action:@selector(changeWeatherOnly)];
     // Oda ismi degistirmek icin tek gercek yol: 🔄 Odayi Yeniden Olustur (asagida)
     y = [self actionRow:@"👥  Odadayken Max Oyuncu Değiştir (2-100)" color:C_GOLD atY:y action:@selector(changeMaxPlayersInRoom)];
@@ -6054,26 +6052,23 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"🔒  Odayı Kilitle / Aç (IsOpen Toggle)" color:C_GOLD atY:y action:@selector(tapRoomLock)];
     y = [self actionRow:@"👁️  Odayı Gizle / Göster (IsVisible Toggle)" color:C_GOLD atY:y action:@selector(tapRoomHide)];
     y = [self actionRow:@"\U0001F511  Oda Sifresi Koy / Kaldir" color:C_GOLD atY:y action:@selector(tapRoomPassword)];
-    y = [self actionRow:@"\U0001F4A5  ODAYI KAPAT (Herkesi At & Odayi Sonlandir)" color:C_RED atY:y action:@selector(nukeRoom)];
-    y = [self actionRow:@"💥  Odadaki Herkesi At (Mass Kick)" color:C_RED atY:y action:@selector(tapRoomKickAll)];
+    // v114.61: 'ODAYI KAPAT' + 'Odadaki Herkesi At (Mass Kick)' SILINDI (calismiyor)
     y = [self actionRow:@"🎯  Belirli Oyuncuyu At (Sec ve Kick)" color:C_RED atY:y action:@selector(nativeKickPick)];
     y = [self actionRow:@"🚫  Ban Listesi (geri geleni otomatik at)" color:C_RED atY:y action:@selector(manageBans)];
-    y = [self actionRow:@"💣  HEDEFLİ BOMBA + CRASH (Sec)" color:C_RED atY:y action:@selector(targetBombCrashPick)];
+    // v114.61: 'HEDEFLİ BOMBA + CRASH' SILINDI (calismiyor)
     y = [self actionRow:@"🆔  Oyuncu ID Listesi (ActorNumber + UserId)" color:C_ON atY:y action:@selector(showPlayerIDs)];
     y = [self toggle:@"🕵️  İsim Değişikliği Takibi (Auto)" sub:@"ActorNumber -> NickName eşleşmesini izler, değişirse alert" key:@"nametrack" atY:y action:@selector(tapNameTrack)];
     y = [self actionRow:@"✏️  Nickname ile At (Elle yaz)" color:C_GOLD atY:y action:@selector(nativeKickByName)];
     y = [self actionRow:@"💣  Oda Patlatma (Odadakileri Düşür)" color:C_RED atY:y action:@selector(tapRoomExplode)];
-    y = [self actionRow:@"🎨  Odadaki Araç Rengini Değiştir (Tüm Araçları Boya)" color:C_GOLD atY:y action:@selector(pickCarPaintColor)];
-    y = [self actionRow:@"🌈  Kendi Rengin — HERKESTE Göster (PaintTuner yayını)" color:C_GOLD atY:y action:@selector(setServerColor)];
+    // v114.61: 'Tüm Araçları Boya' + 'Kendi Rengin HERKESTE (PaintTuner yayını)' SILINDI (calismiyor)
     y = [self actionRow:@"💿  Jant Rengi — HERKESTE" color:C_GOLD atY:y action:@selector(setRimColor)];
     y = [self actionRow:@"✨  Krom Aç/Kapa — HERKESTE" color:C_GOLD atY:y action:@selector(setChromeMenu)];
     y = [self actionRow:@"🪟  Cam Koyuluğu — HERKESTE" color:C_GOLD atY:y action:@selector(setGlassMenu)];
     y = [self actionRow:@"🏎️  Stance / Kamber — HERKESTE" color:C_GOLD atY:y action:@selector(setStanceMenu)];
-    y = [self actionRow:@"🦵  Gövde Parça (spoyler vb.) — HERKESTE" color:C_GOLD atY:y action:@selector(setBodyPartMenu)];
+    // v114.61: 'Gövde Parça HERKESTE' SILINDI (calismiyor)
     y = [self actionRow:@"🏁  Bitiş Çizgisine Işınlan (deneysel)" color:C_ON atY:y action:@selector(finishTeleport)];
     y = [self actionRow:@"🎨  Renkli Oda Kur (Dinamik Stil Paneli)" color:C_GOLD atY:y action:@selector(createColoredRoom)];
-    y = [self actionRow:@"🧪  Exploit Ile Oda Kur (30 Yontem)" color:C_RED atY:y action:@selector(exploitCreateRoom)];
-    y = [self actionRow:@"🏠  Düz Özel İsimli Oda Kur" color:C_CYAN atY:y action:@selector(createOneRoom)];
+    // v114.61: 'Exploit Ile Oda Kur (30 Yontem)' + 'Düz Özel İsimli Oda Kur' SILINDI (calismiyor)
     y = [self actionRow:@"\U0001F4A5  300 ODA AC (tek tus, 0.02sn)" color:C_RED atY:y action:@selector(spam300Rooms)];
     y = [self toggle:@"\U0001F4E5  Fake Oda Spam" sub:@"Kalici odalar birikir" key:@"roomspam" atY:y action:@selector(tapRoomSpam)];
     y = [self toggle:@"\U0001F504  Surekli Mod" sub:@"Kapatana kadar spam" key:@"roomcont" atY:y action:@selector(tapRoomContinuous)];
