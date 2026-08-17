@@ -2,14 +2,16 @@
 
 Dream Road Online tarzı online çok oyunculu araba oyunu için Unity 6 iskeleti. Photon PUN 2 + WheelCollider + ücretsiz asset yaklaşımı.
 
-Bu klasör commit edilmiş iskelettir — Unity Editor'de açıp aşağıdaki adımları izleyerek çalışır bir prototipe getireceksin. Sonra APK/AAB build alıp Play Store'a yükleyebilirsin.
+Bu klasör commit edilmiş iskelettir — Unity Editor'de açıp aşağıdaki adımları izleyerek çalışır bir prototipe getireceksin. Sonra iOS için `.ipa` build alıp cihaza yükleyebilirsin (App Store, TestFlight, AltStore, veya jailbreak).
+
+> **iOS için Mac + Xcode gerekli.** Unity `.ipa` doğrudan üretmez — Unity Xcode projesi çıkarır, Xcode `.ipa`'ya derler. Windows/Linux'ta iOS build alamazsın.
 
 ---
 
 ## 1) Aç
 
 1. **Unity Hub** kur (unity.com/download).
-2. **Unity 6 LTS** (6000.0.30f1 veya üzeri) yükle. Modülleri: **Android Build Support** (+ Android SDK & NDK Tools + OpenJDK).
+2. **Unity 6 LTS** (6000.0.30f1 veya üzeri) yükle. Modülleri: **iOS Build Support** (Mac'te zorunlu). Windows/Linux'ta yalnızca geliştirme yapabilirsin — iOS `.ipa` build için Mac + Xcode şart.
 3. Hub → **Add project from disk** → bu `UnityGame/` klasörünü seç.
 4. İlk açılışta Unity paketleri indirir (birkaç dakika).
 
@@ -79,19 +81,21 @@ Zorunlu: bir araba modeli + bir harita/zemin.
    - `ChatPanel`: TMP_InputField + Send Button + TMP_Text (messages) → `ChatUI` script. **ChatUI GameObject'e PhotonView ekle**, Observed Components boş bırak (sadece RPC için).
    - `ControlsPanel`: Throttle/Brake/Handbrake butonları + boş `SteeringPad` RectTransform (ekranın sol yarısı) → `MobileTouchInput` script, alanları bağla.
 
-### 4d) Build Settings
+### 4d) Build Settings (iOS)
 
 1. File → Build Settings → Add Open Scenes (sırasıyla: MainMenu, Game).
-2. Platform: Android → **Switch Platform**.
+2. Platform: **iOS** → **Switch Platform**.
 3. Player Settings:
    - Company: `few1n`
    - Product Name: `DreamCar`
-   - Bundle Identifier: `com.few1n.dreamcarclone`
-   - Minimum API Level: **Android 7.0 (API 24)**
-   - Target API Level: Automatic (highest installed)
-   - Scripting Backend: **IL2CPP**
-   - Target Architectures: **ARM64** (Play Store zorunlu)
-   - Internet Access: Require
+   - Bundle Identifier: `com.few1n.dreamcarclone` (Xcode'da signing için birebir bu olacak)
+   - Target minimum iOS Version: **13.0** (Unity 6 önerisi)
+   - Target Device: **iPhone Only** (istersen Universal)
+   - Architecture: **ARM64** (App Store zorunlu, Unity iOS'ta zaten default)
+   - Scripting Backend: **IL2CPP** (iOS zorunlu, değiştirilemez)
+   - Camera Usage Description / Microphone Usage Description: boş bırak (voice chat eklersen "Sesli sohbet için mikrofon" yaz)
+   - Requires Persistent WiFi: **On** (multiplayer için)
+4. **iOS için özel: Assets/Plugins/iOS/** klasörü otomatik oluşur (Unity native plugin'leri buraya koyar).
 
 ---
 
@@ -102,13 +106,35 @@ Zorunlu: bir araba modeli + bir harita/zemin.
 2. Nickname gir → status "Online" olunca "Play" bas → oda oluştur.
 3. Game sahnesine geçince araba spawn olmalı, WSAD/ok tuşları ile sürebilmelisin.
 
-**İki instance ile multiplayer:**
-1. File → Build & Run → PC Standalone build al.
+**İki instance ile multiplayer testi (iOS build almadan):**
+1. Mac Player Support kuruluysa File → Build & Run → macOS Standalone. Yoksa Windows'ta PC Standalone.
 2. Build'i aç + Editor'de aynı anda Play → aynı oda ismine katıl → birbirinizi görmelisin.
 
-**Android'de:**
-1. Telefonu USB ile bağla, USB Debug açık.
-2. Build & Run.
+**iOS cihazda (üç seçenek — hangisini kullanacağın Apple Developer üyeliğine bağlı):**
+
+**A) Ücretsiz Apple ID + Xcode (7 gün geçerli, sideload)**
+1. Mac → Xcode kur → Preferences → Accounts → kendi Apple ID'nle giriş.
+2. Unity Editor → File → Build → çıktıyı `Builds/iOS/` klasörüne yaz (Unity Xcode projesi üretir, `.ipa` değil).
+3. Xcode'da `Unity-iPhone.xcodeproj` aç.
+4. Signing & Capabilities → Team: kendi Apple ID'n → Bundle ID'yi benzersiz yap (`com.<senin adın>.dreamcar` gibi — Apple aynı bundle ID'yi ücretsiz hesapla paylaşmıyor).
+5. iPhone'u USB ile Mac'e bağla → Xcode'da hedef cihaz olarak seç → Play (▶) tuşu.
+6. iPhone'da Ayarlar → VPN & Cihaz Yönetimi → geliştirici sertifikanı **güven**.
+7. 7 gün sonra yeniden derleyip yüklemen gerekir.
+
+**B) TestFlight (Apple Developer $99/yıl)**
+1. developer.apple.com'da hesap aç.
+2. App Store Connect'te uygulama kaydı oluştur.
+3. Xcode → Product → Archive → Distribute App → App Store Connect → Upload.
+4. TestFlight sekmesinde build'i test kullanıcılarına aç.
+5. Play Store'a değil **App Store**'a yayına çıkarma da aynı archive'den → "Prepare for Submission".
+
+**C) Jailbreak / sideload (Apple Developer'sız `.ipa`)**
+> Bu repo zaten `template/Tweak.xm` içinde jailbreak tweak barındırıyor — cihaz muhtemelen jailbroken.
+1. Xcode'da Product → Archive → Distribute App → **Development** → **Export → Development-signed** yerine **Ad Hoc** veya **Enterprise** seç (uygun sertifikan varsa). Yoksa Xcode'un `.app` çıktısını `Payload/` klasörüne koy → zip'le → `.ipa` uzantısı ver (unsigned).
+2. Jailbroken cihazda: AppSync Unified (Cydia/Sileo) → **Filza**/Sileo ile `.ipa`'yı yükle. Ya da Mac'te `ideviceinstaller -i DreamCar.ipa`.
+3. Alternatif (jailbreak yok): **AltStore** veya **Sideloadly** (ücretsiz Apple ID ile 7 gün resign).
+
+**Uyarı**: Multiplayer test için Photon sunucusu → Photon Dashboard'daki region'ın (örn. "eu") oyuncularınkiyle aynı olması gerekli. Region'ı `PhotonConnector.preferredRegion = "eu"` ile sabitleyebilirsin.
 
 ---
 
@@ -149,4 +175,12 @@ Zorunlu: bir araba modeli + bir harita/zemin.
 - **Oda yaratıp katılamama**: AppId boş → PhotonServerSettings kontrol et.
 - **Araba dönmüyor**: WheelCollider'ların Y ekseni doğru mu, Rigidbody mass 1200 mü, center of mass -0.6 Y mi.
 - **Multiplayer'da diğer araba titriyor**: `CarNetworkSync.interpSpeed` değerini artır (12 → 20).
-- **Android build APK açılınca kapanıyor**: Scripting Backend IL2CPP + ARM64 seçili mi.
+- **iOS'ta uygulama açılır açılmaz kapanıyor**: Xcode'da Console → sinyal (SIGABRT/SIGSEGV) bak. Genelde Photon AppId boş, veya IL2CPP stripping code'u yemiş. `Assets/link.xml` ile Photon namespace'ini preserve et:
+  ```xml
+  <linker>
+    <assembly fullname="PhotonRealtime" preserve="all"/>
+    <assembly fullname="PhotonUnityNetworking" preserve="all"/>
+  </linker>
+  ```
+- **iOS Xcode signing hatası "No provisioning profile"**: Bundle ID'nin benzersiz olduğundan ve Team seçili olduğundan emin ol. Ücretsiz hesapla aynı bundle ID başka biri tarafından kullanılamaz.
+- **iOS'ta multiplayer bağlanmıyor ama Editor'de çalışıyor**: Photon UDP portları için `Info.plist` → `NSAppTransportSecurity`'ye `NSAllowsArbitraryLoads = true` ekle (Unity iOS build'e ayarlarda ekletebilirsin), veya PhotonServerSettings'te "Protocol: Udp" kalsın (default). Cihaz VPN veya kısıtlı ağdaysa da olmaz.
