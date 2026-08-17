@@ -1,0 +1,7 @@
+<linker>
+  <assembly fullname="PhotonRealtime" preserve="all"/>
+  <assembly fullname="PhotonUnityNetworking" preserve="all"/>
+  <assembly fullname="Photon3Unity3D" preserve="all"/>
+  <assembly fullname="PhotonChat" preserve="all"/>
+  <assembly fullname="Assembly-CSharp" preserve="all"/>
+</linker>
