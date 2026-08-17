@@ -3790,6 +3790,75 @@ static bool few1n_copyTuningToTarget(int targetActor) {
     } @catch (...) { FLog(@"HedefTuning: eac/eah exception"); return false; }
 }
 
+// ============================================================================
+// v114.63: HEDEFIN PLAKASINI DEGISTIR (herkeste) — EN SAGLAM YOL.
+// Eski few1n_copyTuningToTarget eaj->eac->eah kullaniyordu; eah tuning'i _tuners'
+// tan yeniden kuruyor (hedefin kendi tuner'larindan), enjekte edilen currentData'yi
+// yok sayiyor -> hedefin kendi plakasi yayilıyordu (fail). Kendi plakam ise
+// PlateTuner.Apply + eah ile calisiyor. Bu yuzden ayni yolu HEDEFE uyguluyoruz:
+//   1) hedefin PlateTuner'ina plakami yaz (Apply)
+//   2) hedefin TuningManager'inda eah/ead/eae (eaj/eac YOK -> cokme yok)
+// -> hedefin photonView'inden LoadTuners RPC -> herkes hedefin arabasinda benim
+// plakami gorur. DENEYSEL: Photon sahiplik reddedebilir; tutmazsa da cokmez.
+// ============================================================================
+
+// Hedef oyuncunun (actorNumber) PlateTuner'ini bul (ustundeki PhotonView.Owner ile).
+static void* few1n_plateTunerOfActor(int actor) {
+    if (actor <= 0 || !g_mFindObjectsPlural || !i_runtime_invoke || !g_mGetCompInParent
+        || !g_photonViewType || g_pvOwnerOff <= 0 || !ply_getActorNumber) return NULL;
+    void* cls = few1n_classAnyImage("", "PlateTuner");
+    if (!cls) return NULL;
+    void* tobj = few1n_typeObjOf(cls);
+    if (!tobj) return NULL;
+    @try {
+        void* a[1] = { tobj };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) return NULL;
+        int n = *(int*)((uintptr_t)arr + 0x18); if (n < 1 || n > 128) return NULL;
+        void** el = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < n; i++) {
+            void* pt = el[i]; if (!unityAlive(pt)) continue;
+            unsigned char inc = 1;
+            void* ga[2] = { g_photonViewType, &inc };
+            void* pv = NULL;
+            @try { pv = i_runtime_invoke(g_mGetCompInParent, pt, ga, NULL); } @catch (...) {}
+            if (!ptrOk(pv)) continue;
+            void* owner = *(void**)((uintptr_t)pv + g_pvOwnerOff);
+            if (!ptrOk(owner)) continue;
+            @try { if (ply_getActorNumber(owner) == actor) return pt; } @catch (...) {}
+        }
+    } @catch (...) {}
+    return NULL;
+}
+
+static bool few1n_hijackPlateToTarget(int targetActor, NSString* text) {
+    if (!text || text.length == 0 || !i_runtime_invoke || !i_class_get_method_from_name) return false;
+    // 1) hedefin PlateTuner'i + plakami Apply et
+    void* ptCls = few1n_classAnyImage("", "PlateTuner");
+    if (!ptCls) { FLog(@"HedefPlaka: PlateTuner sinifi yok"); return false; }
+    void* mApply = i_class_get_method_from_name(ptCls, "Apply", 2);
+    if (!mApply) { FLog(@"HedefPlaka: PlateTuner.Apply(2) yok"); return false; }
+    void* tgtPT = few1n_plateTunerOfActor(targetActor);
+    if (!ptrOk(tgtPT)) { FLog([NSString stringWithFormat:@"HedefPlaka: actor=%d PlateTuner yok (hedef yarista/gorunur olmali)", targetActor]); return false; }
+    void* euStr  = mkStr(@"eu1");
+    void* txtStr = mkStr(text);
+    if (!euStr || !txtStr) return false;
+    @try { void* args[2] = { euStr, txtStr }; i_runtime_invoke(mApply, tgtPT, args, NULL); }
+    @catch (...) { FLog(@"HedefPlaka: Apply exception"); return false; }
+    // 2) hedefin TuningManager'inda eah/ead/eae -> hedefin view'inden LoadTuners yayin
+    void* tgtTM = few1n_tuningManagerOfActor(targetActor);
+    if (!ptrOk(tgtTM)) { FLog(@"HedefPlaka: hedef TuningManager yok"); return false; }
+    void* tmCls = few1n_classAnyImage("", "TuningManager");
+    void* mEah = tmCls ? i_class_get_method_from_name(tmCls, "eah", 1) : NULL;
+    void* mEad = tmCls ? i_class_get_method_from_name(tmCls, "ead", 0) : NULL;
+    void* mEae = tmCls ? i_class_get_method_from_name(tmCls, "eae", 0) : NULL;
+    if (mEah) { @try { unsigned char t=1; void* a[1]={&t}; i_runtime_invoke(mEah, tgtTM, a, NULL); } @catch (...) {} }
+    if (mEad) { @try { i_runtime_invoke(mEad, tgtTM, NULL, NULL); } @catch (...) {} }
+    if (mEae) { @try { i_runtime_invoke(mEae, tgtTM, NULL, NULL); } @catch (...) {} }
+    FLog([NSString stringWithFormat:@"🎭 HedefPlaka: actor=%d arabasina '%@' plakasi uygulandi + yayinlandi", targetActor, text]);
+    return true;
+}
+
 // ===== v114.29: OZEL RENK — HERKESTE GORUNUR =====
 // PaintTuner : MonoBehaviour, hs — plaka ile AYNI tuning yolunu kullanir, yani
 // TuningManager RPC'siyle herkese yayilir. PaintTuner.Apply(Color, int type)
@@ -5432,6 +5501,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)editPlate;
 - (void)spinServerPlate;
 - (void)setServerPlate;
+- (void)hijackPlatePick;         // v114.63
 // v114.48: officialPlateEveryone (Resmi Plaka/goy) KALDIRILDI — oyunu cokertiyordu.
 - (void)instantWin;              // v114.42
 - (void)trafficStrike;           // v114.42
@@ -5890,6 +5960,7 @@ static UIViewController* few1n_topVC(void) {
     [self.plateBtn addTarget:self action:@selector(editPlate) forControlEvents:UIControlEventTouchUpInside];
     y = [self actionRow:@"Sunucudan Rastgele Plaka Al" color:C_ON atY:y action:@selector(spinServerPlate)];
     y = [self actionRow:@"🔰  Özel Plaka — HERKESTE Göster (yaz + yayınla)" color:C_GOLD atY:y action:@selector(setServerPlate)];
+    y = [self actionRow:@"🎭  Başkasının Plakasını Değiştir (Seç — deneysel)" color:C_RED atY:y action:@selector(hijackPlatePick)];
     y = [self actionRow:@"🏷️  Sunucu İsmi Değiştir (herkes görür)" color:C_GOLD atY:y action:@selector(officialNicknameEveryone)];
     y = [self actionRow:@"🏆  Anında Kazan (yarışı bitir + ödül)" color:C_ON atY:y action:@selector(instantWin)];
     y = [self actionRow:@"🚧  Trafik Fırlat (önüne trafik aracı — deneysel)" color:C_RED atY:y action:@selector(trafficStrike)];
@@ -11561,6 +11632,90 @@ static void few1n_joinTargetRoom(NSString *nm) {
     }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
     [self present:ac];
+}
+
+// v114.63: BASKASININ PLAKASINI DEGISTIR (herkeste — deneysel).
+// Oyuncu sec -> plaka yaz -> hedefin PlateTuner'ina yazilir + hedefin
+// TuningManager'indan yayinlanir. Kendi plakamin CALISAN yolu, hedefe uygulanmis.
+- (void)hijackPlatePick {
+    if (!pn_getInRoom || !pn_getInRoom()) {
+        UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🎭 Hedef Plaka" message:@"Odada olmalisin." preferredStyle:UIAlertControllerStyleAlert];
+        [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:e]; return;
+    }
+    if (!ply_getNickName || !ply_getActorNumber) {
+        UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🎭 Hedef Plaka" message:@"Photon pointer'lari hazir degil." preferredStyle:UIAlertControllerStyleAlert];
+        [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:e]; return;
+    }
+    @try {
+        void* pa = NULL;
+        if (pn_getPlayerListOthers) pa = pn_getPlayerListOthers();
+        BOOL useAllList = NO;
+        if (!ptrOk(pa) && pn_getPlayerList) { pa = pn_getPlayerList(); useAllList = YES; }
+        if (!ptrOk(pa)) {
+            UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🎭 Hedef Plaka" message:@"Oyuncu listesi alinamadi." preferredStyle:UIAlertControllerStyleAlert];
+            [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+            [self present:e]; return;
+        }
+        int cnt = (int)(*(uintptr_t*)((uintptr_t)pa + 0x18));
+        if (cnt <= 0 || cnt > 64) {
+            UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🎭 Hedef Plaka" message:[NSString stringWithFormat:@"Odada baska oyuncu yok. (cnt=%d)", cnt] preferredStyle:UIAlertControllerStyleAlert];
+            [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+            [self present:e]; return;
+        }
+        void** ps = (void**)((uintptr_t)pa + 0x20);
+        void* me = (useAllList && pn_getLocalPlayer) ? pn_getLocalPlayer() : NULL;
+
+        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🎭 Hedef Plaka — Oyuncu Sec"
+            message:@"Seçtiğin oyuncunun aracına plakanı yazacaksın (herkeste görünmesi denenir).\nHedef yarışta/görünür olmalı."
+            preferredStyle:UIAlertControllerStyleActionSheet];
+
+        for (int i = 0; i < cnt && i < 32; i++) {
+            void* p = ps[i]; if (!ptrOk(p)) continue;
+            if (me && p == me) continue;
+            int actor = ply_getActorNumber(p);
+            if (actor <= 0) continue;
+            void* nsObj = ply_getNickName(p);
+            NSString *nm = ptrOk(nsObj) ? (readStr(nsObj) ?: @"") : @"";
+            if (nm.length == 0) nm = [NSString stringWithFormat:@"actor%d", actor];
+            NSString *nmClean = stripRichTextTags(nm) ?: nm;
+
+            [ac addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"🎭 %@", nmClean]
+                style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+                UIAlertController *pin = [UIAlertController alertControllerWithTitle:@"🎭 Plaka Yaz"
+                    message:[NSString stringWithFormat:@"'%@' oyuncusunun aracına yazılacak plaka:", nmClean]
+                    preferredStyle:UIAlertControllerStyleAlert];
+                [pin addTextFieldWithConfigurationHandler:^(UITextField *tf){
+                    tf.placeholder = @"Örn: FEW1N 34";
+                    tf.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
+                }];
+                [pin addAction:[UIAlertAction actionWithTitle:@"Uygula & Yayınla" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a2){
+                    NSString *t = pin.textFields.firstObject.text;
+                    if (!t || t.length == 0) return;
+                    bool ok = few1n_hijackPlateToTarget(actor, t);
+                    UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Gönderildi" : @"⚠️ Olmadı")
+                        message:(ok ? @"Hedefin aracına plaka uygulandı ve yayınlandı. Diğer oyuncularda görünüyor mu kontrol et. (Deneysel — Photon reddedebilir ya da hedef tekrar tuning yapınca eski haline dönebilir.)"
+                                    : @"Hedefin PlateTuner/TuningManager'ı bulunamadı. Hedef yarışta ve görünür olmalı (aracı spawn olmuş olmalı).")
+                        preferredStyle:UIAlertControllerStyleAlert];
+                    [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+                    [self present:r];
+                }]];
+                [pin addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+                [self present:pin];
+            }]];
+        }
+        [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+        if (ac.popoverPresentationController) {
+            ac.popoverPresentationController.sourceView = self.panel;
+            ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, 80, 1, 1);
+        }
+        [self present:ac];
+    } @catch (...) {
+        UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🎭 Hedef Plaka" message:@"Hata olustu." preferredStyle:UIAlertControllerStyleAlert];
+        [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:e];
+    }
 }
 
 // ===== v114.42: 3 YENI OZELLIK BUTONU =====
