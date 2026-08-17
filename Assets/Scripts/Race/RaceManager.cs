@@ -56,8 +56,17 @@ namespace DreamCar.Race
         {
             float total = Time.time - s.startTime;
             Debug.Log($"[Race] Player {actor} finished in {total:F2}s (best lap {s.bestLapTime:F2}s)");
-            if (PhotonNetwork.LocalPlayer.ActorNumber == actor && PlayerMoney.Instance)
+            bool isLocal = PhotonNetwork.LocalPlayer.ActorNumber == actor;
+            if (isLocal && PlayerMoney.Instance)
                 PlayerMoney.Instance.Add(winReward);
+
+            if (isLocal)
+            {
+                var ach = Backend.PlayFabAchievements.Instance;
+                if (ach) ach.OnRaceFinished(won: true);
+                var rate = AppMeta.RateAppPopup.Instance;
+                if (rate) rate.OnRaceFinished();
+            }
             _states.Remove(actor);
         }
 

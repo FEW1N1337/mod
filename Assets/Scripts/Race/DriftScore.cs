@@ -39,6 +39,8 @@ namespace DreamCar.Race
                 _currentDrift = 0f;
                 OnCombo?.Invoke(_bank);
                 OnScoreChanged?.Invoke(0);
+                var ach = Backend.PlayFabAchievements.Instance;
+                if (ach) ach.OnDriftBank(_bank);
             }
         }
     }
