@@ -138,14 +138,81 @@ Zorunlu: bir araba modeli + bir harita/zemin.
 
 ---
 
-## 6) Sonraki adımlar (bu iskelette YOK)
+## 6) Dream Road tarzı grafik / his
 
-- Ekonomi (para, garaj) — `Assets/Scripts/Economy/PlayerMoney.cs`
-- Araba özelleştirme (renk, plaka)
-- Voice chat (Photon Voice)
-- Birden fazla harita
-- Anti-cheat (Photon sunucu tarafı validation)
-- Grafik iyileştirme (URP, post-processing)
+**Yasal uyarı**: Dream Road Online'ın modellerini, texture'larını, logolarını, marka adlarını, haritasını, UI grafiklerini, seslerini kopyalamak IP ihlali. Aynı *tarz*a yaklaşmak için aşağıdaki plan.
+
+### 6a) Render pipeline — URP + post-processing
+`manifest.json`'da `com.unity.render-pipelines.universal` zaten var. Editor'de:
+1. Assets → Create → Rendering → URP Asset (with Universal Renderer).
+2. Edit → Project Settings → Graphics → Scriptable Render Pipeline Settings = az önce oluşturduğun URP asset.
+3. Ana kameraya **Camera** component'inde: Rendering → Post Processing = **On**.
+4. Sahneye Volume (Global) → Profile → Add Override: **Bloom** (Intensity 1.2, Threshold 0.9), **Color Adjustments** (Contrast +10, Saturation +15), **Vignette** (Intensity 0.25), **Motion Blur** (Intensity 0.3), **Tonemapping** (ACES).
+5. Balata kızarması, farlar, nitro alevi HDR emissive kullanır — URP + Bloom şart.
+
+### 6b) Bu iskelette EKLİ olan Dream Road-benzeri sistemler
+| Script | Ne yapar (Dream Road eşdeğeri) |
+|---|---|
+| `Effects/WheelGlow.cs` | Fren/kayma ile balata kızarır. Dream Road'daki `RCCP_WheelGlow` mantığı (temperature → gradient emissive). |
+| `Effects/CarNitro.cs` | Nitro (0-100), boost force, egzoz alevi, top speed bonusu. Dream Road'daki `CarNitro` eşdeğeri. |
+| `Effects/DriftSmoke.cs` | Kayma anında lastik dumanı + skid trail. |
+| `Effects/HeadlightController.cs` | Gece otomatik far + tail emissive. |
+| `Audio/EngineAudio.cs` | Idle + rev loop, RPM'e göre pitch/volume. |
+| `Audio/TireScreechAudio.cs` | Kayma sesi. |
+| `Environment/DayNightCycle.cs` | Güneş rotasyonu, ambient gradient. |
+| `Traffic/TrafficCar.cs` | Waypoint takipli trafik AI (Dream Road'daki trafik gibi). |
+| `Customization/CarPaint.cs` | Renk + metallic + smoothness, Photon custom properties ile diğer oyunculara yansır. |
+| `UI/SpeedometerNeedle.cs` | Analog kilometre iğnesi. |
+| `UI/NitroBar.cs` | Nitro barı + basılı tut butonu. |
+
+### 6c) Görsel yakınlık için ihtiyacın olan ücretli/ücretsiz asset'ler
+
+**Fizik (çok önemli — WheelCollider ≠ Dream Road hissi):**
+- **Realistic Car Controller Pro (RCCP)** — Asset Store, ~$150. Dream Road birebir bunu kullanıyor. Aldığında `CarController.cs`'i çıkar, RCCP'nin `RCC_CarControllerV3`'ünü kullan. `WheelGlow.cs`, `CarNitro.cs`, `EngineAudio.cs` zaten uyumlu API'yle yazıldı.
+- Ücretsiz alternatif: RCCP değil ama iyi — **NWH Vehicle Physics 2** (ücretsiz sürümü mevcut).
+
+**Araba modelleri (ücretsiz / uygun fiyatlı, marka-özgür):**
+- Asset Store — "Vehicle Pack" (Nolan)
+- Asset Store — "Cars Pack Pro" (~$30)
+- Sketchfab (CC-BY): "generic sport coupe", "compact hatchback" arayabilirsin — marka logolu olanları kullanma.
+
+**Harita — şehir/otoyol (Dream Road İstanbul benzeri):**
+- Asset Store — "City Scene 01/02" (Vertex Studio) — Türk/Avrupa cadde tarzı
+- Asset Store — "Urban City Pack" (~$50)
+- Ücretsiz: "Modular Roads" + kendi düzenin
+- **Yol yapmak için**: EasyRoads3D Free (Asset Store, ücretsiz) — spline çizerek yol oluşturursun.
+
+**Skybox:**
+- Ücretsiz: "AllSky Free - 10 Sky / Skybox Set"
+
+**UI font/ikon:**
+- Google Fonts (SIL Open Font License) — "Inter", "Rubik", "Bebas Neue" — Türkçe karakter destekler, ticari kullanım serbest.
+- Font Awesome Free — nitro/gaz/fren ikonları.
+
+**Ses:**
+- Freesound.org (CC0 filtresi) — motor sesi, lastik screech, korna
+- Asset Store — "Free Sound Effects Pack" (ATMOS Sound Design)
+
+### 6d) Görsel iyileştirme sırası (önerdiğim rota)
+1. **URP + post-processing** (Adım 6a) — 2 saat, en büyük görsel sıçrama.
+2. **RCCP satın al** ($150) — sürüş hissi Dream Road'a %90 yaklaşır.
+3. **Şehir haritası asset'i** ($30-50) — placeholder plane atılır.
+4. Sahnedeki her arabaya `WheelGlow`, `DriftSmoke`, `HeadlightController`, `EngineAudio`, `TireScreechAudio` bağla.
+5. Ana sahneye `DayNightCycle` + directional light + Volume ekle.
+6. HUD'a `SpeedometerNeedle` + `NitroBar` bağla.
+7. Trafik sistemi: birkaç generic araba modeline `TrafficCar` bileşeni + waypoint zinciri kur.
+
+---
+
+## 7) Sonraki iterasyonlar (bu iskelette YOK)
+
+- Ekonomi (para, garaj, satın alma) — `PlayerMoney.cs`, mağaza UI
+- Plaka kişiselleştirme (Dream Road'daki `PlateVariant` gibi)
+- Voice chat (Photon Voice paketi)
+- Birden fazla harita seçimi
+- Anti-cheat (Photon sunucu tarafı validation — Photon Server Plugin)
+- Yarış modu (checkpoint, tur sayacı)
+- Arkadaş sistemi, davetiye
 
 ---
 
@@ -165,7 +232,19 @@ Zorunlu: bir araba modeli + bir harita/zemin.
 | `Scripts/UI/LobbyUI.cs` | Oda listesi UI |
 | `Scripts/UI/InGameHUD.cs` | Hız/oyuncu HUD |
 | `Scripts/UI/ChatUI.cs` | RPC chat |
+| `Scripts/UI/SpeedometerNeedle.cs` | Analog kilometre iğnesi |
+| `Scripts/UI/NitroBar.cs` | Nitro fill + basılı tut butonu |
+| `Scripts/Effects/WheelGlow.cs` | Fren/kayma balata kızarması (RCCP_WheelGlow eşdeğeri) |
+| `Scripts/Effects/CarNitro.cs` | Nitro sistemi (CarNitro eşdeğeri) |
+| `Scripts/Effects/DriftSmoke.cs` | Lastik dumanı + skid trail |
+| `Scripts/Effects/HeadlightController.cs` | Farlar + tail emissive |
+| `Scripts/Audio/EngineAudio.cs` | Idle+rev motor loop, RPM pitch |
+| `Scripts/Audio/TireScreechAudio.cs` | Lastik screech sesi |
+| `Scripts/Environment/DayNightCycle.cs` | Güneş + ambient gradient |
+| `Scripts/Traffic/TrafficCar.cs` | Waypoint trafik AI |
+| `Scripts/Customization/CarPaint.cs` | Boya (renk/metallic/smoothness) + Photon custom prop sync |
 | `Scripts/Game/GameBootstrap.cs` | Her sahnede setup |
+| `link.xml` | IL2CPP stripping için Photon namespace preserve |
 
 ---
 
