@@ -5470,6 +5470,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)completeAllDailyTasks;
 - (void)tapAutoMaster;
 - (void)tapAntiKick;             // v114.46
+- (void)tapBypass;               // v114.64 (sifre oto-doldur toggle)
 - (void)tapGameSpeed;
 - (void)tapFakeOnline;
 - (void)pickRoomMax:(UIButton*)b;
@@ -6073,6 +6074,7 @@ static UIViewController* few1n_topVC(void) {
 
     y = [self header:@"\U0001F511  ODA" atY:y];
     y = [self actionRow:@"🚪  Canlı Odalara Gir (Dolu Oda Bypass & Liste)" color:C_ON atY:y action:@selector(joinRoomByName)];
+    y = [self toggle:@"🔓  Şifreli Oda Oto-Doldur" sub:@"Şifreli odaya girerken şifreyi otomatik doldur. Kapatırsan elle girersin (crash olursa kapat)." key:@"bypass" atY:y action:@selector(tapBypass)];
     y = [self actionRow:@"🌐  TOPLU SUNUCU GİZLE (gir→master→gizle→çık)" color:C_RED atY:y action:@selector(pickRoomsServerHide)];
     y = [self actionRow:@"🏡  Gelişmiş Özel Oda Kur (Çöl, Saat, Drift, 31 Kişi)" color:C_ON atY:y action:@selector(createAdvancedCustomRoom)];
     y = [self actionRow:@"🏠  Normal Oda Kur (isim yaz — deneysel)" color:C_ON atY:y action:@selector(createNormalRoom)];
