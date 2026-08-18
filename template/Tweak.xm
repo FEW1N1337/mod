@@ -2631,6 +2631,7 @@ static bool few1n_amRealMaster(void) {
 // Forward declarations (tanimlari asagida; burada erken kullanimlar icin)
 static inline bool ptrOk(void* p);
 static inline bool unityAlive(void* obj);
+static void few1n_joinTargetRoom(NSString *nm);   // v114.75: harita cik-gir icin
 // DOGRU lobi yoneticisini bul: PhotonView'i OLAN instance (yoksa KickPlayer RPC'den once patlar).
 static void* few1n_findLobbyMgr(void) {
     if (!g_lobbyDummyType || !g_mFindObjectsPlural || !i_runtime_invoke) return NULL;
@@ -9999,15 +10000,24 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
         int idx = [m[@"i"] intValue];
         NSString *title = m[@"t"];
         [ac addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+            NSString *rn = (g_lastRoomName[0]) ? [NSString stringWithUTF8String:g_lastRoomName] : nil;
             few1n_claimMaster();
             if (pn_setAutomaticallySyncScene) { @try { pn_setAutomaticallySyncScene(true); } @catch (...) {} }
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 @try { pn_loadLevelInt(idx); } @catch (...) {}
                 FLog([NSString stringWithFormat:@"🗺️ [Y5-liste] LoadLevel(%d) '%@' gonderildi", idx, title]);
+                // v114.75: "baglaniyor"da takilmayi cozmek icin otomatik cik-gir (kullanici cozumu)
+                if (rn.length > 0) {
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        @try { few1n_joinTargetRoom(rn); } @catch (...) {}
+                    });
+                }
             });
-            [self simpleAlert:@"🗺️ Gönderildi" msg:[NSString stringWithFormat:@"%@ (#%d) yükleniyor. Bağlanıyor ekranı görürsen normal — birkaç saniye bekle.\nYanlış harita geldiyse söyle, numarayı düzeltirim.", title, idx]];
+            [self simpleAlert:@"🗺️ Gönderildi" msg:[NSString stringWithFormat:@"%@ (#%d) uygulanıyor + otomatik ÇIK-GİR yapılıyor (bağlanıyorda takılmasın diye). Birkaç saniye bekle.\nYanlış harita geldiyse söyle, numarayı düzeltirim.", title, idx]];
         }]];
     }
+    // Hava durumu / zaman (mevcut haritada) — changeWeatherOnly'yi ac
+    [ac addAction:[UIAlertAction actionWithTitle:@"🌤️ Hava Durumu / Zaman (gündüz/gece/yağmur/kar)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self changeWeatherOnly]; }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
     if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, 80, 1, 1); }
     [self present:ac];
