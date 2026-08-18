@@ -5823,6 +5823,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)copyCarPick;             // v114.69
 - (void)stealCarPick;            // v114.70
 - (void)becomeRealMasterMap;     // v114.72
+- (void)mapMethodPick;           // v114.73 (eski Y1-Y8 yontem secici)
 // v114.48: officialPlateEveryone (Resmi Plaka/goy) KALDIRILDI — oyunu cokertiyordu.
 - (void)instantWin;              // v114.42
 - (void)trafficStrike;           // v114.42
@@ -6435,6 +6436,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"👥  Fake Çevrimici Sayısı (Lobi Görseli)" color:C_CYAN atY:y action:@selector(tapFakeOnline)];
     y = [self actionRow:@"👑  GERÇEK Master Ol (sunucu — harita için ÖNCE bas)" color:C_GOLD atY:y action:@selector(becomeRealMasterMap)];
     y = [self actionRow:@"🗺️  Odadayken Harita Değiştir (v233 minimal + master zorla)" color:C_ON atY:y action:@selector(changeMapInRoom)];
+    y = [self actionRow:@"🗺️  Harita Değiştir — YÖNTEM SEÇ (eski Y1-Y8, çalışanı bul)" color:C_GOLD atY:y action:@selector(mapMethodPick)];
     // v114.61: 'Kişi Aracı Klonla' SILINDI (calismiyor)
     y = [self actionRow:@"🌤️  Hava Durumu & Zaman Seç (Aktarmasız Canlı)" color:C_ON atY:y action:@selector(changeWeatherOnly)];
     // Oda ismi degistirmek icin tek gercek yol: 🔄 Odayi Yeniden Olustur (asagida)
@@ -9952,6 +9954,26 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
 - (void)mapMethod6 { [self askSceneNameThen:6]; }
 - (void)mapMethod7 { [self askSceneNameThen:7]; }
 - (void)mapMethod8 { [self askSceneNameThen:8]; }
+
+// v114.73: ESKI Y1-Y8 YONTEM SECICI geri getirildi (eski surumde biri calisiyordu).
+// Her yontem tek tek denenir; hangisi haritayi herkeste degistiriyorsa o kullanilir.
+- (void)mapMethodPick {
+    if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🗺️ Harita Yöntem" msg:@"Odada olmalisin (kendi odanda + master iken en iyi)."]; return; }
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🗺️ Harita Değiştir — Yöntem Seç"
+        message:@"Eski sürümde biri çalışıyordu. Sırayla dene, hangisi haritayı herkeste değiştiriyorsa onu kullan. (Her biri sahne adı ister.)"
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Y1: SelectMap + StartGame (lobi)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self mapMethod1]; }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Y2: PhotonManager.ese (Addressable) ⭐" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self mapMethod2]; }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Y3: HR_PhotonLobbyManager.SetScene" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self mapMethod3]; }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Y4: PhotonNetwork.LoadLevel(isim)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self mapMethod4]; }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Y5: PhotonNetwork.LoadLevel(no)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self mapMethod5]; }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Y6: MainMenuHandler.StartRace" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self mapMethod6]; }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Y7: Unity LoadScene(isim) — YEREL" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self mapMethod7]; }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"Y8: Unity LoadScene(no) — YEREL" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self mapMethod8]; }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, 80, 1, 1); }
+    [self present:ac];
+}
 
 // ===== v70 KLASIK: MASTER CLAIM YAPMADAN direkt lobby+MapSelection+StartGame =====
 // v70 build'inde bu yaklasim calisiyordu (kullanici raporu).
