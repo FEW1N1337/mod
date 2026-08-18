@@ -2265,6 +2265,26 @@ static inline bool few1n_memOk(void* p) {
     return ok;
 }
 
+// v114.79: SIGSEGV-korumali HAM okuma. Cozulen offset'ler oyun surumu degisince
+// (drift) yanlis/haritasiz adrese kayabilir; @try bunu YAKALAMAZ (segfault, C++
+// exception degil). few1n_memOk once sayfayi probe eder -> cokme yerine guvenli
+// deger doner. Baskasinin plakasi / zipla / firlat gibi "hedef bul" yollarindaki
+// pv+owner ve dizi okumalari bu yuzden ara sira oyunu cokertiyordu.
+static inline void* few1n_rdPtr(void* base, uintptr_t off) {
+    if ((uintptr_t)base < 0x1000) return NULL;
+    void* addr = (void*)((uintptr_t)base + off);
+    if (!few1n_memOk(addr)) return NULL;
+    if (!few1n_memOk((void*)((uintptr_t)addr + 7))) return NULL;   // 8 baytin sonu da haritali mi
+    return *(void**)addr;
+}
+static inline int few1n_rdI32(void* base, uintptr_t off, int def) {
+    if ((uintptr_t)base < 0x1000) return def;
+    void* addr = (void*)((uintptr_t)base + off);
+    if (!few1n_memOk(addr)) return def;
+    if (!few1n_memOk((void*)((uintptr_t)addr + 3))) return def;
+    return *(int*)addr;
+}
+
 // Substrate calisiyor mu? Bagli sembol bos stub olabilir -> dlsym ile gercegini ara.
 typedef void (*MSHookFn)(void*, void*, void**);
 static MSHookFn g_msHook = NULL;
@@ -3752,14 +3772,13 @@ static void* few1n_tuningManagerOfActor(int actor) {
         void* a[1] = { tobj };
         void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
         if (!ptrOk(arr)) return NULL;
-        int n = *(int*)((uintptr_t)arr + 0x18); if (n < 1 || n > 64) return NULL;
-        void** el = (void**)((uintptr_t)arr + 0x20);
+        int n = few1n_rdI32(arr, 0x18, 0); if (n < 1 || n > 64) return NULL;   // v114.79: guvenli sayac
         for (int i = 0; i < n; i++) {
-            void* tm = el[i]; if (!unityAlive(tm)) continue;
+            void* tm = few1n_rdPtr(arr, 0x20 + (uintptr_t)i * sizeof(void*)); if (!unityAlive(tm)) continue;
             void* pv = NULL; @try { pv = mbp_getPhotonView(tm); } @catch (...) {}
             if (!ptrOk(pv)) continue;
-            void* owner = *(void**)((uintptr_t)pv + g_pvOwnerOff);
-            if (!ptrOk(owner)) continue;
+            void* owner = few1n_rdPtr(pv, (uintptr_t)g_pvOwnerOff);   // v114.79: offset drift = cokme yerine NULL
+            if (!ptrOk(owner) || !few1n_memOk(owner)) continue;
             @try { if (ply_getActorNumber(owner) == actor) return tm; } @catch (...) {}
         }
     } @catch (...) {}
@@ -3830,17 +3849,16 @@ static void* few1n_plateTunerOfActor(int actor) {
         void* a[1] = { tobj };
         void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
         if (!ptrOk(arr)) return NULL;
-        int n = *(int*)((uintptr_t)arr + 0x18); if (n < 1 || n > 128) return NULL;
-        void** el = (void**)((uintptr_t)arr + 0x20);
+        int n = few1n_rdI32(arr, 0x18, 0); if (n < 1 || n > 128) return NULL;   // v114.79: guvenli sayac
         for (int i = 0; i < n; i++) {
-            void* pt = el[i]; if (!unityAlive(pt)) continue;
+            void* pt = few1n_rdPtr(arr, 0x20 + (uintptr_t)i * sizeof(void*)); if (!unityAlive(pt)) continue;
             unsigned char inc = 1;
             void* ga[2] = { g_photonViewType, &inc };
             void* pv = NULL;
             @try { pv = i_runtime_invoke(g_mGetCompInParent, pt, ga, NULL); } @catch (...) {}
             if (!ptrOk(pv)) continue;
-            void* owner = *(void**)((uintptr_t)pv + g_pvOwnerOff);
-            if (!ptrOk(owner)) continue;
+            void* owner = few1n_rdPtr(pv, (uintptr_t)g_pvOwnerOff);   // v114.79: offset drift = cokme yerine NULL
+            if (!ptrOk(owner) || !few1n_memOk(owner)) continue;
             @try { if (ply_getActorNumber(owner) == actor) return pt; } @catch (...) {}
         }
     } @catch (...) {}
@@ -4038,10 +4056,12 @@ static void* few1n_playerByActor(int actor) {
     @try {
         void* pa = pn_getPlayerList();
         if (!ptrOk(pa)) return NULL;
-        int cnt = *(int*)((uintptr_t)pa + 0x18);
+        int cnt = few1n_rdI32(pa, 0x18, 0);   // v114.79: guvenli sayac
         if (cnt <= 0 || cnt > 64) return NULL;
-        void** ps = (void**)((uintptr_t)pa + 0x20);
-        for (int i = 0; i < cnt; i++) { void* p = ps[i]; if (ptrOk(p) && ply_getActorNumber(p) == actor) return p; }
+        for (int i = 0; i < cnt; i++) {
+            void* p = few1n_rdPtr(pa, 0x20 + (uintptr_t)i * sizeof(void*));   // v114.79: guvenli eleman
+            if (ptrOk(p) && few1n_memOk(p) && ply_getActorNumber(p) == actor) return p;
+        }
     } @catch (...) {}
     return NULL;
 }
@@ -12118,13 +12138,12 @@ static void few1n_joinTargetRoom(NSString *nm) {
             [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
             [self present:e]; return;
         }
-        int cnt = (int)(*(uintptr_t*)((uintptr_t)pa + 0x18));
+        int cnt = few1n_rdI32(pa, 0x18, 0);   // v114.79: guvenli sayac
         if (cnt <= 0 || cnt > 64) {
             UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🎭 Hedef Plaka" message:[NSString stringWithFormat:@"Odada baska oyuncu yok. (cnt=%d)", cnt] preferredStyle:UIAlertControllerStyleAlert];
             [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
             [self present:e]; return;
         }
-        void** ps = (void**)((uintptr_t)pa + 0x20);
         void* me = (useAllList && pn_getLocalPlayer) ? pn_getLocalPlayer() : NULL;
 
         UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🎭 Hedef Plaka — Oyuncu Sec"
@@ -12132,7 +12151,8 @@ static void few1n_joinTargetRoom(NSString *nm) {
             preferredStyle:UIAlertControllerStyleActionSheet];
 
         for (int i = 0; i < cnt && i < 32; i++) {
-            void* p = ps[i]; if (!ptrOk(p)) continue;
+            void* p = few1n_rdPtr(pa, 0x20 + (uintptr_t)i * sizeof(void*));   // v114.79: guvenli eleman
+            if (!ptrOk(p) || !few1n_memOk(p)) continue;
             if (me && p == me) continue;
             int actor = ply_getActorNumber(p);
             if (actor <= 0) continue;
