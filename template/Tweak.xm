@@ -4057,6 +4057,29 @@ static bool few1n_copyMyCarToTarget(int targetActor) {
     return true;
 }
 
+// v114.70: HEDEFIN ARACINI KENDINE KLONLA (onun arabasi sende olsun, herkeste).
+// copyMyCarToTarget'in TERSI: hedefin currentData'sini BENIM TM'ime yaz + eah.
+// Benim TM'de IsMine zaten true -> flip GEREKMEZ (kendi aracim, normal yayin).
+static bool few1n_cloneTargetCarToMe(int targetActor) {
+    if (!i_runtime_invoke || !i_class_get_method_from_name) return false;
+    void* tgtTM = few1n_tuningManagerOfActor(targetActor);
+    if (!ptrOk(tgtTM)) { FLog(@"AracCal: hedef TuningManager yok"); return false; }
+    void* myTM = few1n_myTuningManager();
+    if (!ptrOk(myTM)) { FLog(@"AracCal: benim TuningManager yok (araca bin)"); return false; }
+    void* theirData = *(void**)((uintptr_t)tgtTM + 0x40);   // hedefin currentData
+    if (!ptrOk(theirData)) { FLog(@"AracCal: hedef currentData bos (hedef gorunur/tuning'li olmali)"); return false; }
+    void* tmCls = few1n_classAnyImage("", "TuningManager");
+    void* mEah = tmCls ? i_class_get_method_from_name(tmCls, "eah", 1) : NULL;
+    void* mEad = tmCls ? i_class_get_method_from_name(tmCls, "ead", 0) : NULL;
+    void* mEae = tmCls ? i_class_get_method_from_name(tmCls, "eae", 0) : NULL;
+    @try { *(void**)((uintptr_t)myTM + 0x40) = theirData; } @catch (...) { return false; }   // benim currentData = onunki
+    if (mEah) { @try { unsigned char t=1; void* a[1]={&t}; i_runtime_invoke(mEah, myTM, a, NULL); } @catch (...) {} }
+    if (mEad) { @try { i_runtime_invoke(mEad, myTM, NULL, NULL); } @catch (...) {} }
+    if (mEae) { @try { i_runtime_invoke(mEae, myTM, NULL, NULL); } @catch (...) {} }
+    FLog([NSString stringWithFormat:@"🎭 AracCal: actor=%d arabasi BENIM aracima klonlandi", targetActor]);
+    return true;
+}
+
 // v114.69: Oyuncuya HIZ PATLAMASI = araci ILERI firlat (transform.forward * dist).
 static bool few1n_flingForward(void* targetPlayer, int targetActor, float dist) {
     void* tgtTM = few1n_tuningManagerOfActor(targetActor);
@@ -5722,6 +5745,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)lockLaunchPick;          // v114.68
 - (void)forceWinPick;            // v114.68
 - (void)copyCarPick;             // v114.69
+- (void)stealCarPick;            // v114.70
 // v114.48: officialPlateEveryone (Resmi Plaka/goy) KALDIRILDI — oyunu cokertiyordu.
 - (void)instantWin;              // v114.42
 - (void)trafficStrike;           // v114.42
@@ -6188,7 +6212,8 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"🎯  Oyuncuyu Kaydedilen Konuma Işınla (Seç)" color:C_RED atY:y action:@selector(teleportToSavedPick)];
     y = [self actionRow:@"🔒  Sürekli Fırlat / Kilit (Seç — aç/kapa)" color:C_RED atY:y action:@selector(lockLaunchPick)];
     y = [self actionRow:@"🏁  Oyuncuyu Zorla Kazandır (Seç — deneysel)" color:C_RED atY:y action:@selector(forceWinPick)];
-    y = [self actionRow:@"🚗  Aracını Kopyala (Hedefin aracı = senin klonun)" color:C_GOLD atY:y action:@selector(copyCarPick)];
+    y = [self actionRow:@"🎭  Aracı Çal/Klonla (ONUN aracı SENDE olsun)" color:C_GOLD atY:y action:@selector(stealCarPick)];
+    y = [self actionRow:@"🚗  Aracını Ona Ver (SENİN aracın ONDA olsun)" color:C_GOLD atY:y action:@selector(copyCarPick)];
     y = [self actionRow:@"🏷️  Sunucu İsmi Değiştir (herkes görür)" color:C_GOLD atY:y action:@selector(officialNicknameEveryone)];
     y = [self actionRow:@"🏆  Anında Kazan (yarışı bitir + ödül)" color:C_ON atY:y action:@selector(instantWin)];
     y = [self actionRow:@"🚧  Trafik Fırlat (önüne trafik aracı — deneysel)" color:C_RED atY:y action:@selector(trafficStrike)];
@@ -12132,11 +12157,20 @@ static void few1n_joinTargetRoom(NSString *nm) {
 }
 // 🚗 Aracını hedefe kopyala (hedefin araci = senin aracin klonu, herkeste)
 - (void)copyCarPick {
-    [self pickOtherPlayer:@"🚗 Aracını Kopyala" emoji:@"🚗" handler:^(void* p, int actor, NSString* nick){
+    [self pickOtherPlayer:@"🚗 Aracını Ona Ver" emoji:@"🚗" handler:^(void* p, int actor, NSString* nick){
         bool ok = few1n_copyMyCarToTarget(actor);
         [self simpleAlert:(ok?@"✅ Kopyalandı":@"⚠️ Olmadı")
             msg:(ok?[NSString stringWithFormat:@"%@ oyuncusunun aracı SENİN aracının klonu yapıldı (plaka+renk+jant+lastik). Diğer oyuncularda görünüyor mu kontrol et.", nick]
                    :@"Hedef/TuningManager bulunamadı ya da senin currentData boş (garajda tuning yapıp araca bin).")];
+    }];
+}
+// 🎭 Hedefin aracını KENDİNE klonla (onun arabası sende olsun)
+- (void)stealCarPick {
+    [self pickOtherPlayer:@"🎭 Aracını Çal/Klonla" emoji:@"🎭" handler:^(void* p, int actor, NSString* nick){
+        bool ok = few1n_cloneTargetCarToMe(actor);
+        [self simpleAlert:(ok?@"✅ Klonlandı":@"⚠️ Olmadı")
+            msg:(ok?[NSString stringWithFormat:@"%@ oyuncusunun aracı SENİN aracına klonlandı (renk+jant+lastik+plaka). Garaj/araç görünümünü kontrol et.", nick]
+                   :@"Hedef TuningManager/currentData bulunamadı (hedef görünür ve tuning'li olmalı) ya da sen araçta değilsin.")];
     }];
 }
 
