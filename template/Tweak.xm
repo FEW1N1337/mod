@@ -6498,7 +6498,8 @@ static UIViewController* few1n_topVC(void) {
     y = [self toggle:@"🛡️  Anti-Kick" sub:@"Kicklenirsen odaya otomatik geri gir + master ol" key:@"antikick" atY:y action:@selector(tapAntiKick)];
     y = [self actionRow:@"⏱️  Oyun Hızı (TimeScale)" color:C_CYAN atY:y action:@selector(tapGameSpeed)];
     y = [self actionRow:@"👥  Fake Çevrimici Sayısı (Lobi Görseli)" color:C_CYAN atY:y action:@selector(tapFakeOnline)];
-    y = [self actionRow:@"🗺️  Harita Değiştir (Y5 — çalışan)" color:C_GOLD atY:y action:@selector(mapListY5)];   // v114.87: sade Y5 (gir-cik yok)
+    y = [self actionRow:@"👑  GERÇEK Master Ol (harita için ÖNCE bas)" color:C_GOLD atY:y action:@selector(becomeRealMasterMap)];   // v114.89: geri geldi
+    y = [self actionRow:@"🗺️  Harita Değiştir (Y5 — çalışan)" color:C_GOLD atY:y action:@selector(mapListY5)];   // v114.87: sade Y5
     // v114.61: 'Kişi Aracı Klonla' SILINDI (calismiyor)
     y = [self actionRow:@"🌤️  Hava Durumu & Zaman Seç (Aktarmasız Canlı)" color:C_ON atY:y action:@selector(changeWeatherOnly)];
     // Oda ismi degistirmek icin tek gercek yol: 🔄 Odayi Yeniden Olustur (asagida)
