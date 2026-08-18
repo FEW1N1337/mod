@@ -5848,6 +5848,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)becomeRealMasterMap;     // v114.72
 - (void)mapMethodPick;           // v114.73 (eski Y1-Y8 yontem secici)
 - (void)mapListY5;               // v114.74 (Y5 calisan — isimli liste)
+- (void)y5LoadIndex:(int)idx label:(NSString*)title;   // v114.81 (ortak yukleme blogu)
 // v114.48: officialPlateEveryone (Resmi Plaka/goy) KALDIRILDI — oyunu cokertiyordu.
 - (void)instantWin;              // v114.42
 - (void)trafficStrike;           // v114.42
@@ -10009,10 +10010,33 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
 }
 
 // v114.74: Y5 (LoadLevel int) LISTE — kullanici: Y5 calisiyor ama isimli secenek olsun.
+// Ortak yukleme blogu: index ile LoadLevel(int) + master + oto gir-cik. mapListY5
+// hem onayli hem deneysel hem elle-numara girislerinde AYNI calisan yolu kullanir.
+- (void)y5LoadIndex:(int)idx label:(NSString*)title {
+    if (!pn_loadLevelInt) { [self simpleAlert:@"🗺️ Harita" msg:@"LoadLevel(int) pointeri yok."]; return; }
+    NSString *rn = (g_lastRoomName[0]) ? [NSString stringWithUTF8String:g_lastRoomName] : nil;
+    few1n_claimMaster();
+    if (pn_setAutomaticallySyncScene) { @try { pn_setAutomaticallySyncScene(true); } @catch (...) {} }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        @try { pn_loadLevelInt(idx); } @catch (...) {}
+        FLog([NSString stringWithFormat:@"🗺️ [Y5] LoadLevel(%d) '%@' gonderildi", idx, title]);
+        // v114.75: "baglaniyor"da takilma -> oto cik-gir. v114.80: gecikme ayarlanabilir.
+        if (rn.length > 0) {
+            double _rjDelay = (g_mapRejoinDelaySec > 0.05) ? g_mapRejoinDelaySec : 1.3;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(_rjDelay*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                @try { few1n_joinTargetRoom(rn); } @catch (...) {}
+            });
+        }
+    });
+    [self simpleAlert:@"🗺️ Gönderildi" msg:[NSString stringWithFormat:@"%@ (#%d) uygulanıyor + otomatik ÇIK-GİR. Birkaç saniye bekle.\nYanlış/farklı harita geldiyse #numarayı ve gelen haritayı bana söyle, isimlendireyim.", title, idx]];
+}
+
 // Sahne INDEX'i ile calisir (build-settings sirasi). Modun bildigi eslesme.
+// v114.81: daha cok secenek + hava. Onayli 0-7 + kesif icin 8-19 + elle numara.
 - (void)mapListY5 {
     if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🗺️ Harita Seç (Y5)" msg:@"Odada olmalisin (kendi odanda + master iken)."]; return; }
     if (!pn_loadLevelInt) { [self simpleAlert:@"🗺️ Harita Seç (Y5)" msg:@"LoadLevel(int) pointeri yok."]; return; }
+    // ONAYLI (test edilmis) index -> isim
     NSArray *maps = @[
         @{@"t":@"🏁 Yarış Pisti (Track)",   @"i":@0},
         @{@"t":@"🏙️ Şehir (City)",          @"i":@1},
@@ -10024,32 +10048,39 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
         @{@"t":@"🌙 Gece Şehri (City Night)",@"i":@7},
     ];
     UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🗺️ Harita Seç (Y5 — çalışan)"
-        message:@"Seçtiğin harita herkese yüklenir. Yükleme birkaç saniye sürebilir (bağlanıyor ekranı normal)."
+        message:@"Onaylı haritalar + hava/gece için #8’den itibaren KEŞİF numaraları. Ne çıktığını bana söyle, isimlendireyim."
         preferredStyle:UIAlertControllerStyleActionSheet];
     for (NSDictionary *m in maps) {
         int idx = [m[@"i"] intValue];
         NSString *title = m[@"t"];
-        [ac addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
-            NSString *rn = (g_lastRoomName[0]) ? [NSString stringWithUTF8String:g_lastRoomName] : nil;
-            few1n_claimMaster();
-            if (pn_setAutomaticallySyncScene) { @try { pn_setAutomaticallySyncScene(true); } @catch (...) {} }
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                @try { pn_loadLevelInt(idx); } @catch (...) {}
-                FLog([NSString stringWithFormat:@"🗺️ [Y5-liste] LoadLevel(%d) '%@' gonderildi", idx, title]);
-                // v114.75: "baglaniyor"da takilmayi cozmek icin otomatik cik-gir (kullanici cozumu)
-                // v114.80: gecikme ayarlanabilir (Gir-Cik Suresi menusu)
-                if (rn.length > 0) {
-                    double _rjDelay = (g_mapRejoinDelaySec > 0.05) ? g_mapRejoinDelaySec : 1.3;
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(_rjDelay*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                        @try { few1n_joinTargetRoom(rn); } @catch (...) {}
-                    });
-                }
-            });
-            [self simpleAlert:@"🗺️ Gönderildi" msg:[NSString stringWithFormat:@"%@ (#%d) uygulanıyor + otomatik ÇIK-GİR yapılıyor (bağlanıyorda takılmasın diye). Birkaç saniye bekle.\nYanlış harita geldiyse söyle, numarayı düzeltirim.", title, idx]];
+        [ac addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@  (#%d)", title, idx] style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+            [self y5LoadIndex:idx label:title];
         }]];
     }
+    // KESIF: 8-19 arasi index'ler — hava/gece/ek haritalar burada olabilir.
+    for (int idx = 8; idx <= 19; idx++) {
+        NSString *title = [NSString stringWithFormat:@"🌦️ Keşif Harita #%d (hava/gece? — dene)", idx];
+        int cap = idx;
+        [ac addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+            [self y5LoadIndex:cap label:[NSString stringWithFormat:@"Keşif #%d", cap]];
+        }]];
+    }
+    // ELLE numara gir (istedigin herhangi bir index)
+    [ac addAction:[UIAlertAction actionWithTitle:@"🔢 Elle Numara Gir (herhangi bir #)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+        UIAlertController *in = [UIAlertController alertControllerWithTitle:@"🔢 Harita Numarası"
+            message:@"Yüklemek istediğin sahne numarasını yaz (0-40):" preferredStyle:UIAlertControllerStyleAlert];
+        [in addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.keyboardType = UIKeyboardTypeNumberPad; tf.placeholder = @"Ornek: 9"; }];
+        [in addAction:[UIAlertAction actionWithTitle:@"Yükle" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a2){
+            NSString *v = in.textFields.firstObject.text;
+            int idx = v.intValue;
+            if (idx < 0 || idx > 60) { [self simpleAlert:@"🔢 Hatalı" msg:@"0-60 arası bir numara gir."]; return; }
+            [self y5LoadIndex:idx label:[NSString stringWithFormat:@"Numara #%d", idx]];
+        }]];
+        [in addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+        [self present:in];
+    }]];
     // Hava durumu / zaman (mevcut haritada) — changeWeatherOnly'yi ac
-    [ac addAction:[UIAlertAction actionWithTitle:@"🌤️ Hava Durumu / Zaman (gündüz/gece/yağmur/kar)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self changeWeatherOnly]; }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"🌤️ Hava Durumu / Zaman (deneysel — addressable)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self changeWeatherOnly]; }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
     if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, 80, 1, 1); }
     [self present:ac];
