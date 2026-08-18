@@ -6436,10 +6436,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self toggle:@"🛡️  Anti-Kick" sub:@"Kicklenirsen odaya otomatik geri gir + master ol" key:@"antikick" atY:y action:@selector(tapAntiKick)];
     y = [self actionRow:@"⏱️  Oyun Hızı (TimeScale)" color:C_CYAN atY:y action:@selector(tapGameSpeed)];
     y = [self actionRow:@"👥  Fake Çevrimici Sayısı (Lobi Görseli)" color:C_CYAN atY:y action:@selector(tapFakeOnline)];
-    y = [self actionRow:@"👑  GERÇEK Master Ol (sunucu — harita için ÖNCE bas)" color:C_GOLD atY:y action:@selector(becomeRealMasterMap)];
-    y = [self actionRow:@"🗺️  HARİTA SEÇ (Liste — ÇALIŞAN Y5) ⭐" color:C_GOLD atY:y action:@selector(mapListY5)];
-    y = [self actionRow:@"🗺️  Odadayken Harita Değiştir (v233 minimal + master zorla)" color:C_ON atY:y action:@selector(changeMapInRoom)];
-    y = [self actionRow:@"🗺️  Harita Değiştir — YÖNTEM SEÇ (eski Y1-Y8, çalışanı bul)" color:C_GOLD atY:y action:@selector(mapMethodPick)];
+    y = [self actionRow:@"🗺️  Harita Değiştir (Otoyol / Orman / Çöl... + hava)" color:C_GOLD atY:y action:@selector(changeMapInRoom)];
     // v114.61: 'Kişi Aracı Klonla' SILINDI (calismiyor)
     y = [self actionRow:@"🌤️  Hava Durumu & Zaman Seç (Aktarmasız Canlı)" color:C_ON atY:y action:@selector(changeWeatherOnly)];
     // Oda ismi degistirmek icin tek gercek yol: 🔄 Odayi Yeniden Olustur (asagida)
