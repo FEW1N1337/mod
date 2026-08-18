@@ -453,6 +453,7 @@ static void* g_mRoomSetCustomProperties = NULL;         // Room.SetCustomPropert
 static void* g_mRoomSetPropertiesListedInLobby = NULL;  // Room.SetPropertiesListedInLobby(string[])
 static void* g_stringClass = NULL;                      // System.String — string[] arg'i icin
 static void* (*i_array_new)(void*, unsigned long) = NULL;  // il2cpp_array_new
+static void* (*i_value_box)(void*, void*) = NULL;          // il2cpp_value_box (deger tipini kutula — object[] RPC arg icin)
 static bool  g_il2cppReady = false;
 // v85: Photon Hashtable helper — sifre ve custom oda property'leri icin
 static void* g_hashtableClass = NULL;
@@ -646,6 +647,7 @@ static void few1n_initIl2cpp(void) {
     i_thread_attach             = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_thread_attach");
     i_object_new                = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_object_new");
     i_array_new                 = (void*(*)(void*,unsigned long))dlsym(RTLD_DEFAULT, "il2cpp_array_new");
+    i_value_box                 = (void*(*)(void*,void*))dlsym(RTLD_DEFAULT, "il2cpp_value_box");
     // v114.19: safeHookByName icin gerekli. NOT: bu sembol cogu Unity build'inde
     // export EDILMEZ (bu oyunda da yok) — few1n_methodCodeAddr fallback olarak
     // MethodInfo.methodPointer @+0x00 alanini okur, hook'lar yine calisir.
@@ -3874,6 +3876,71 @@ static bool few1n_hijackPlateToTarget(int targetActor, NSString* text) {
     return true;
 }
 
+// ============================================================================
+// v114.66: OYUNCUYU HERKESTE ZIPLAT/FIRLAT — hedefin aracini yukari isinla (networked).
+// Ayni "baskasina etki" prensibi: hedefin PhotonView'inde bir [PunRPC] tetiklemek.
+//   PRIMARY: HR_PhotonHandler.eod(Vector3, Player) — oyunun KENDI oyuncu-isinlama
+//            gonderici metodu (TeleportPlayerRPC'yi hedefe yollar). Value-type
+//            pointer olarak gecer, boxing gerekmez -> temiz + dusuk risk.
+//   PLAN B (injection): hedefin arac PhotonView'inde dogrudan
+//            RPC("TeleportCar_RPC", RpcTarget.All, [box(pos), box(rot)]) cagir.
+//            eah'in IsMine guard'ini VE sender-metot ihtiyacini baypas eder.
+// DENEYSEL: Photon sunucu sahibi-olmayan RPC'yi reddederse tutmaz.
+// ============================================================================
+static bool few1n_launchPlayerNetworked(void* targetPlayer, int targetActor, float height) {
+    if (!i_runtime_invoke || !i_class_get_method_from_name) return false;
+    // Anchor: hedefin TuningManager'i (araca kesin bagli) -> konum + arac PhotonView
+    void* tgtTM = few1n_tuningManagerOfActor(targetActor);
+    if (!ptrOk(tgtTM)) { FLog([NSString stringWithFormat:@"Zipla: actor=%d arac(TuningManager) yok (yarista/gorunur olmali)", targetActor]); return false; }
+    Vec3 pos; if (!few1n_objPos(tgtTM, &pos)) { FLog(@"Zipla: hedef konum okunamadi"); return false; }
+    Vec3 launch = { pos.x, pos.y + height, pos.z };
+
+    // ---- PRIMARY: HR_PhotonHandler.eod(Vector3, Player) ----
+    if (targetPlayer && g_hrPhotonHandlerTypeObj && few1n_findByType) {
+        void* inst = few1n_findByType(g_hrPhotonHandlerTypeObj);
+        void* cls  = few1n_classAnyImage("", "HR_PhotonHandler");
+        void* mEod = cls ? i_class_get_method_from_name(cls, "eod", 2) : NULL;
+        if (ptrOk(inst) && mEod) {
+            @try {
+                void* args[2] = { &launch, targetPlayer };
+                i_runtime_invoke(mEod, inst, args, NULL);
+                FLog([NSString stringWithFormat:@"🚀 Zipla PRIMARY: eod(pos,player) actor=%d h=%.0f", targetActor, height]);
+                return true;
+            } @catch (...) { FLog(@"Zipla: eod exception -> plan B"); }
+        }
+    }
+
+    // ---- PLAN B (injection): arac PhotonView'inde RPC("TeleportCar_RPC", All, [pos,rot]) ----
+    if (!i_value_box || !i_array_new || !mbp_getPhotonView) { FLog(@"Zipla: injection altyapisi yok"); return false; }
+    void* carPV = NULL; @try { carPV = mbp_getPhotonView(tgtTM); } @catch (...) {}
+    if (!ptrOk(carPV)) { FLog(@"Zipla: hedef arac PhotonView yok"); return false; }
+    void* v3cls  = few1n_classAnyImage("UnityEngine", "Vector3");
+    void* qcls   = few1n_classAnyImage("UnityEngine", "Quaternion");
+    void* objcls = few1n_classAnyImage("System", "Object");
+    void* pvcls  = few1n_classAnyImage("Photon.Pun", "PhotonView");
+    if (!pvcls) pvcls = few1n_classAnyImage("", "PhotonView");
+    if (!v3cls || !objcls || !pvcls) { FLog(@"Zipla: injection sinif(lar) yok"); return false; }
+    const char* prm[3] = { "String", "RpcTarget", "Object[]" };
+    void* mRPC = few1n_methodBySig(pvcls, "Void", prm, 3, 0);
+    if (!mRPC) { FLog(@"Zipla: PhotonView.RPC(String,RpcTarget,Object[]) bulunamadi"); return false; }
+    @try {
+        void* boxPos = i_value_box(v3cls, &launch);
+        float quat[4] = {0,0,0,1};   // identity
+        void* boxRot = qcls ? i_value_box(qcls, quat) : NULL;
+        int nparam = boxRot ? 2 : 1;
+        void* arr = i_array_new(objcls, (unsigned long)nparam);
+        if (!ptrOk(arr) || !ptrOk(boxPos)) { FLog(@"Zipla: box/array olusmadi"); return false; }
+        *(void**)((uintptr_t)arr + 0x20) = boxPos;
+        if (boxRot) *(void**)((uintptr_t)arr + 0x28) = boxRot;
+        void* nameStr = mkStr(@"TeleportCar_RPC");
+        int all = 0;   // RpcTarget.All
+        void* args[3] = { nameStr, &all, arr };
+        i_runtime_invoke(mRPC, carPV, args, NULL);
+        FLog([NSString stringWithFormat:@"🚀 Zipla PLAN B: RPC('TeleportCar_RPC',All,[pos,rot]) injection actor=%d", targetActor]);
+        return true;
+    } @catch (...) { FLog(@"Zipla: injection exception"); return false; }
+}
+
 // ===== v114.29: OZEL RENK — HERKESTE GORUNUR =====
 // PaintTuner : MonoBehaviour, hs — plaka ile AYNI tuning yolunu kullanir, yani
 // TuningManager RPC'siyle herkese yayilir. PaintTuner.Apply(Color, int type)
@@ -5518,6 +5585,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)spinServerPlate;
 - (void)setServerPlate;
 - (void)hijackPlatePick;         // v114.63
+- (void)launchPlayerPick;        // v114.66
 // v114.48: officialPlateEveryone (Resmi Plaka/goy) KALDIRILDI — oyunu cokertiyordu.
 - (void)instantWin;              // v114.42
 - (void)trafficStrike;           // v114.42
@@ -5977,6 +6045,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"Sunucudan Rastgele Plaka Al" color:C_ON atY:y action:@selector(spinServerPlate)];
     y = [self actionRow:@"🔰  Özel Plaka — HERKESTE Göster (yaz + yayınla)" color:C_GOLD atY:y action:@selector(setServerPlate)];
     y = [self actionRow:@"🎭  Başkasının Plakasını Değiştir (Seç — deneysel)" color:C_RED atY:y action:@selector(hijackPlatePick)];
+    y = [self actionRow:@"🚀  Oyuncuyu Zıplat/Fırlat (Seç — herkeste, deneysel)" color:C_RED atY:y action:@selector(launchPlayerPick)];
     y = [self actionRow:@"🏷️  Sunucu İsmi Değiştir (herkes görür)" color:C_GOLD atY:y action:@selector(officialNicknameEveryone)];
     y = [self actionRow:@"🏆  Anında Kazan (yarışı bitir + ödül)" color:C_ON atY:y action:@selector(instantWin)];
     y = [self actionRow:@"🚧  Trafik Fırlat (önüne trafik aracı — deneysel)" color:C_RED atY:y action:@selector(trafficStrike)];
@@ -11730,6 +11799,76 @@ static void few1n_joinTargetRoom(NSString *nm) {
         [self present:ac];
     } @catch (...) {
         UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🎭 Hedef Plaka" message:@"Hata olustu." preferredStyle:UIAlertControllerStyleAlert];
+        [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:e];
+    }
+}
+
+// v114.66: OYUNCUYU HERKESTE ZIPLAT/FIRLAT — oyuncu sec, araci yukari isinla (networked).
+- (void)launchPlayerPick {
+    if (!pn_getInRoom || !pn_getInRoom()) {
+        UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🚀 Zıplat" message:@"Odada olmalisin." preferredStyle:UIAlertControllerStyleAlert];
+        [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:e]; return;
+    }
+    if (!ply_getNickName || !ply_getActorNumber) {
+        UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🚀 Zıplat" message:@"Photon pointer'lari hazir degil." preferredStyle:UIAlertControllerStyleAlert];
+        [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        [self present:e]; return;
+    }
+    @try {
+        void* pa = NULL;
+        if (pn_getPlayerListOthers) pa = pn_getPlayerListOthers();
+        BOOL useAllList = NO;
+        if (!ptrOk(pa) && pn_getPlayerList) { pa = pn_getPlayerList(); useAllList = YES; }
+        if (!ptrOk(pa)) {
+            UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🚀 Zıplat" message:@"Oyuncu listesi alinamadi." preferredStyle:UIAlertControllerStyleAlert];
+            [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+            [self present:e]; return;
+        }
+        int cnt = (int)(*(uintptr_t*)((uintptr_t)pa + 0x18));
+        if (cnt <= 0 || cnt > 64) {
+            UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🚀 Zıplat" message:[NSString stringWithFormat:@"Odada baska oyuncu yok. (cnt=%d)", cnt] preferredStyle:UIAlertControllerStyleAlert];
+            [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+            [self present:e]; return;
+        }
+        void** ps = (void**)((uintptr_t)pa + 0x20);
+        void* me = (useAllList && pn_getLocalPlayer) ? pn_getLocalPlayer() : NULL;
+
+        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🚀 Oyuncuyu Zıplat/Fırlat"
+            message:@"Seçtiğin oyuncunun aracı yukarı fırlatılır (herkeste görünmesi denenir).\nHedef yarışta/görünür olmalı."
+            preferredStyle:UIAlertControllerStyleActionSheet];
+
+        for (int i = 0; i < cnt && i < 32; i++) {
+            void* p = ps[i]; if (!ptrOk(p)) continue;
+            if (me && p == me) continue;
+            int actor = ply_getActorNumber(p);
+            if (actor <= 0) continue;
+            void* nsObj = ply_getNickName(p);
+            NSString *nm = ptrOk(nsObj) ? (readStr(nsObj) ?: @"") : @"";
+            if (nm.length == 0) nm = [NSString stringWithFormat:@"actor%d", actor];
+            NSString *nmClean = stripRichTextTags(nm) ?: nm;
+            void* pTarget = p;
+
+            [ac addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"🚀 %@", nmClean]
+                style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){
+                bool ok = few1n_launchPlayerNetworked(pTarget, actor, 50.0f);
+                UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Gönderildi" : @"⚠️ Olmadı")
+                    message:(ok ? @"Fırlatma gönderildi. Diğer oyuncularda hedefin havaya uçtuğu görünüyor mu kontrol et. (Deneysel — Photon reddedebilir.)"
+                                : @"Hedefin aracı bulunamadı. Hedef yarışta ve görünür olmalı.")
+                    preferredStyle:UIAlertControllerStyleAlert];
+                [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+                [self present:r];
+            }]];
+        }
+        [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+        if (ac.popoverPresentationController) {
+            ac.popoverPresentationController.sourceView = self.panel;
+            ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, 80, 1, 1);
+        }
+        [self present:ac];
+    } @catch (...) {
+        UIAlertController *e = [UIAlertController alertControllerWithTitle:@"🚀 Zıplat" message:@"Hata olustu." preferredStyle:UIAlertControllerStyleAlert];
         [e addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
         [self present:e];
     }
