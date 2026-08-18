@@ -3896,7 +3896,7 @@ static bool few1n_launchPlayerNetworked(void* targetPlayer, int targetActor, flo
     Vec3 launch = { pos.x, pos.y + height, pos.z };
 
     // ---- PRIMARY: HR_PhotonHandler.eod(Vector3, Player) ----
-    if (targetPlayer && g_hrPhotonHandlerTypeObj && few1n_findByType) {
+    if (targetPlayer && g_hrPhotonHandlerTypeObj) {
         void* inst = few1n_findByType(g_hrPhotonHandlerTypeObj);
         void* cls  = few1n_classAnyImage("", "HR_PhotonHandler");
         void* mEod = cls ? i_class_get_method_from_name(cls, "eod", 2) : NULL;
