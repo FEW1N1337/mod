@@ -9731,6 +9731,7 @@ static void few1n_loadMap(NSString *scene, int idx) {
     if (!scene || scene.length == 0) { FLog(@"[MAP] scene bos"); return; }
     few1n_claimMaster();
     NSString *sceneCopy = [scene copy];
+    NSString *rnCopy = (g_lastRoomName[0]) ? [NSString stringWithUTF8String:g_lastRoomName] : nil;   // v114.76: cik-gir icin
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         @try {
             if (pn_setAutomaticallySyncScene) {
@@ -9780,6 +9781,13 @@ static void few1n_loadMap(NSString *scene, int idx) {
             if (photonMgrEnp) { void* s = mkStr(sceneCopy); if (s) { @try { photonMgrEnp(s, true); FLog(@"🗺️ [v253] PhotonManager.ese(scene,addressable) gonderildi ✅"); } @catch (...) {} } }
             // 5) Son care: PhotonNetwork.LoadLevel(string) (build-settings adi)
             if (pn_loadLevelStr) { void* s = mkStr(sceneCopy); if (s) { @try { pn_loadLevelStr(s); FLog(@"🗺️ [v253] LoadLevel(str) son care"); } @catch (...) {} } }
+            // v114.76: OTOMATIK CIK-GIR — sahne set edildikten sonra odadan cikip ayni
+            // odaya geri gir -> yeni harita yuklenir, "baglaniyor"da takilmaz (kullanici cozumu).
+            if (rnCopy.length > 0) {
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    @try { few1n_joinTargetRoom(rnCopy); FLog([NSString stringWithFormat:@"🗺️ [v253] otomatik cik-gir: '%@'", rnCopy]); } @catch (...) {}
+                });
+            }
             // Sonuc kontrolu — Addressable async yukleme birkac saniye surebilir (3.5s bekle)
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 NSString *cur = (pn_getActiveSceneName) ? readStr(pn_getActiveSceneName()) : @"?";
