@@ -9749,10 +9749,10 @@ static NSArray<NSString*>* few1n_readMapNames(void) {
 
 // ===== v83: v77 CALISAN VERSIYON — master claim + photonMgrEnp + LoadLevel fallback =====
 static void few1n_loadMap(NSString *scene, int idx) {
+    (void)idx;   // v114.84: artik SADECE isim yolu (ese) — LoadLevel(int) kaldirildi
     if (!scene || scene.length == 0) { FLog(@"[MAP] scene bos"); return; }
     few1n_claimMaster();
     NSString *sceneCopy = [scene copy];
-    int idxCopy = idx;   // v114.83: Y5 (LoadLevel int) icin blok'a tasi
     NSString *rnCopy = (g_lastRoomName[0]) ? [NSString stringWithUTF8String:g_lastRoomName] : nil;   // v114.76: cik-gir icin
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         @try {
@@ -9803,9 +9803,8 @@ static void few1n_loadMap(NSString *scene, int idx) {
             if (photonMgrEnp) { void* s = mkStr(sceneCopy); if (s) { @try { photonMgrEnp(s, true); FLog(@"🗺️ [v253] PhotonManager.ese(scene,addressable) gonderildi ✅"); } @catch (...) {} } }
             // 5) Son care: PhotonNetwork.LoadLevel(string) (build-settings adi)
             if (pn_loadLevelStr) { void* s = mkStr(sceneCopy); if (s) { @try { pn_loadLevelStr(s); FLog(@"🗺️ [v253] LoadLevel(str) son care"); } @catch (...) {} } }
-            // 6) v114.83: Y5 DESTEK — LoadLevel(int) da tetikle (idx gecerliyse). Boylece
-            // isim yolu (ese) tutmazsa build-index yolu (kullanicida calisan) devreye girer.
-            if (idxCopy >= 0 && pn_loadLevelInt) { @try { pn_loadLevelInt(idxCopy); FLog([NSString stringWithFormat:@"🗺️ [v253] LoadLevel(int=%d) (Y5)", idxCopy]); } @catch (...) {} }
+            // v114.84: LoadLevel(int) KALDIRILDI — yanlis harita yukluyordu (kullanici:
+            // 'Y5 kismen calisiyor, sadece isimli calissin'). Artik SADECE isim yolu (ese).
             // v114.76: OTOMATIK CIK-GIR — sahne set edildikten sonra odadan cikip ayni
             // odaya geri gir -> yeni harita yuklenir, "baglaniyor"da takilmaz (kullanici cozumu).
             if (rnCopy.length > 0) {
@@ -10046,21 +10045,18 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
 
     UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🗺️ Harita Seç"
         message:(realMaps.count > 0
-            ? [NSString stringWithFormat:@"Oyundaki %lu harita (orijinal isim, Y5 index). Yükleme birkaç saniye — otomatik çık-gir yapılır. Yanlış harita gelirse #numarayı söyle.", (unsigned long)realMaps.count]
+            ? [NSString stringWithFormat:@"Oyundaki %lu harita — orijinal isimle. İSİM ile yüklenir (oyunun kendi yolu). Birkaç saniye + otomatik çık-gir.", (unsigned long)realMaps.count]
             : @"MapList okunamadı (oyuna tam gir). Onaylı build haritaları numara ile:")
         preferredStyle:UIAlertControllerStyleActionSheet];
 
     if (realMaps.count > 0) {
-        // TUM haritalar — orijinal isimle, oyundaki sirada. few1n_loadMap TUM yontemleri
-        // birden tetikler: ese(isim, oyunun kendi yolu) + LoadLevel(str) + LoadLevel(int=Y5)
-        // + otomatik cik-gir. Hangi yol gecerliyse o yukler.
-        int i = 0;
+        // TUM haritalar — orijinal isimle, oyundaki sirada. v114.84: SADECE isim yolu
+        // (ese + LoadLevel-str + oto cik-gir). LoadLevel(int) yok -> yanlis harita yuklemez.
         for (NSString *mapName in realMaps) {
-            int idx = i++;
             NSString *cap = mapName;
-            [ac addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@  (#%d)", mapName, idx] style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
-                @try { few1n_loadMap(cap, idx); } @catch (...) {}
-                [self simpleAlert:@"🗺️ Gönderildi" msg:[NSString stringWithFormat:@"'%@' (#%d) uygulanıyor + otomatik ÇIK-GİR. Birkaç saniye bekle.\nDeğişmezse 'Elle Numara' ile de dene.", cap, idx]];
+            [ac addAction:[UIAlertAction actionWithTitle:mapName style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+                @try { few1n_loadMap(cap, -1); } @catch (...) {}   // -1 = isim yolu, int atla
+                [self simpleAlert:@"🗺️ Gönderildi" msg:[NSString stringWithFormat:@"'%@' uygulanıyor + otomatik ÇIK-GİR. Birkaç saniye bekle.", cap]];
             }]];
         }
     } else {
