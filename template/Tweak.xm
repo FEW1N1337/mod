@@ -145,6 +145,7 @@ static bool  g_wasInRoom = false;          // oda giris/cikis kenar tespiti
 // v114.46: Anti-Kick — kicklenirsen odaya otomatik geri gir + master ol
 static bool  isAntiKickEnabled = false;
 static char  g_lastRoomName[128] = "";     // en son bulundugum odanin ismi (geri girmek icin)
+static double g_mapRejoinDelaySec = 1.3;   // v114.78: harita gir-cik gecikmesi (ayarlanabilir)
 // ==== SARKI SOZU -> CHAT (altyazi gibi) ====
 static bool isLyricsEnabled = false;
 static int  g_lyricsIdx = 0;             // hangi satir
@@ -5761,6 +5762,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)speedSliderChanged:(UISlider*)sl;
 - (void)speedReset;
 - (void)changeMapInRoom;
+- (void)tapMapRejoinDelay;
 - (void)changeMapV70Classic;
 - (void)toggleMasterClaim;
 - (void)askSceneNameThen:(int)method;
@@ -6437,6 +6439,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"⏱️  Oyun Hızı (TimeScale)" color:C_CYAN atY:y action:@selector(tapGameSpeed)];
     y = [self actionRow:@"👥  Fake Çevrimici Sayısı (Lobi Görseli)" color:C_CYAN atY:y action:@selector(tapFakeOnline)];
     y = [self actionRow:@"🗺️  Harita Değiştir (Otoyol / Orman / Çöl... + hava)" color:C_GOLD atY:y action:@selector(changeMapInRoom)];
+    y = [self actionRow:@"⏱️  Gir-Çık Süresi (harita değişince)" color:C_CYAN atY:y action:@selector(tapMapRejoinDelay)];   // v114.78
     // v114.61: 'Kişi Aracı Klonla' SILINDI (calismiyor)
     y = [self actionRow:@"🌤️  Hava Durumu & Zaman Seç (Aktarmasız Canlı)" color:C_ON atY:y action:@selector(changeWeatherOnly)];
     // Oda ismi degistirmek icin tek gercek yol: 🔄 Odayi Yeniden Olustur (asagida)
@@ -9781,8 +9784,9 @@ static void few1n_loadMap(NSString *scene, int idx) {
             // v114.76: OTOMATIK CIK-GIR — sahne set edildikten sonra odadan cikip ayni
             // odaya geri gir -> yeni harita yuklenir, "baglaniyor"da takilmaz (kullanici cozumu).
             if (rnCopy.length > 0) {
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    @try { few1n_joinTargetRoom(rnCopy); FLog([NSString stringWithFormat:@"🗺️ [v253] otomatik cik-gir: '%@'", rnCopy]); } @catch (...) {}
+                double _rjDelay = (g_mapRejoinDelaySec > 0.05) ? g_mapRejoinDelaySec : 1.3;   // v114.78: ayarlanabilir gir-cik gecikmesi
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(_rjDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    @try { few1n_joinTargetRoom(rnCopy); FLog([NSString stringWithFormat:@"🗺️ [v253] otomatik cik-gir (%.1fs): '%@'", _rjDelay, rnCopy]); } @catch (...) {}
                 });
             }
             // Sonuc kontrolu — Addressable async yukleme birkac saniye surebilir (3.5s bekle)
@@ -10175,6 +10179,54 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
             if (val && val.length > 0) {
                 few1n_loadMap(val, -1);
             }
+        }]];
+        [inputAc addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+        [self present:inputAc];
+    }]];
+
+    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    [self present:ac];
+}
+
+// ===== v114.78: HARITA GIR-CIK (leave-rejoin) SURESI AYARLA =====
+// Harita degistiginde otomatik odadan cikip geri girme gecikmesi. Cihaz/baglanti
+// yavassa daha uzun sure gerekir; hizli baglantida kisa sure daha akici.
+- (void)tapMapRejoinDelay {
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"⏱️ Gir-Çık Süresi"
+        message:[NSString stringWithFormat:@"Harita değişince odadan çıkıp geri girme gecikmesi.\nŞu an: %.1f sn\n\nOda açılmıyorsa (bağlanıyor'da kalıyorsa) süreyi artır.", g_mapRejoinDelaySec]
+        preferredStyle:UIAlertControllerStyleAlert];
+
+    NSArray *presets = @[@0.8, @1.3, @2.0, @3.0, @4.0, @5.0];
+    for (NSNumber *p in presets) {
+        double sec = p.doubleValue;
+        BOOL isCur = (fabs(sec - g_mapRejoinDelaySec) < 0.05);
+        NSString *title = [NSString stringWithFormat:@"%@%.1f sn", (isCur ? @"✅ " : @""), sec];
+        [ac addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *act){
+            g_mapRejoinDelaySec = sec;
+            [[NSUserDefaults standardUserDefaults] setDouble:sec forKey:@"mapRejoinDelay"];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+            FLog([NSString stringWithFormat:@"⏱️ Gir-çık süresi: %.1f sn", sec]);
+        }]];
+    }
+
+    // Elle deger girme (0.3 - 10 sn arasi)
+    [ac addAction:[UIAlertAction actionWithTitle:@"✏️ Elle Yaz" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act){
+        UIAlertController *inputAc = [UIAlertController alertControllerWithTitle:@"✏️ Gir-Çık Süresi"
+            message:@"Saniye yaz (0.3 - 10):" preferredStyle:UIAlertControllerStyleAlert];
+        [inputAc addTextFieldWithConfigurationHandler:^(UITextField *tf){
+            tf.placeholder = @"Ornek: 1.5";
+            tf.keyboardType = UIKeyboardTypeDecimalPad;
+            tf.text = [NSString stringWithFormat:@"%.1f", g_mapRejoinDelaySec];
+        }];
+        [inputAc addAction:[UIAlertAction actionWithTitle:@"Kaydet" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a2){
+            NSString *val = inputAc.textFields.firstObject.text;
+            double sec = val.doubleValue;
+            if (sec < 0.3) sec = 0.3;
+            if (sec > 10.0) sec = 10.0;
+            g_mapRejoinDelaySec = sec;
+            [[NSUserDefaults standardUserDefaults] setDouble:sec forKey:@"mapRejoinDelay"];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+            FLog([NSString stringWithFormat:@"⏱️ Gir-çık süresi: %.1f sn", sec]);
         }]];
         [inputAc addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
         [self present:inputAc];
@@ -12961,6 +13013,9 @@ static void restoreSettings(void) {
     speedMode              = loadInt(@"speedMode", 1);
     speedMult              = ((float)loadInt(@"speedMult10", 10)) / 10.0f;
     if (speedMult < 0.1f || speedMult > 10.0f) speedMult = 1.0f;
+    // v114.78: harita gir-cik gecikmesi (KALICI)
+    if ([defs() objectForKey:@"mapRejoinDelay"]) g_mapRejoinDelaySec = [defs() doubleForKey:@"mapRejoinDelay"];
+    if (g_mapRejoinDelaySec < 0.3 || g_mapRejoinDelaySec > 10.0) g_mapRejoinDelaySec = 1.3;
     isRoomLocked           = false;   // [SESSION_ONLY] odadan cikinca zaten anlamsiz
     isRoomInvisible        = false;   // [SESSION_ONLY]
     { NSString *rp = loadStr(@"roomPass", @""); if (rp.length) { strncpy(roomPasswordText, rp.UTF8String, sizeof(roomPasswordText)-1); roomPasswordText[sizeof(roomPasswordText)-1]='\0'; } }
