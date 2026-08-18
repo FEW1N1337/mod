@@ -145,7 +145,8 @@ static bool  g_wasInRoom = false;          // oda giris/cikis kenar tespiti
 // v114.46: Anti-Kick — kicklenirsen odaya otomatik geri gir + master ol
 static bool  isAntiKickEnabled = false;
 static char  g_lastRoomName[128] = "";     // en son bulundugum odanin ismi (geri girmek icin)
-static double g_mapRejoinDelaySec = 1.3;   // v114.78: harita gir-cik gecikmesi (ayarlanabilir)
+static double g_mapRejoinDelaySec = 1.3;   // v114.78: harita gir-cik MANUEL gecikmesi
+static int    g_rejoinMode = 1;            // v114.88: 0=Kapali, 1=Otomatik(hazir-bekle), 2=Manuel(sabit sure)
 // ==== SARKI SOZU -> CHAT (altyazi gibi) ====
 static bool isLyricsEnabled = false;
 static int  g_lyricsIdx = 0;             // hangi satir
@@ -3900,8 +3901,11 @@ static bool few1n_hijackPlateToTarget(int targetActor, NSString* text) {
     void* euStr  = mkStr(@"eu1");
     void* txtStr = mkStr(text);
     if (!euStr || !txtStr) return false;
-    @try { void* args[2] = { euStr, txtStr }; i_runtime_invoke(mApply, tgtPT, args, NULL); }
-    @catch (...) { FLog(@"HedefPlaka: Apply exception"); return false; }
+    // v114.88: Apply BASKA oyuncunun component'inde -> ic null-deref segfault olabilir.
+    // GUARD altinda: cokme yerine temiz iptal.
+    { bool crashed=false; void* args[2] = { euStr, txtStr };
+      few1n_guardedInvoke(mApply, tgtPT, args, &crashed);
+      if (crashed) { FLog(@"HedefPlaka: Apply segfault yakalandi -> iptal"); return false; } }
     // 2) hedefin TuningManager'inda eah/ead/eae -> hedefin view'inden LoadTuners yayin
     void* tgtTM = few1n_tuningManagerOfActor(targetActor);
     if (!ptrOk(tgtTM)) { FLog(@"HedefPlaka: hedef TuningManager yok"); return false; }
@@ -3917,15 +3921,18 @@ static bool few1n_hijackPlateToTarget(int targetActor, NSString* text) {
     void* tgtPV = NULL; unsigned char savedMine = 0; bool flipped = false;
     if (mbp_getPhotonView && g_isMineOff > 0) {
         @try { tgtPV = mbp_getPhotonView(tgtTM); } @catch (...) {}
-        if (ptrOk(tgtPV)) {
+        // v114.88: IsMine backing alanina ham yazma -> once memOk (offset drift = cokme onle)
+        if (ptrOk(tgtPV) && few1n_memOk((void*)((uintptr_t)tgtPV + g_isMineOff))) {
             savedMine = *(unsigned char*)((uintptr_t)tgtPV + g_isMineOff);
             *(unsigned char*)((uintptr_t)tgtPV + g_isMineOff) = 1;   // gecici "benim"
             flipped = true;
         }
     }
-    if (mEah) { @try { unsigned char t=1; void* a[1]={&t}; i_runtime_invoke(mEah, tgtTM, a, NULL); } @catch (...) {} }
-    if (mEad) { @try { i_runtime_invoke(mEad, tgtTM, NULL, NULL); } @catch (...) {} }
-    if (mEae) { @try { i_runtime_invoke(mEae, tgtTM, NULL, NULL); } @catch (...) {} }
+    // v114.88: eah oyunun KENDI yayin metodu (gecerli JSON serialize -> alicida cokmez,
+    // kendi plakan gibi). GUARD altinda: gonderici tarafi segfault yaparsa cokme yerine iptal.
+    if (mEah) { bool cr=false; unsigned char t=1; void* a[1]={&t}; few1n_guardedInvoke(mEah, tgtTM, a, &cr); }
+    if (mEad) { bool cr=false; few1n_guardedInvoke(mEad, tgtTM, NULL, &cr); }
+    if (mEae) { bool cr=false; few1n_guardedInvoke(mEae, tgtTM, NULL, &cr); }
     if (flipped) *(unsigned char*)((uintptr_t)tgtPV + g_isMineOff) = savedMine;   // geri al
     FLog([NSString stringWithFormat:@"🎭 HedefPlaka: actor=%d arabasina '%@' uygulandi + IsMine-flip yayin (flip=%d)", targetActor, text, flipped]);
     return true;
@@ -3940,6 +3947,7 @@ static bool few1n_hijackPlateToTarget(int targetActor, NSString* text) {
 //   3) JSON -> byte[] (Encoding.UTF8.GetBytes)
 //   4) hedefin arac PhotonView'inde RPC("LoadTuners", All, [byte[]]) enjekte et ->
 //      tum client'lar (hedef + herkes) hedefin arabasina uygular = plaka herkeste.
+__attribute__((unused))   // v114.88: hijackPlatePick artik eah yolunu (few1n_hijackPlateToTarget) kullaniyor
 static bool few1n_setTargetPlateNonOwner(int targetActor, NSString* text) {
     if (!text || text.length == 0 || !i_runtime_invoke || !i_class_get_method_from_name || !i_array_new || !mbp_getPhotonView) return false;
     // 1) hedefin PlateTuner'ina plakami uygula
@@ -5879,6 +5887,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)becomeRealMasterMap;     // v114.72
 - (void)mapMethodPick;           // v114.73 (eski Y1-Y8 yontem secici)
 - (void)mapListY5;               // v114.74 (Y5 calisan — basit liste)
+- (void)y5LoadIdx:(int)idx label:(NSString*)title;   // v114.88 (Y5 yukle + gir-cik)
 // v114.48: officialPlateEveryone (Resmi Plaka/goy) KALDIRILDI — oyunu cokertiyordu.
 - (void)instantWin;              // v114.42
 - (void)trafficStrike;           // v114.42
@@ -10039,9 +10048,35 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
     [self present:ac];
 }
 
-// v114.87: BASIT ILK Y5 GERI GELDI (kullanici: gir-cik oda donduruyordu -> sil).
-// Sadece pn_loadLevelInt(idx) + master + syncScene. OTO GIR-CIK YOK, cok-yontem YOK.
-// Bu, en basta calisan (v114.74) surumdur; oda donmaz.
+// v114.88: Y5 harita + GIR-CIK (kullanici istegi: otomatik VE manuel sure).
+// Harita yuklendikten sonra gir-cik modu: 0=Kapali, 1=Otomatik(hazir-bekle,
+// donmaz), 2=Manuel(sabit sure). Ek olarak 'Elle Numara' ile ekstra harita
+// tipleri denenebilir. Yukleme yolu: pn_loadLevelInt(idx) (calisan Y5).
+- (void)y5LoadIdx:(int)idx label:(NSString*)title {
+    if (!pn_loadLevelInt) { [self simpleAlert:@"🗺️ Harita" msg:@"LoadLevel(int) yok."]; return; }
+    NSString *rn = (g_lastRoomName[0]) ? [NSString stringWithUTF8String:g_lastRoomName] : nil;
+    few1n_claimMaster();
+    if (pn_setAutomaticallySyncScene) { @try { pn_setAutomaticallySyncScene(true); } @catch (...) {} }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        @try { pn_loadLevelInt(idx); } @catch (...) {}
+        FLog([NSString stringWithFormat:@"🗺️ [Y5] LoadLevel(%d) '%@' gonderildi (gir-cik mod=%d)", idx, title, g_rejoinMode]);
+        // GIR-CIK
+        if (g_rejoinMode != 0 && rn.length > 0) {
+            if (g_rejoinMode == 1) {
+                // Otomatik: few1n_joinTargetRoom ICINDE 'hazir olana kadar bekle' var (v114.86) -> donmaz
+                few1n_after(0.7, ^{ @try { few1n_joinTargetRoom(rn); } @catch (...) {} });
+            } else {
+                // Manuel: kullanicinin ayarladigi sabit sure sonra gir-cik
+                double d = (g_mapRejoinDelaySec > 0.05) ? g_mapRejoinDelaySec : 1.3;
+                few1n_after(0.6 + d, ^{ @try { few1n_joinTargetRoom(rn); } @catch (...) {} });
+            }
+        }
+    });
+    NSString *modeTxt = (g_rejoinMode==0) ? @"gir-çık KAPALI (biri girince oturur)"
+                       : (g_rejoinMode==1) ? @"gir-çık OTOMATİK (hazır olunca)"
+                       : [NSString stringWithFormat:@"gir-çık MANUEL (%.1fs)", g_mapRejoinDelaySec];
+    [self simpleAlert:@"🗺️ Gönderildi" msg:[NSString stringWithFormat:@"%@ (#%d) yükleniyor — %@.\nYanlış harita geldiyse söyle, numarayı düzeltirim.", title, idx, modeTxt]];
+}
 - (void)mapListY5 {
     if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🗺️ Harita Seç (Y5)" msg:@"Odada olmalisin (kendi odanda + master iken)."]; return; }
     if (!pn_loadLevelInt) { [self simpleAlert:@"🗺️ Harita Seç (Y5)" msg:@"LoadLevel(int) pointeri yok."]; return; }
@@ -10055,22 +10090,41 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
         @{@"t":@"🌲 Orman (Forest)",         @"i":@6},
         @{@"t":@"🌙 Gece Şehri (City Night)",@"i":@7},
     ];
-    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🗺️ Harita Seç (Y5 — çalışan)"
-        message:@"Seçtiğin harita herkese yüklenir. Yükleme birkaç saniye sürebilir (bağlanıyor ekranı normal — biri odaya girince oturur)."
+    NSString *modeNow = (g_rejoinMode==0) ? @"KAPALI" : (g_rejoinMode==1) ? @"OTOMATİK" : @"MANUEL";
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🗺️ Harita Seç (Y5)"
+        message:[NSString stringWithFormat:@"Seçtiğin harita herkese yüklenir. Gir-Çık: %@ (aşağıdan değiştir).", modeNow]
         preferredStyle:UIAlertControllerStyleActionSheet];
     for (NSDictionary *m in maps) {
         int idx = [m[@"i"] intValue];
         NSString *title = m[@"t"];
         [ac addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
-            few1n_claimMaster();
-            if (pn_setAutomaticallySyncScene) { @try { pn_setAutomaticallySyncScene(true); } @catch (...) {} }
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                @try { pn_loadLevelInt(idx); } @catch (...) {}
-                FLog([NSString stringWithFormat:@"🗺️ [Y5] LoadLevel(%d) '%@' gonderildi", idx, title]);
-            });
-            [self simpleAlert:@"🗺️ Gönderildi" msg:[NSString stringWithFormat:@"%@ (#%d) yükleniyor. Bağlanıyor görürsen normal — birkaç saniye bekle.\nYanlış harita geldiyse söyle, numarayı düzeltirim.", title, idx]];
+            [self y5LoadIdx:idx label:title];
         }]];
     }
+    // Ek harita tipleri: elle numara (8, 9, 10... build sahneleri varsa)
+    [ac addAction:[UIAlertAction actionWithTitle:@"🔢 Elle Numara (ek harita — 8,9,10...)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+        UIAlertController *in = [UIAlertController alertControllerWithTitle:@"🔢 Harita Numarası"
+            message:@"Sahne numarası yaz (0-60). Ek harita/hava varsa burada." preferredStyle:UIAlertControllerStyleAlert];
+        [in addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.keyboardType = UIKeyboardTypeNumberPad; tf.placeholder = @"Ornek: 8"; }];
+        [in addAction:[UIAlertAction actionWithTitle:@"Yükle" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a2){
+            int idx = in.textFields.firstObject.text.intValue;
+            if (idx < 0 || idx > 60) { [self simpleAlert:@"🔢 Hatalı" msg:@"0-60 arası yaz."]; return; }
+            [self y5LoadIdx:idx label:[NSString stringWithFormat:@"Numara #%d", idx]];
+        }]];
+        [in addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+        [self present:in];
+    }]];
+    // Gir-cik MOD sec (otomatik / manuel / kapali)
+    [ac addAction:[UIAlertAction actionWithTitle:@"⚙️ Gir-Çık Modu (Otomatik/Manuel/Kapalı)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+        UIAlertController *mc = [UIAlertController alertControllerWithTitle:@"⚙️ Gir-Çık Modu"
+            message:@"Harita değişince odaya otomatik çık-gir." preferredStyle:UIAlertControllerStyleActionSheet];
+        [mc addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@🤖 Otomatik (hazır olunca — önerilen)", g_rejoinMode==1?@"✅ ":@""] style:UIAlertActionStyleDefault handler:^(UIAlertAction*x){ g_rejoinMode=1; saveInt(@"rejoinMode",1); [self simpleAlert:@"⚙️ Gir-Çık" msg:@"Otomatik: hazır olunca çık-gir (donmaz)."]; }]];
+        [mc addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@⏱️ Manuel (sabit süre)", g_rejoinMode==2?@"✅ ":@""] style:UIAlertActionStyleDefault handler:^(UIAlertAction*x){ g_rejoinMode=2; saveInt(@"rejoinMode",2); [self tapMapRejoinDelay]; }]];
+        [mc addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@🚫 Kapalı (biri girince oturur)", g_rejoinMode==0?@"✅ ":@""] style:UIAlertActionStyleDefault handler:^(UIAlertAction*x){ g_rejoinMode=0; saveInt(@"rejoinMode",0); [self simpleAlert:@"⚙️ Gir-Çık" msg:@"Kapalı: harita, odaya biri girince oturur."]; }]];
+        [mc addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+        if (mc.popoverPresentationController) { mc.popoverPresentationController.sourceView = self.panel; mc.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, 80, 1, 1); }
+        [self present:mc];
+    }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
     if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, 80, 1, 1); }
     [self present:ac];
@@ -12213,9 +12267,11 @@ static void few1n_joinTargetRoom(NSString *nm) {
                 [pin addAction:[UIAlertAction actionWithTitle:@"Uygula & Yayınla" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a2){
                     NSString *t = pin.textFields.firstObject.text;
                     if (!t || t.length == 0) return;
-                    bool ok = few1n_setTargetPlateNonOwner(actor, t);   // v114.71: non-owner LoadTuners (eah YOK)
+                    // v114.88: eah (oyunun kendi yayini, gecerli JSON -> alicida cokmez) + guard.
+                    // Manuel RPC yolu (few1n_setTargetPlateNonOwner) alicida cokuyordu, birakildi.
+                    bool ok = few1n_hijackPlateToTarget(actor, t);
                     UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Gönderildi" : @"⚠️ Olmadı")
-                        message:(ok ? @"Hedefin plakası non-owner RPC ile gönderildi (senin garaj aracın bozulmaz). Diğer oyuncularda görünüyor mu kontrol et. (Deneysel — hedef tekrar tuning yaparsa eski haline dönebilir.)"
+                        message:(ok ? @"Hedefin arabasına plakan uygulandı + oyunun kendi yayınıyla (eah) herkese gönderildi. Diğer oyuncularda görünüyor mu kontrol et. (Deneysel — hedef tekrar tuning yaparsa dönebilir.)"
                                     : @"Hedefin PlateTuner/TuningManager'ı bulunamadı. Hedef yarışta ve görünür olmalı (aracı spawn olmuş olmalı).")
                         preferredStyle:UIAlertControllerStyleAlert];
                     [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
@@ -13076,6 +13132,8 @@ static void restoreSettings(void) {
     // v114.78: harita gir-cik gecikmesi (KALICI)
     if ([defs() objectForKey:@"mapRejoinDelay"]) g_mapRejoinDelaySec = [defs() doubleForKey:@"mapRejoinDelay"];
     if (g_mapRejoinDelaySec < 0.3 || g_mapRejoinDelaySec > 10.0) g_mapRejoinDelaySec = 1.3;
+    g_rejoinMode = loadInt(@"rejoinMode", 1);   // v114.88: gir-cik modu (KALICI, varsayilan otomatik)
+    if (g_rejoinMode < 0 || g_rejoinMode > 2) g_rejoinMode = 1;
     isRoomLocked           = false;   // [SESSION_ONLY] odadan cikinca zaten anlamsiz
     isRoomInvisible        = false;   // [SESSION_ONLY]
     { NSString *rp = loadStr(@"roomPass", @""); if (rp.length) { strncpy(roomPasswordText, rp.UTF8String, sizeof(roomPasswordText)-1); roomPasswordText[sizeof(roomPasswordText)-1]='\0'; } }
