@@ -4010,6 +4010,64 @@ static bool few1n_forceWinTarget(int targetActor) {
     @catch (...) { FLog(@"Kazandir: enz exception"); return false; }
 }
 
+// v114.69: Benim TuningManager'im (IsMine).
+static void* few1n_myTuningManager(void) {
+    if (!g_mFindObjectsPlural || !i_runtime_invoke) return NULL;
+    void* cls = few1n_classAnyImage("", "TuningManager");
+    if (!cls) return NULL;
+    void* tobj = few1n_typeObjOf(cls);
+    if (!tobj) return NULL;
+    @try {
+        void* a[1] = { tobj };
+        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+        if (!ptrOk(arr)) return NULL;
+        int n = *(int*)((uintptr_t)arr + 0x18);
+        void** el = (void**)((uintptr_t)arr + 0x20);
+        for (int i = 0; i < n && i < 64; i++) { void* tm = el[i]; if (unityAlive(tm) && few1n_pvIsMineFor(tm)) return tm; }
+    } @catch (...) {}
+    return NULL;
+}
+
+// v114.69: ARACINI HEDEFE KOPYALA (herkeste). Kullanici plaka hijack'inde farketti:
+// eah yayini TUM tuning'i tasidigi icin hedefin araci SENINKININ klonu oluyor.
+// Bunu ozellik yapiyoruz: benim currentData'mi hedefin TM'ine DOGRUDAN yaz (eac
+// cagirmaz -> cokme yok), IsMine-flip + eah -> hedefin araci = benim aracim (plaka
+// + renk + jant + lastik). currentData offset 0x40 (dump dogrulandi).
+static bool few1n_copyMyCarToTarget(int targetActor) {
+    if (!i_runtime_invoke || !i_class_get_method_from_name || !mbp_getPhotonView || g_isMineOff <= 0) return false;
+    void* myTM = few1n_myTuningManager();
+    if (!ptrOk(myTM)) { FLog(@"AracKopya: benim TuningManager yok (araca bin)"); return false; }
+    void* tgtTM = few1n_tuningManagerOfActor(targetActor);
+    if (!ptrOk(tgtTM)) { FLog(@"AracKopya: hedef TuningManager yok"); return false; }
+    void* myData = *(void**)((uintptr_t)myTM + 0x40);   // currentData
+    if (!ptrOk(myData)) { FLog(@"AracKopya: benim currentData bos (garajda tuning yap)"); return false; }
+    void* tmCls = few1n_classAnyImage("", "TuningManager");
+    void* mEah = tmCls ? i_class_get_method_from_name(tmCls, "eah", 1) : NULL;
+    void* mEad = tmCls ? i_class_get_method_from_name(tmCls, "ead", 0) : NULL;
+    void* mEae = tmCls ? i_class_get_method_from_name(tmCls, "eae", 0) : NULL;
+    @try { *(void**)((uintptr_t)tgtTM + 0x40) = myData; } @catch (...) { return false; }   // hedef currentData = benim
+    void* tgtPV = NULL; unsigned char saved = 0; bool flipped = false;
+    @try { tgtPV = mbp_getPhotonView(tgtTM); } @catch (...) {}
+    if (ptrOk(tgtPV)) { saved = *(unsigned char*)((uintptr_t)tgtPV + g_isMineOff); *(unsigned char*)((uintptr_t)tgtPV + g_isMineOff) = 1; flipped = true; }
+    if (mEah) { @try { unsigned char t=1; void* a[1]={&t}; i_runtime_invoke(mEah, tgtTM, a, NULL); } @catch (...) {} }
+    if (mEad) { @try { i_runtime_invoke(mEad, tgtTM, NULL, NULL); } @catch (...) {} }
+    if (mEae) { @try { i_runtime_invoke(mEae, tgtTM, NULL, NULL); } @catch (...) {} }
+    if (flipped) *(unsigned char*)((uintptr_t)tgtPV + g_isMineOff) = saved;
+    FLog([NSString stringWithFormat:@"🚗 AracKopya: actor=%d arabasi benim aracima kopyalandi (flip=%d)", targetActor, flipped]);
+    return true;
+}
+
+// v114.69: Oyuncuya HIZ PATLAMASI = araci ILERI firlat (transform.forward * dist).
+static bool few1n_flingForward(void* targetPlayer, int targetActor, float dist) {
+    void* tgtTM = few1n_tuningManagerOfActor(targetActor);
+    if (!ptrOk(tgtTM)) { FLog(@"Hiz: hedef arac yok"); return false; }
+    Vec3 pos, fwd;
+    if (!few1n_objPos(tgtTM, &pos)) return false;
+    if (!few1n_fwd(tgtTM, &fwd)) { fwd = (Vec3){0,0,1}; }
+    Vec3 dest = { pos.x + fwd.x*dist, pos.y + fwd.y*dist + 3.0f, pos.z + fwd.z*dist };
+    return few1n_teleportPlayerTo(targetPlayer, targetActor, dest);
+}
+
 // ===== v114.29: OZEL RENK — HERKESTE GORUNUR =====
 // PaintTuner : MonoBehaviour, hs — plaka ile AYNI tuning yolunu kullanir, yani
 // TuningManager RPC'siyle herkese yayilir. PaintTuner.Apply(Color, int type)
@@ -5663,6 +5721,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)teleportToSavedPick;     // v114.68
 - (void)lockLaunchPick;          // v114.68
 - (void)forceWinPick;            // v114.68
+- (void)copyCarPick;             // v114.69
 // v114.48: officialPlateEveryone (Resmi Plaka/goy) KALDIRILDI — oyunu cokertiyordu.
 - (void)instantWin;              // v114.42
 - (void)trafficStrike;           // v114.42
@@ -6129,6 +6188,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"🎯  Oyuncuyu Kaydedilen Konuma Işınla (Seç)" color:C_RED atY:y action:@selector(teleportToSavedPick)];
     y = [self actionRow:@"🔒  Sürekli Fırlat / Kilit (Seç — aç/kapa)" color:C_RED atY:y action:@selector(lockLaunchPick)];
     y = [self actionRow:@"🏁  Oyuncuyu Zorla Kazandır (Seç — deneysel)" color:C_RED atY:y action:@selector(forceWinPick)];
+    y = [self actionRow:@"🚗  Aracını Kopyala (Hedefin aracı = senin klonun)" color:C_GOLD atY:y action:@selector(copyCarPick)];
     y = [self actionRow:@"🏷️  Sunucu İsmi Değiştir (herkes görür)" color:C_GOLD atY:y action:@selector(officialNicknameEveryone)];
     y = [self actionRow:@"🏆  Anında Kazan (yarışı bitir + ödül)" color:C_ON atY:y action:@selector(instantWin)];
     y = [self actionRow:@"🚧  Trafik Fırlat (önüne trafik aracı — deneysel)" color:C_RED atY:y action:@selector(trafficStrike)];
@@ -11951,6 +12011,10 @@ static void few1n_joinTargetRoom(NSString *nm) {
                 [lv addAction:[UIAlertAction actionWithTitle:@"🤏 Zıpla (hafif +15)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ doLaunch(15.0f, @"Zıplatma"); }]];
                 [lv addAction:[UIAlertAction actionWithTitle:@"🚀 Fırlat (+60)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ doLaunch(60.0f, @"Fırlatma"); }]];
                 [lv addAction:[UIAlertAction actionWithTitle:@"🌌 Uzaya Fırlat (+300)" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x){ doLaunch(300.0f, @"Uzaya fırlatma"); }]];
+                [lv addAction:[UIAlertAction actionWithTitle:@"🏎️ İleri Fırlat (hız patlaması)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){
+                    bool ok = few1n_flingForward(pTarget, actor, 90.0f);
+                    [self simpleAlert:(ok?@"✅ Gönderildi":@"⚠️ Olmadı") msg:(ok?@"Hız patlaması (ileri fırlatma) gönderildi.":@"Hedef bulunamadı.")];
+                }]];
                 [lv addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
                 if (lv.popoverPresentationController) { lv.popoverPresentationController.sourceView = self.panel; lv.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, 80, 1, 1); }
                 [self present:lv];
@@ -12064,6 +12128,15 @@ static void few1n_joinTargetRoom(NSString *nm) {
     [self pickOtherPlayer:@"🏁 Zorla Kazandır" emoji:@"🏁" handler:^(void* p, int actor, NSString* nick){
         bool ok = few1n_forceWinTarget(actor);
         [self simpleAlert:(ok?@"✅ Gönderildi":@"⚠️ Olmadı") msg:(ok?[NSString stringWithFormat:@"%@ için 'kazandı' RPC'si gönderildi (deneysel).", nick]:@"Hedef/enz bulunamadı.")];
+    }];
+}
+// 🚗 Aracını hedefe kopyala (hedefin araci = senin aracin klonu, herkeste)
+- (void)copyCarPick {
+    [self pickOtherPlayer:@"🚗 Aracını Kopyala" emoji:@"🚗" handler:^(void* p, int actor, NSString* nick){
+        bool ok = few1n_copyMyCarToTarget(actor);
+        [self simpleAlert:(ok?@"✅ Kopyalandı":@"⚠️ Olmadı")
+            msg:(ok?[NSString stringWithFormat:@"%@ oyuncusunun aracı SENİN aracının klonu yapıldı (plaka+renk+jant+lastik). Diğer oyuncularda görünüyor mu kontrol et.", nick]
+                   :@"Hedef/TuningManager bulunamadı ya da senin currentData boş (garajda tuning yapıp araca bin).")];
     }];
 }
 
