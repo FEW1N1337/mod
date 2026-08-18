@@ -11719,11 +11719,15 @@ static void few1n_joinTargetRoom(NSString *nm) {
                 if (l) lobby_leaveRoom(l);
             }
         }
-        int64_t delay = wasInRoom ? (int64_t)(0.35 * NSEC_PER_SEC) : (int64_t)(0.05 * NSEC_PER_SEC);
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, delay), dispatch_get_main_queue(), ^{
+        // v114.86: Photon LeaveRoom ASENKRON — sabit 0.35s cok kisa, JoinRoom master'a
+        // donmeden calisirsa reddediliyordu (oda degismiyor). Artik IsConnectedAndReady
+        // olana kadar bekleyip oyle giriyoruz. joinNow _rjDone ile TEK sefer calisir.
+        __block bool _rjDone = false;
+        void (^joinNow)(void) = ^{
+            if (_rjDone) return;
             void* ns = mkStr(nm);
             if (!ns) return;
-            
+            _rjDone = true;
             bool ok = false;
             // 1) Doğrudan JoinRoom dene
             if (pn_joinRoom) {
@@ -11797,7 +11801,19 @@ static void few1n_joinTargetRoom(NSString *nm) {
                 });
             }
             FLog(ok ? [NSString stringWithFormat:@"✓ '%@' odasına katılım başarılı!", nm] : [NSString stringWithFormat:@"❌ '%@' TÜM METODLAR fail (Photon sunucu MaxPlayers=full katı - 2sn sonra 1x retry gonderildi)", nm]);
-        });
+        };
+        // v114.86: HAZIR olana kadar artan gecikmelerle yokla. Ilk 'IsConnectedAndReady
+        // + odada degil' aninda gir; joinNow tek sefer calisir. Son deneme zorla dener.
+        NSArray *_rjDelays = @[@0.30, @0.6, @1.0, @1.6, @2.4, @3.4, @4.6, @6.0];
+        for (NSNumber *dN in _rjDelays) {
+            few1n_after(dN.doubleValue, ^{
+                if (_rjDone) return;
+                bool ready   = (!pn_getConnReady) || pn_getConnReady();   // pointer yoksa engelleme
+                bool stillIn = (pn_getInRoom && pn_getInRoom());
+                if (ready && !stillIn) joinNow();
+            });
+        }
+        few1n_after(7.0, ^{ if (!_rjDone) joinNow(); });   // son care: hazir olmasa da zorla
     } @catch (...) { FLog(@"Odaya katılma hatası"); }
 }
 
