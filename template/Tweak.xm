@@ -2600,21 +2600,33 @@ static void few1n_forceEnableKick(void) {
 // Eger A sunucu tarafinda reddedilirse client B sayesinde kendini master gorur (yerel isler calisir).
 static inline void few1n_claimMaster(void) {
     if (isMasterClaimDisabled) return;   // v70 klasik davranis: hicbir sey yapma
-    if (pn_getLocalPlayer && pn_getCurrentRoom) {
-        @try {
-            void* me = pn_getLocalPlayer();
-            void* room = pn_getCurrentRoom();
-            if (me && room) {
-                // A) Once server'a SetMasterClient gonder (CAS icin gercek eski master ID'si lazim)
-                if (pn_setMasterClient) {
-                    @try { pn_setMasterClient(me); } @catch (...) {}
-                }
-                // B) Client-side memory patch: ActorNumber = offset 0x18, MasterClientId = offset 0x48
-                int myActor = *(int*)((uintptr_t)me + OFFR_PLAYER_ACTORNUM);
-                *(int*)((uintptr_t)room + OFFR_ROOM_MASTERID) = myActor;
-            }
-        } @catch (...) {}
+    // v114.72: LOKAL SAHTE MASTER YAMASI KALDIRILDI (kullanici istegi). Eskiden
+    // room.MasterClientId'yi elle benim actor'ume yaziyordu -> master SADECE benim
+    // cihazimda "master" gorunuyordu, sunucu bilmiyordu. Bu yuzden (a) sahne
+    // senkronu gibi sunucu-tarafli isler yine reddediliyordu, (b) "gercek master
+    // miyim" kontrolu yaniltiliyordu. Artik SADECE gercek SetMasterClient(me).
+    if (pn_getLocalPlayer && pn_setMasterClient) {
+        @try { void* me = pn_getLocalPlayer(); if (me) pn_setMasterClient(me); } @catch (...) {}
     }
+}
+// v114.72: TEMIZ gercek master claim — lokal sahte yama YOK. Sadece sunucuya
+// SetMasterClient(me). Boylece few1n_amRealMaster sunucu-gercegini yansitir.
+static void few1n_sendRealSetMaster(void) {
+    if (!pn_getLocalPlayer || !pn_setMasterClient) return;
+    @try { void* me = pn_getLocalPlayer(); if (me) pn_setMasterClient(me); } @catch (...) {}
+}
+// Gercekten master miyim? room.MasterClientId (sunucu-set) == benim actor.
+// NOT: auto-master/claimMaster lokal yamasi bunu yaniltabilir; temiz test icin
+// once auto-master KAPALI olmali.
+static bool few1n_amRealMaster(void) {
+    if (!pn_getLocalPlayer || !pn_getCurrentRoom) return false;
+    @try {
+        void* me = pn_getLocalPlayer(); void* room = pn_getCurrentRoom();
+        if (!me || !room) return false;
+        int myActor  = *(int*)((uintptr_t)me   + OFFR_PLAYER_ACTORNUM);
+        int masterId = *(int*)((uintptr_t)room + OFFR_ROOM_MASTERID);
+        return myActor > 0 && myActor == masterId;
+    } @catch (...) { return false; }
 }
 // Forward declarations (tanimlari asagida; burada erken kullanimlar icin)
 static inline bool ptrOk(void* p);
@@ -5810,6 +5822,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)forceWinPick;            // v114.68
 - (void)copyCarPick;             // v114.69
 - (void)stealCarPick;            // v114.70
+- (void)becomeRealMasterMap;     // v114.72
 // v114.48: officialPlateEveryone (Resmi Plaka/goy) KALDIRILDI — oyunu cokertiyordu.
 - (void)instantWin;              // v114.42
 - (void)trafficStrike;           // v114.42
@@ -6420,6 +6433,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self toggle:@"🛡️  Anti-Kick" sub:@"Kicklenirsen odaya otomatik geri gir + master ol" key:@"antikick" atY:y action:@selector(tapAntiKick)];
     y = [self actionRow:@"⏱️  Oyun Hızı (TimeScale)" color:C_CYAN atY:y action:@selector(tapGameSpeed)];
     y = [self actionRow:@"👥  Fake Çevrimici Sayısı (Lobi Görseli)" color:C_CYAN atY:y action:@selector(tapFakeOnline)];
+    y = [self actionRow:@"👑  GERÇEK Master Ol (sunucu — harita için ÖNCE bas)" color:C_GOLD atY:y action:@selector(becomeRealMasterMap)];
     y = [self actionRow:@"🗺️  Odadayken Harita Değiştir (v233 minimal + master zorla)" color:C_ON atY:y action:@selector(changeMapInRoom)];
     // v114.61: 'Kişi Aracı Klonla' SILINDI (calismiyor)
     y = [self actionRow:@"🌤️  Hava Durumu & Zaman Seç (Aktarmasız Canlı)" color:C_ON atY:y action:@selector(changeWeatherOnly)];
@@ -12227,6 +12241,18 @@ static void few1n_joinTargetRoom(NSString *nm) {
             msg:(ok?[NSString stringWithFormat:@"%@ oyuncusunun aracı SENİN aracının klonu yapıldı (plaka+renk+jant+lastik). Diğer oyuncularda görünüyor mu kontrol et.", nick]
                    :@"Hedef/TuningManager bulunamadı ya da senin currentData boş (garajda tuning yapıp araca bin).")];
     }];
+}
+// 👑 GERÇEK master ol (sunucu) — başarılıysa harita değiştirme çalışır
+- (void)becomeRealMasterMap {
+    if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"👑 Gerçek Master" msg:@"Odada olmalısın (kendi odanda dene)."]; return; }
+    if (isAutoMasterEnabled) { [self simpleAlert:@"👑 Gerçek Master" msg:@"Önce 'Otomatik Master' toggle'ını KAPAT — o lokal yama testi yanıltıyor. Sonra tekrar bas."]; return; }
+    few1n_sendRealSetMaster();
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (few1n_amRealMaster())
+            [self simpleAlert:@"👑 Master oldun ✅" msg:@"Sunucu seni MASTER yaptı! Şimdi '🗺️ Odadayken Harita Değiştir'e bas — sahne senkronu master'a açık olduğu için artık çalışmalı."];
+        else
+            [self simpleAlert:@"👑 Master OLAMADIN ❌" msg:@"Sunucu master isteğini onaylamadı. Bu oda/oyun master almaya izin vermiyorsa harita DEĞİŞTİRİLEMEZ (client'tan aşılamaz — dürüst gerçek). Kendi kurduğun boş odada tekrar dene."];
+    });
 }
 // 🎭 Hedefin aracını KENDİNE klonla (onun arabası sende olsun)
 - (void)stealCarPick {
