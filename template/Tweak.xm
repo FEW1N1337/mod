@@ -3876,6 +3876,70 @@ static bool few1n_hijackPlateToTarget(int targetActor, NSString* text) {
     return true;
 }
 
+// v114.71: BASKASININ PLAKASINI DEGISTIR — NON-OWNER RPC ENJEKSIYONU (kullanici fikri).
+// eah KULLANMAZ (kayit yan etkisi yok -> senin garaj aracin bozulmaz, kendi plakana
+// dokunmaz). Zipla/firlat'i calistiran ayni non-owner RPC yolu:
+//   1) hedefin PlateTuner'ina benim plakami uygula (tuner state degisir, lokal)
+//   2) hedefin tuning'ini dzz() ile JSON'a serialize et (benim plakam dahil, arac
+//      onun kalir -> sadece-plaka)
+//   3) JSON -> byte[] (Encoding.UTF8.GetBytes)
+//   4) hedefin arac PhotonView'inde RPC("LoadTuners", All, [byte[]]) enjekte et ->
+//      tum client'lar (hedef + herkes) hedefin arabasina uygular = plaka herkeste.
+static bool few1n_setTargetPlateNonOwner(int targetActor, NSString* text) {
+    if (!text || text.length == 0 || !i_runtime_invoke || !i_class_get_method_from_name || !i_array_new || !mbp_getPhotonView) return false;
+    // 1) hedefin PlateTuner'ina plakami uygula
+    void* ptCls = few1n_classAnyImage("", "PlateTuner");
+    void* mApply = ptCls ? i_class_get_method_from_name(ptCls, "Apply", 2) : NULL;
+    void* tgtPT = few1n_plateTunerOfActor(targetActor);
+    if (!ptCls || !mApply || !ptrOk(tgtPT)) { FLog(@"HedefPlaka2: PlateTuner/Apply yok (hedef gorunur olmali)"); return false; }
+    void* euStr = mkStr(@"eu1"); void* txtStr = mkStr(text);
+    if (!euStr || !txtStr) return false;
+    @try { void* a[2] = { euStr, txtStr }; i_runtime_invoke(mApply, tgtPT, a, NULL); } @catch (...) { return false; }
+    // 2) hedefin tuning'ini serialize et (dzz -> JSON string)
+    void* tgtTM = few1n_tuningManagerOfActor(targetActor);
+    if (!ptrOk(tgtTM)) { FLog(@"HedefPlaka2: hedef TM yok"); return false; }
+    void* tmCls = few1n_classAnyImage("", "TuningManager");
+    void* mDzz = tmCls ? i_class_get_method_from_name(tmCls, "dzz", 0) : NULL;
+    if (!mDzz) { FLog(@"HedefPlaka2: dzz (serialize) yok"); return false; }
+    void* jsonStr = NULL;
+    @try { jsonStr = i_runtime_invoke(mDzz, tgtTM, NULL, NULL); } @catch (...) {}
+    if (!ptrOk(jsonStr)) { FLog(@"HedefPlaka2: serialize bos"); return false; }
+    // 3) JSON string -> byte[] (Encoding.UTF8.GetBytes)
+    void* encCls = few1n_classAnyImage("System.Text", "Encoding");
+    void* mUTF8 = encCls ? i_class_get_method_from_name(encCls, "get_UTF8", 0) : NULL;
+    void* mGetBytes = encCls ? i_class_get_method_from_name(encCls, "GetBytes", 1) : NULL;
+    if (!mUTF8 || !mGetBytes) { FLog(@"HedefPlaka2: UTF8.GetBytes yok"); return false; }
+    void* bytes = NULL;
+    @try {
+        void* utf8 = i_runtime_invoke(mUTF8, NULL, NULL, NULL);
+        if (!ptrOk(utf8)) return false;
+        void* ga[1] = { jsonStr };
+        bytes = i_runtime_invoke(mGetBytes, utf8, ga, NULL);
+    } @catch (...) {}
+    if (!ptrOk(bytes)) { FLog(@"HedefPlaka2: bytes olusmadi"); return false; }
+    // 4) hedefin view'inde RPC("LoadTuners", All, [bytes]) enjekte (non-owner)
+    void* carPV = NULL; @try { carPV = mbp_getPhotonView(tgtTM); } @catch (...) {}
+    if (!ptrOk(carPV)) { FLog(@"HedefPlaka2: hedef PV yok"); return false; }
+    void* objcls = few1n_classAnyImage("System", "Object");
+    void* pvcls  = few1n_classAnyImage("Photon.Pun", "PhotonView");
+    if (!pvcls) pvcls = few1n_classAnyImage("", "PhotonView");
+    if (!objcls || !pvcls) return false;
+    const char* prm[3] = { "String", "RpcTarget", "Object[]" };
+    void* mRPC = few1n_methodBySig(pvcls, "Void", prm, 3, 0);
+    if (!mRPC) { FLog(@"HedefPlaka2: PhotonView.RPC yok"); return false; }
+    @try {
+        void* arr = i_array_new(objcls, 1);
+        if (!ptrOk(arr)) return false;
+        *(void**)((uintptr_t)arr + 0x20) = bytes;   // object[0] = byte[] (referans, box yok)
+        void* nameStr = mkStr(@"LoadTuners");
+        int all = 0;   // RpcTarget.All
+        void* args[3] = { nameStr, &all, arr };
+        i_runtime_invoke(mRPC, carPV, args, NULL);
+        FLog([NSString stringWithFormat:@"🎭 HedefPlaka2: LoadTuners non-owner enjekte actor=%d '%@'", targetActor, text]);
+        return true;
+    } @catch (...) { FLog(@"HedefPlaka2: RPC injection exception"); return false; }
+}
+
 // ============================================================================
 // v114.66: OYUNCUYU HERKESTE ZIPLAT/FIRLAT — hedefin aracini yukari isinla (networked).
 // Ayni "baskasina etki" prensibi: hedefin PhotonView'inde bir [PunRPC] tetiklemek.
@@ -11948,9 +12012,9 @@ static void few1n_joinTargetRoom(NSString *nm) {
                 [pin addAction:[UIAlertAction actionWithTitle:@"Uygula & Yayınla" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a2){
                     NSString *t = pin.textFields.firstObject.text;
                     if (!t || t.length == 0) return;
-                    bool ok = few1n_hijackPlateToTarget(actor, t);
+                    bool ok = few1n_setTargetPlateNonOwner(actor, t);   // v114.71: non-owner LoadTuners (eah YOK)
                     UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Gönderildi" : @"⚠️ Olmadı")
-                        message:(ok ? @"Hedefin aracına plaka uygulandı ve yayınlandı. Diğer oyuncularda görünüyor mu kontrol et. (Deneysel — Photon reddedebilir ya da hedef tekrar tuning yapınca eski haline dönebilir.)"
+                        message:(ok ? @"Hedefin plakası non-owner RPC ile gönderildi (senin garaj aracın bozulmaz). Diğer oyuncularda görünüyor mu kontrol et. (Deneysel — hedef tekrar tuning yaparsa eski haline dönebilir.)"
                                     : @"Hedefin PlateTuner/TuningManager'ı bulunamadı. Hedef yarışta ve görünür olmalı (aracı spawn olmuş olmalı).")
                         preferredStyle:UIAlertControllerStyleAlert];
                     [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
