@@ -5824,6 +5824,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)stealCarPick;            // v114.70
 - (void)becomeRealMasterMap;     // v114.72
 - (void)mapMethodPick;           // v114.73 (eski Y1-Y8 yontem secici)
+- (void)mapListY5;               // v114.74 (Y5 calisan — isimli liste)
 // v114.48: officialPlateEveryone (Resmi Plaka/goy) KALDIRILDI — oyunu cokertiyordu.
 - (void)instantWin;              // v114.42
 - (void)trafficStrike;           // v114.42
@@ -6435,6 +6436,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"⏱️  Oyun Hızı (TimeScale)" color:C_CYAN atY:y action:@selector(tapGameSpeed)];
     y = [self actionRow:@"👥  Fake Çevrimici Sayısı (Lobi Görseli)" color:C_CYAN atY:y action:@selector(tapFakeOnline)];
     y = [self actionRow:@"👑  GERÇEK Master Ol (sunucu — harita için ÖNCE bas)" color:C_GOLD atY:y action:@selector(becomeRealMasterMap)];
+    y = [self actionRow:@"🗺️  HARİTA SEÇ (Liste — ÇALIŞAN Y5) ⭐" color:C_GOLD atY:y action:@selector(mapListY5)];
     y = [self actionRow:@"🗺️  Odadayken Harita Değiştir (v233 minimal + master zorla)" color:C_ON atY:y action:@selector(changeMapInRoom)];
     y = [self actionRow:@"🗺️  Harita Değiştir — YÖNTEM SEÇ (eski Y1-Y8, çalışanı bul)" color:C_GOLD atY:y action:@selector(mapMethodPick)];
     // v114.61: 'Kişi Aracı Klonla' SILINDI (calismiyor)
@@ -9970,6 +9972,42 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
     [ac addAction:[UIAlertAction actionWithTitle:@"Y6: MainMenuHandler.StartRace" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self mapMethod6]; }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"Y7: Unity LoadScene(isim) — YEREL" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self mapMethod7]; }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"Y8: Unity LoadScene(no) — YEREL" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self mapMethod8]; }]];
+    [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, 80, 1, 1); }
+    [self present:ac];
+}
+
+// v114.74: Y5 (LoadLevel int) LISTE — kullanici: Y5 calisiyor ama isimli secenek olsun.
+// Sahne INDEX'i ile calisir (build-settings sirasi). Modun bildigi eslesme.
+- (void)mapListY5 {
+    if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🗺️ Harita Seç (Y5)" msg:@"Odada olmalisin (kendi odanda + master iken)."]; return; }
+    if (!pn_loadLevelInt) { [self simpleAlert:@"🗺️ Harita Seç (Y5)" msg:@"LoadLevel(int) pointeri yok."]; return; }
+    NSArray *maps = @[
+        @{@"t":@"🏁 Yarış Pisti (Track)",   @"i":@0},
+        @{@"t":@"🏙️ Şehir (City)",          @"i":@1},
+        @{@"t":@"🛣️ Otoyol (Highway)",      @"i":@2},
+        @{@"t":@"🏜️ Çöl (Desert)",          @"i":@3},
+        @{@"t":@"⚓ Liman (Port)",           @"i":@4},
+        @{@"t":@"⛰️ Arazi (Offroad)",       @"i":@5},
+        @{@"t":@"🌲 Orman (Forest)",         @"i":@6},
+        @{@"t":@"🌙 Gece Şehri (City Night)",@"i":@7},
+    ];
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🗺️ Harita Seç (Y5 — çalışan)"
+        message:@"Seçtiğin harita herkese yüklenir. Yükleme birkaç saniye sürebilir (bağlanıyor ekranı normal)."
+        preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSDictionary *m in maps) {
+        int idx = [m[@"i"] intValue];
+        NSString *title = m[@"t"];
+        [ac addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+            few1n_claimMaster();
+            if (pn_setAutomaticallySyncScene) { @try { pn_setAutomaticallySyncScene(true); } @catch (...) {} }
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                @try { pn_loadLevelInt(idx); } @catch (...) {}
+                FLog([NSString stringWithFormat:@"🗺️ [Y5-liste] LoadLevel(%d) '%@' gonderildi", idx, title]);
+            });
+            [self simpleAlert:@"🗺️ Gönderildi" msg:[NSString stringWithFormat:@"%@ (#%d) yükleniyor. Bağlanıyor ekranı görürsen normal — birkaç saniye bekle.\nYanlış harita geldiyse söyle, numarayı düzeltirim.", title, idx]];
+        }]];
+    }
     [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
     if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, 80, 1, 1); }
     [self present:ac];
