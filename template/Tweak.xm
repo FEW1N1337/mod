@@ -6458,7 +6458,8 @@ static UIViewController* few1n_topVC(void) {
     y = [self toggle:@"🛡️  Anti-Kick" sub:@"Kicklenirsen odaya otomatik geri gir + master ol" key:@"antikick" atY:y action:@selector(tapAntiKick)];
     y = [self actionRow:@"⏱️  Oyun Hızı (TimeScale)" color:C_CYAN atY:y action:@selector(tapGameSpeed)];
     y = [self actionRow:@"👥  Fake Çevrimici Sayısı (Lobi Görseli)" color:C_CYAN atY:y action:@selector(tapFakeOnline)];
-    y = [self actionRow:@"🗺️  Harita Değiştir (Otoyol / Orman / Çöl... + hava)" color:C_GOLD atY:y action:@selector(changeMapInRoom)];
+    y = [self actionRow:@"🗺️  HARİTA DEĞİŞTİR (ÇALIŞAN — Y5 liste) ⭐" color:C_GOLD atY:y action:@selector(mapListY5)];   // v114.80: calisan yontem geri geldi
+    y = [self actionRow:@"🗺️  Harita Değiştir — Alternatif (gerçek adlar + hava)" color:C_ON atY:y action:@selector(changeMapInRoom)];
     y = [self actionRow:@"⏱️  Gir-Çık Süresi (harita değişince)" color:C_CYAN atY:y action:@selector(tapMapRejoinDelay)];   // v114.78
     // v114.61: 'Kişi Aracı Klonla' SILINDI (calismiyor)
     y = [self actionRow:@"🌤️  Hava Durumu & Zaman Seç (Aktarmasız Canlı)" color:C_ON atY:y action:@selector(changeWeatherOnly)];
@@ -10036,8 +10037,10 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
                 @try { pn_loadLevelInt(idx); } @catch (...) {}
                 FLog([NSString stringWithFormat:@"🗺️ [Y5-liste] LoadLevel(%d) '%@' gonderildi", idx, title]);
                 // v114.75: "baglaniyor"da takilmayi cozmek icin otomatik cik-gir (kullanici cozumu)
+                // v114.80: gecikme ayarlanabilir (Gir-Cik Suresi menusu)
                 if (rn.length > 0) {
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    double _rjDelay = (g_mapRejoinDelaySec > 0.05) ? g_mapRejoinDelaySec : 1.3;
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(_rjDelay*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                         @try { few1n_joinTargetRoom(rn); } @catch (...) {}
                     });
                 }
