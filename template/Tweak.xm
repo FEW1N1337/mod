@@ -2285,6 +2285,29 @@ static inline int few1n_rdI32(void* base, uintptr_t off, int def) {
     return *(int*)addr;
 }
 
+// v114.85: il2cpp metodunu SIGSEGV/SIGBUS GUARD altinda cagir. Bir oyun metodu
+// (orn. baska oyuncunun PlateTuner.Apply'i, RPC marshaling) ic dereference'te
+// segfault yaparsa Obj-C @try YAKALAMAZ (donanim sinyali) -> oyun coker. Bu
+// sarici sigsetjmp ile sinyali yakalar: cokme yerine NULL doner + *pCrashed=true.
+// NOT: longjmp native stack'i temiz unwind etmez (kilit/GC riski) ama "oyunu
+// cokertme" onceligi icin kabul edilebilir bir emniyet agi. Sadece kisa, tekil
+// "dene" cagrilarinda kullan — surekli tick'te DEGIL.
+static void* few1n_guardedInvoke(void* method, void* obj, void** args, bool* pCrashed) {
+    if (pCrashed) *pCrashed = false;
+    if (!method || !i_runtime_invoke) { if (pCrashed) *pCrashed = true; return NULL; }
+    void* ret = NULL;
+    int prev = few1n_inProtected;
+    few1n_inProtected = 1;
+    if (sigsetjmp(few1n_jmpBuf, 1) == 0) {
+        ret = i_runtime_invoke(method, obj, args, NULL);
+    } else {
+        if (pCrashed) *pCrashed = true;   // segfault yakalandi -> cokme onlendi
+        ret = NULL;
+    }
+    few1n_inProtected = prev;
+    return ret;
+}
+
 // Substrate calisiyor mu? Bagli sembol bos stub olabilir -> dlsym ile gercegini ara.
 typedef void (*MSHookFn)(void*, void*, void**);
 static MSHookFn g_msHook = NULL;
@@ -3926,7 +3949,11 @@ static bool few1n_setTargetPlateNonOwner(int targetActor, NSString* text) {
     if (!ptCls || !mApply || !ptrOk(tgtPT)) { FLog(@"HedefPlaka2: PlateTuner/Apply yok (hedef gorunur olmali)"); return false; }
     void* euStr = mkStr(@"eu1"); void* txtStr = mkStr(text);
     if (!euStr || !txtStr) return false;
-    @try { void* a[2] = { euStr, txtStr }; i_runtime_invoke(mApply, tgtPT, a, NULL); } @catch (...) { return false; }
+    // v114.85: Apply BASKA oyuncunun component'inde calisir -> ic null-deref segfault
+    // yapabilir. GUARD altinda cagir: cokme yerine temiz cikis.
+    { bool crashed=false; void* a[2] = { euStr, txtStr };
+      few1n_guardedInvoke(mApply, tgtPT, a, &crashed);
+      if (crashed) { FLog(@"HedefPlaka2: Apply segfault yakalandi -> iptal (cokme onlendi)"); return false; } }
     // 2) hedefin tuning'ini serialize et (dzz -> JSON string)
     void* tgtTM = few1n_tuningManagerOfActor(targetActor);
     if (!ptrOk(tgtTM)) { FLog(@"HedefPlaka2: hedef TM yok"); return false; }
@@ -3934,7 +3961,8 @@ static bool few1n_setTargetPlateNonOwner(int targetActor, NSString* text) {
     void* mDzz = tmCls ? i_class_get_method_from_name(tmCls, "dzz", 0) : NULL;
     if (!mDzz) { FLog(@"HedefPlaka2: dzz (serialize) yok"); return false; }
     void* jsonStr = NULL;
-    @try { jsonStr = i_runtime_invoke(mDzz, tgtTM, NULL, NULL); } @catch (...) {}
+    { bool crashed=false; jsonStr = few1n_guardedInvoke(mDzz, tgtTM, NULL, &crashed);
+      if (crashed) { FLog(@"HedefPlaka2: dzz segfault yakalandi -> iptal"); return false; } }
     if (!ptrOk(jsonStr)) { FLog(@"HedefPlaka2: serialize bos"); return false; }
     // 3) JSON string -> byte[] (Encoding.UTF8.GetBytes)
     void* encCls = few1n_classAnyImage("System.Text", "Encoding");
@@ -3966,7 +3994,10 @@ static bool few1n_setTargetPlateNonOwner(int targetActor, NSString* text) {
         void* nameStr = mkStr(@"LoadTuners");
         int all = 0;   // RpcTarget.All
         void* args[3] = { nameStr, &all, arr };
-        i_runtime_invoke(mRPC, carPV, args, NULL);
+        // v114.85: RPC marshaling + hedef view segfault yapabilir -> GUARD altinda
+        bool crashed=false;
+        few1n_guardedInvoke(mRPC, carPV, args, &crashed);
+        if (crashed) { FLog(@"HedefPlaka2: RPC segfault yakalandi -> iptal (cokme onlendi)"); return false; }
         FLog([NSString stringWithFormat:@"🎭 HedefPlaka2: LoadTuners non-owner enjekte actor=%d '%@'", targetActor, text]);
         return true;
     } @catch (...) { FLog(@"HedefPlaka2: RPC injection exception"); return false; }
