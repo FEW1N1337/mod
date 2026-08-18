@@ -3852,10 +3852,25 @@ static bool few1n_hijackPlateToTarget(int targetActor, NSString* text) {
     void* mEah = tmCls ? i_class_get_method_from_name(tmCls, "eah", 1) : NULL;
     void* mEad = tmCls ? i_class_get_method_from_name(tmCls, "ead", 0) : NULL;
     void* mEae = tmCls ? i_class_get_method_from_name(tmCls, "eae", 0) : NULL;
+    // v114.65 PLAN B: eah() `if(photonView.IsMine)` ile korunuyor. Hedefin view'inde
+    // IsMine=false oldugu icin v114.63'te yayin ATLANDI (plaka lokal kaldi). Cozum:
+    // PhotonView.<IsMine>k__BackingField (dump: 0x68 = g_isMineOff) GECICI 1 yapilir ->
+    // get_IsMine() bu alani okur -> true doner -> eah LoadTuners RPC'sini hedefin
+    // view'inden yayinlar -> herkes hedefin arabasinda benim plakami gorur. Sonra geri alinir.
+    void* tgtPV = NULL; unsigned char savedMine = 0; bool flipped = false;
+    if (mbp_getPhotonView && g_isMineOff > 0) {
+        @try { tgtPV = mbp_getPhotonView(tgtTM); } @catch (...) {}
+        if (ptrOk(tgtPV)) {
+            savedMine = *(unsigned char*)((uintptr_t)tgtPV + g_isMineOff);
+            *(unsigned char*)((uintptr_t)tgtPV + g_isMineOff) = 1;   // gecici "benim"
+            flipped = true;
+        }
+    }
     if (mEah) { @try { unsigned char t=1; void* a[1]={&t}; i_runtime_invoke(mEah, tgtTM, a, NULL); } @catch (...) {} }
     if (mEad) { @try { i_runtime_invoke(mEad, tgtTM, NULL, NULL); } @catch (...) {} }
     if (mEae) { @try { i_runtime_invoke(mEae, tgtTM, NULL, NULL); } @catch (...) {} }
-    FLog([NSString stringWithFormat:@"🎭 HedefPlaka: actor=%d arabasina '%@' plakasi uygulandi + yayinlandi", targetActor, text]);
+    if (flipped) *(unsigned char*)((uintptr_t)tgtPV + g_isMineOff) = savedMine;   // geri al
+    FLog([NSString stringWithFormat:@"🎭 HedefPlaka: actor=%d arabasina '%@' uygulandi + IsMine-flip yayin (flip=%d)", targetActor, text, flipped]);
     return true;
 }
 
