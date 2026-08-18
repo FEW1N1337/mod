@@ -10031,56 +10031,59 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
     [self simpleAlert:@"🗺️ Gönderildi" msg:[NSString stringWithFormat:@"%@ (#%d) uygulanıyor + otomatik ÇIK-GİR. Birkaç saniye bekle.\nYanlış/farklı harita geldiyse #numarayı ve gelen haritayı bana söyle, isimlendireyim.", title, idx]];
 }
 
-// Sahne INDEX'i ile calisir (build-settings sirasi). Modun bildigi eslesme.
-// v114.81: daha cok secenek + hava. Onayli 0-7 + kesif icin 8-19 + elle numara.
+// v114.82: Oyunun KENDI MapList'indeki TUM haritalari ORIJINAL isimleriyle listeler
+// (Turkce yok). Y5 DESTEKLI: yukleme calisan pn_loadLevelInt(index) yolu — dizi
+// pozisyonu index olarak gecer (isim sadece etiket). Isim<->index tutmazsa 'Elle
+// Numara' ile duzeltilir. MapList bos donerse onayli 8 build sahnesine duser.
 - (void)mapListY5 {
-    if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🗺️ Harita Seç (Y5)" msg:@"Odada olmalisin (kendi odanda + master iken)."]; return; }
-    if (!pn_loadLevelInt) { [self simpleAlert:@"🗺️ Harita Seç (Y5)" msg:@"LoadLevel(int) pointeri yok."]; return; }
-    // ONAYLI (test edilmis) index -> isim
-    NSArray *maps = @[
-        @{@"t":@"🏁 Yarış Pisti (Track)",   @"i":@0},
-        @{@"t":@"🏙️ Şehir (City)",          @"i":@1},
-        @{@"t":@"🛣️ Otoyol (Highway)",      @"i":@2},
-        @{@"t":@"🏜️ Çöl (Desert)",          @"i":@3},
-        @{@"t":@"⚓ Liman (Port)",           @"i":@4},
-        @{@"t":@"⛰️ Arazi (Offroad)",       @"i":@5},
-        @{@"t":@"🌲 Orman (Forest)",         @"i":@6},
-        @{@"t":@"🌙 Gece Şehri (City Night)",@"i":@7},
-    ];
-    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🗺️ Harita Seç (Y5 — çalışan)"
-        message:@"Onaylı haritalar + hava/gece için #8’den itibaren KEŞİF numaraları. Ne çıktığını bana söyle, isimlendireyim."
+    if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🗺️ Harita Seç" msg:@"Odada olmalisin (kendi odanda + master iken)."]; return; }
+    if (!pn_loadLevelInt) { [self simpleAlert:@"🗺️ Harita Seç" msg:@"LoadLevel(int) pointeri yok."]; return; }
+
+    NSArray<NSString*> *realMaps = few1n_readMapNames();   // oyunun gercek harita adlari (referenceName)
+
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🗺️ Harita Seç"
+        message:(realMaps.count > 0
+            ? [NSString stringWithFormat:@"Oyundaki %lu harita (orijinal isim, Y5 index). Yükleme birkaç saniye — otomatik çık-gir yapılır. Yanlış harita gelirse #numarayı söyle.", (unsigned long)realMaps.count]
+            : @"MapList okunamadı (oyuna tam gir). Onaylı build haritaları numara ile:")
         preferredStyle:UIAlertControllerStyleActionSheet];
-    for (NSDictionary *m in maps) {
-        int idx = [m[@"i"] intValue];
-        NSString *title = m[@"t"];
-        [ac addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@  (#%d)", title, idx] style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
-            [self y5LoadIndex:idx label:title];
-        }]];
+
+    if (realMaps.count > 0) {
+        // TUM haritalar — orijinal isimle, oyundaki sirada. Y5 (LoadLevel int) ile yuklenir.
+        int i = 0;
+        for (NSString *mapName in realMaps) {
+            int idx = i++;
+            NSString *cap = mapName;
+            [ac addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@  (#%d)", mapName, idx] style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+                [self y5LoadIndex:idx label:cap];
+            }]];
+        }
+    } else {
+        // Fallback: MapList init olmadi -> onayli 8 build sahnesi (LoadLevel int, calisan)
+        NSArray *maps = @[
+            @{@"t":@"Track", @"i":@0}, @{@"t":@"City", @"i":@1}, @{@"t":@"Highway", @"i":@2}, @{@"t":@"Desert", @"i":@3},
+            @{@"t":@"Port", @"i":@4}, @{@"t":@"Offroad", @"i":@5}, @{@"t":@"Forest", @"i":@6}, @{@"t":@"City Night", @"i":@7},
+        ];
+        for (NSDictionary *m in maps) {
+            int idx = [m[@"i"] intValue]; NSString *title = m[@"t"];
+            [ac addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@  (#%d)", title, idx] style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+                [self y5LoadIndex:idx label:title];
+            }]];
+        }
     }
-    // KESIF: 8-19 arasi index'ler — hava/gece/ek haritalar burada olabilir.
-    for (int idx = 8; idx <= 19; idx++) {
-        NSString *title = [NSString stringWithFormat:@"🌦️ Keşif Harita #%d (hava/gece? — dene)", idx];
-        int cap = idx;
-        [ac addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
-            [self y5LoadIndex:cap label:[NSString stringWithFormat:@"Keşif #%d", cap]];
-        }]];
-    }
-    // ELLE numara gir (istedigin herhangi bir index)
-    [ac addAction:[UIAlertAction actionWithTitle:@"🔢 Elle Numara Gir (herhangi bir #)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+
+    // ELLE numara gir — calisan LoadLevel(int) yolu (isim yolu tutmazsa yedek)
+    [ac addAction:[UIAlertAction actionWithTitle:@"🔢 Elle Numara ile Yükle (LoadLevel int)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
         UIAlertController *in = [UIAlertController alertControllerWithTitle:@"🔢 Harita Numarası"
-            message:@"Yüklemek istediğin sahne numarasını yaz (0-40):" preferredStyle:UIAlertControllerStyleAlert];
-        [in addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.keyboardType = UIKeyboardTypeNumberPad; tf.placeholder = @"Ornek: 9"; }];
+            message:@"Sahne numarasını yaz (0-60). İsimle değişmezse bu yol çalışır." preferredStyle:UIAlertControllerStyleAlert];
+        [in addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.keyboardType = UIKeyboardTypeNumberPad; tf.placeholder = @"Ornek: 2"; }];
         [in addAction:[UIAlertAction actionWithTitle:@"Yükle" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a2){
-            NSString *v = in.textFields.firstObject.text;
-            int idx = v.intValue;
+            int idx = in.textFields.firstObject.text.intValue;
             if (idx < 0 || idx > 60) { [self simpleAlert:@"🔢 Hatalı" msg:@"0-60 arası bir numara gir."]; return; }
             [self y5LoadIndex:idx label:[NSString stringWithFormat:@"Numara #%d", idx]];
         }]];
         [in addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
         [self present:in];
     }]];
-    // Hava durumu / zaman (mevcut haritada) — changeWeatherOnly'yi ac
-    [ac addAction:[UIAlertAction actionWithTitle:@"🌤️ Hava Durumu / Zaman (deneysel — addressable)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){ [self changeWeatherOnly]; }]];
     [ac addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
     if (ac.popoverPresentationController) { ac.popoverPresentationController.sourceView = self.panel; ac.popoverPresentationController.sourceRect = CGRectMake(self.panel.bounds.size.width/2, 80, 1, 1); }
     [self present:ac];
