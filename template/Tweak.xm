@@ -12,7 +12,11 @@
 #import <objc/runtime.h>
 
 // ============================================================
-//  v114.8 - FEW1N MOD MENU  (derlemeye hazir guncel surum)
+//  v114.9 - FEW1N MOD MENU  (derlemeye hazir guncel surum)
+//  v114.9 OFFSET RESYNC: TUM method offsetleri TAZE dump.cs'e gore yeniden cikarildi (89 offset).
+//  Eslesme yontemi: okunur eski dump ile YENI (obf) dump SINIF-BAZLI hizalandi (imza+sira dogrulamasi)
+//  + yerel modul-kaymasi capraz kontrolu (Photon +0xFE0, PlayerManager/SmoothSync -0xB68, CoreModule -0x1374,
+//  CAS +0x2F4C). Field offsetleri (password@0x50, roomInfo@0x58, passwordOnConnect@0x60) yeni dumpta DEGISMEDI.
 //  v114.6 FIX: i_class_from_name(NULL,...) -> few1n_classAnyImage. NULL image SIGSEGV yapip
 //  balata + motor olmez + emissive + trafik + /scan + /write ozelliklerini cokertiyordu. Duzeldi.
 //  v114.7 BALATA: RCCP_WheelGlow.dob(float) mekanizmasi makine kodunda dogrulandi (t=InverseLerp+gradient*curve).
@@ -28,23 +32,23 @@
 // ============================================================
 //  OFFSET TABLE (yeni Unity6 dump, dogrulandi)
 // ------------------------------------------------------------
-// Time.set_timeScale(float)                -> 0x6771918
-// PhotonNetwork.CloseConnection(Player)    -> 0x5938844
-// PhotonNetwork.set_NickName(string)       -> 0x5933940
-// ChatManager.get_Instance()               -> 0x31A6168
-// ChatManager.Send(string)                 -> 0x31A626C
-// CarNitro.get_nitroAmount() [obf: fda]    -> 0x54CFE14
-// CarNitro.set_nitroAmount(float)[obf: fdb]-> 0x54CFE1C
-// CarDriveSystem.Move(f,f,f,f) [obf: fca]  -> 0x54CCAA0
-// PlateVariant.Change(PlateHolder)[obf:gal]-> 0x54EA1FC   (c@0x0, t@0x8)
-// HR_UI_RoomListLine.Connect() [obf: elv]  -> 0x54B32F4   (password @ self+0x50)
-// HR_PhotonLobbyManager.get_Instance()[eke]-> 0x54A8098   (passwordInput@+0x50, passwordOnConnectInput@+0x60)
-// TMP_InputField.set_text(string)          -> 0x65F4CC8
-// PlayerManager.get_Instance() [obf: ggn]  -> 0x5A2DE20
-// PlayerManager.get_Money()    [obf: ggx]  -> 0x5A4346C
-// PlayerManager.AddMoney(int)  [obf: ghm]  -> 0x5A43A2C
-// PlayerManager.SyncWithServer()[obf: ghj] -> 0x5A2DF80
-// PlayerManager.UpdateNicknameInternal(str)[ghn] -> 0x5A3DDD4
+// Time.set_timeScale(float)                -> 0x67705A4
+// PhotonNetwork.CloseConnection(Player)    -> 0x5939824
+// PhotonNetwork.set_NickName(string)       -> 0x5934920
+// ChatManager.get_Instance()               -> 0x31A90B4
+// ChatManager.Send(string)                 -> 0x31A91B8
+// CarNitro.get_nitroAmount() [obf: fda]    -> 0x54CDDA0
+// CarNitro.set_nitroAmount(float)[obf: fdb]-> 0x54CDDA8
+// CarDriveSystem.Move(f,f,f,f) [obf: fca]  -> 0x54CAA2C
+// PlateVariant.Change(PlateHolder)[obf:gal]-> 0x54E8188   (c@0x0, t@0x8)
+// HR_UI_RoomListLine.Connect() [obf: elv]  -> 0x54B1088   (password @ self+0x50)
+// HR_PhotonLobbyManager.get_Instance()[eke]-> 0x54A5E2C   (passwordInput@+0x50, passwordOnConnectInput@+0x60)
+// TMP_InputField.set_text(string)          -> 0x65F36E4
+// PlayerManager.get_Instance() [obf: ggn]  -> 0x5A2D2B8
+// PlayerManager.get_Money()    [obf: ggx]  -> 0x5A42904
+// PlayerManager.AddMoney(int)  [obf: ghm]  -> 0x5A42EC4
+// PlayerManager.SyncWithServer()[obf: ghj] -> 0x5A2D418
+// PlayerManager.UpdateNicknameInternal(str)[ghn] -> 0x5A3D26C
 // ============================================================
 
 struct PlateHolder { void* c; void* t; };   // c@0x0, t@0x8
@@ -519,7 +523,7 @@ static size_t (*i_field_get_offset)(void*) = NULL;
 static void* g_fEnableCloseConn = NULL;                          // PhotonNetwork.EnableCloseConnection static field (kick acar) - init'te kullanildigi icin erken tanimli
 static void* g_lobbyDummyType = NULL;   // HR_PhotonLobbyManagerDummy tipi (init'te bulunur -> erken tanimli)
 static void* g_mDummyKick = NULL;       // HR_PhotonLobbyManagerDummy.KickPlayer() -> photonView.RPC("KickPlayerRPC", All, +0x108 ipg)
-static void* (*mbp_getPhotonView)(void*) = NULL;  // MonoBehaviourPun.get_photonView 0x594DB48 (dogru lobi instance'i secmek icin)
+static void* (*mbp_getPhotonView)(void*) = NULL;  // MonoBehaviourPun.get_photonView 0x594EB28 (dogru lobi instance'i secmek icin)
 static void* g_mmhClass   = NULL;   // HR_MainMenuHandler Il2CppClass*
 static void* g_mmhField   = NULL;   // 'iiz' static field
 static void* g_mSelectCar = NULL;
@@ -1250,7 +1254,7 @@ static void  (*chatSend)(void* self, void* msg) = NULL;
 static void  (*tmp_set_text)(void* self, void* msg) = NULL;
 static void* (*tmp_get_text)(void* self) = NULL;   // TMP_InputField.get_text
 // v84: TMP_Text.set_richText — oda listesinde renk tag'larinin render edilmesi icin
-static void  (*tmp_set_richText)(void* self, bool value) = NULL;   // 0x66017B8
+static void  (*tmp_set_richText)(void* self, bool value) = NULL;   // 0x6604D14
 static void* (*rinfo_getName)(void* self) = NULL;  // RoomInfo.get_Name (ham oda ismi)
 static void  (*pn_setNickName)(void* name) = NULL;
 static void* (*lobbyGetInst)(void) = NULL;
@@ -1262,42 +1266,42 @@ static void  (*pm_addMoney)(void* self, int amount) = NULL;
 static void  (*lobby_createRoom)(void* self) = NULL;   // HR_PhotonLobbyManager.CreateRoomButton
 static void  (*lobby_leaveRoom)(void* self) = NULL;    // HR_PhotonLobbyManager.LeaveRoom
 static bool  (*pn_createRoom)(void* name, void* opts, void* lobby, void* users) = NULL; // PhotonNetwork.CreateRoom
-static bool  (*pn_joinRoom)(void* name, void* users) = NULL;   // PhotonNetwork.JoinRoom 0x593A64C (goz at)
-static bool  (*pn_getInRoom)(void) = NULL;                     // PhotonNetwork.get_InRoom 0x5934FA4 (oda tespiti)
-static bool  (*pn_getConnReady)(void) = NULL;                  // PhotonNetwork.get_IsConnectedAndReady 0x59333A8 (oda kurma on-kosulu)
-static void* (*pn_getCurrentRoom)(void) = NULL;               // PhotonNetwork.get_CurrentRoom 0x592DA0C
-static void  (*room_setMaxPlayers)(void*, int) = NULL;        // Room.set_MaxPlayers 0x5927B70 (mevcut odayi buyut)
-static int   (*room_getMaxPlayers)(void*) = NULL;             // Room.get_MaxPlayers 0x5927B68
-static void  (*room_setIsOpen)(void*, bool) = NULL;           // Room.set_IsOpen 0x59279B0 (kilitli/acik)
-static void  (*room_setIsVisible)(void*, bool) = NULL;        // Room.set_IsVisible 0x5927A90 (gorunur/gorunmez)
-static bool  (*room_setCustomProperties)(void*, void*, void*, void*) = NULL;  // Room.SetCustomProperties 0x5916158 (sifre)
+static bool  (*pn_joinRoom)(void* name, void* users) = NULL;   // PhotonNetwork.JoinRoom 0x593B62C (goz at)
+static bool  (*pn_getInRoom)(void) = NULL;                     // PhotonNetwork.get_InRoom 0x5935F84 (oda tespiti)
+static bool  (*pn_getConnReady)(void) = NULL;                  // PhotonNetwork.get_IsConnectedAndReady 0x5934388 (oda kurma on-kosulu)
+static void* (*pn_getCurrentRoom)(void) = NULL;               // PhotonNetwork.get_CurrentRoom 0x592E9EC
+static void  (*room_setMaxPlayers)(void*, int) = NULL;        // Room.set_MaxPlayers 0x5928B50 (mevcut odayi buyut)
+static int   (*room_getMaxPlayers)(void*) = NULL;             // Room.get_MaxPlayers 0x5928B48
+static void  (*room_setIsOpen)(void*, bool) = NULL;           // Room.set_IsOpen 0x5928990 (kilitli/acik)
+static void  (*room_setIsVisible)(void*, bool) = NULL;        // Room.set_IsVisible 0x5928A70 (gorunur/gorunmez)
+static bool  (*room_setCustomProperties)(void*, void*, void*, void*) = NULL;  // Room.SetCustomProperties 0x5917138 (sifre)
 // oda durumu (kalici)
 static bool  isRoomLocked = false;
 static bool  isRoomInvisible = false;
 static char  roomPasswordText[64] = "";
 static void* g_fAutoSyncScene = NULL;   // PhotonNetwork.automaticallySyncScene static field (harita sync)
-static void* (*pn_getNickName)(void) = NULL;                   // PhotonNetwork.get_NickName 0x59338C0 (isim kaydet)
-static bool  (*pn_leaveRoom)(bool) = NULL;                     // PhotonNetwork.LeaveRoom 0x593B2D8 (goz at cikis)
+static void* (*pn_getNickName)(void) = NULL;                   // PhotonNetwork.get_NickName 0x59348A0 (isim kaydet)
+static bool  (*pn_leaveRoom)(bool) = NULL;                     // PhotonNetwork.LeaveRoom 0x593C2B8 (goz at cikis)
 static bool  (*pn_setMasterClient)(void* player) = NULL;       // PhotonNetwork.SetMasterClient
-static bool  (*room_getIsOpen)(void*) = NULL;                  // Room.get_IsOpen 0x59279A8
-static bool  (*room_getIsVisible)(void*) = NULL;               // Room.get_IsVisible 0x5927A88
+static bool  (*room_getIsOpen)(void*) = NULL;                  // Room.get_IsOpen 0x5928988
+static bool  (*room_getIsVisible)(void*) = NULL;               // Room.get_IsVisible 0x5928A68
 // NOT: room_setIsOpen ve room_setIsVisible yukarida (874-875) tanimli — burada tekrar tanimlama.
-static bool  (*pn_loadLevelStr)(void* name) = NULL;             // PhotonNetwork.LoadLevel(string) 0x5941D94
-static bool  (*pn_loadLevelInt)(int index) = NULL;              // PhotonNetwork.LoadLevel(int) 0x5941B64
-static void  (*hrMainStartRace)(void* self) = NULL;              // HR_MainMenuHandler.StartRace() 0x549130C
-static void  (*unity_LoadSceneStr)(void* name) = NULL;           // UnityEngine.SceneManager.LoadScene(string) 0x6781268
-static void  (*unity_LoadSceneInt)(int idx) = NULL;              // UnityEngine.SceneManager.LoadScene(int) 0x6781430
-static void* (*pn_getActiveSceneName)(void) = NULL;             // SceneManagerHelper.get_ActiveSceneName 0x59618B0
-static int   (*pn_getActiveSceneBuildIndex)(void) = NULL;        // SceneManagerHelper.get_ActiveSceneBuildIndex 0x5961920
+static bool  (*pn_loadLevelStr)(void* name) = NULL;             // PhotonNetwork.LoadLevel(string) 0x5942D74
+static bool  (*pn_loadLevelInt)(int index) = NULL;              // PhotonNetwork.LoadLevel(int) 0x5942B44
+static void  (*hrMainStartRace)(void* self) = NULL;              // HR_MainMenuHandler.StartRace() 0x548E898
+static void  (*unity_LoadSceneStr)(void* name) = NULL;           // UnityEngine.SceneManager.LoadScene(string) 0x677FEF4
+static void  (*unity_LoadSceneInt)(int idx) = NULL;              // UnityEngine.SceneManager.LoadScene(int) 0x67800BC
+static void* (*pn_getActiveSceneName)(void) = NULL;             // SceneManagerHelper.get_ActiveSceneName 0x5962890
+static int   (*pn_getActiveSceneBuildIndex)(void) = NULL;        // SceneManagerHelper.get_ActiveSceneBuildIndex 0x5962900
 // ==== ODADAKI OYUNCULAR (script.json dogrulandi) ====
-static void* (*pn_getPlayerList)(void) = NULL;      // PhotonNetwork.get_PlayerList -> Player[]  0x59339D0
-static void* (*pn_getPlayerListOthers)(void) = NULL; // PhotonNetwork.get_PlayerListOthers (kendisi haric) 0x5933B88
-static void* (*pn_getLocalPlayer)(void) = NULL;     // PhotonNetwork.get_LocalPlayer 0x5933814 (master miyim kontrolu)
-static void* (*ply_getNickName)(void*) = NULL;      // Player.get_NickName          0x5924574
-static int   (*ply_getActorNumber)(void*) = NULL;   // Player.get_ActorNumber       0x592455C
-static bool  (*ply_getIsMaster)(void*) = NULL;      // Player.get_IsMasterClient    0x5924640
-static void* (*ply_getUserId)(void*) = NULL;        // Player.get_UserId            0x5924630
-// HR_PhotonLobbyManager.EnableCarSelectionMenu() - oyun ici arac degistirme  0x54ABFD4
+static void* (*pn_getPlayerList)(void) = NULL;      // PhotonNetwork.get_PlayerList -> Player[]  0x59349B0
+static void* (*pn_getPlayerListOthers)(void) = NULL; // PhotonNetwork.get_PlayerListOthers (kendisi haric) 0x5934B68
+static void* (*pn_getLocalPlayer)(void) = NULL;     // PhotonNetwork.get_LocalPlayer 0x59347F4 (master miyim kontrolu)
+static void* (*ply_getNickName)(void*) = NULL;      // Player.get_NickName          0x5925554
+static int   (*ply_getActorNumber)(void*) = NULL;   // Player.get_ActorNumber       0x592553C
+static bool  (*ply_getIsMaster)(void*) = NULL;      // Player.get_IsMasterClient    0x5925620
+static void* (*ply_getUserId)(void*) = NULL;        // Player.get_UserId            0x5925610
+// HR_PhotonLobbyManager.EnableCarSelectionMenu() - oyun ici arac degistirme  0x54A9D68
 static void  (*lobby_carSelectMenu)(void*) = NULL;
 static void  (*pn_raiseEvent)(unsigned char, void*, bool, void*) = NULL;
 // ==== ARAC KONTROL PANELI (CarDriveSystem field offsetleri, il2cpp.h dogrulandi) ====
@@ -1364,7 +1368,7 @@ static void h_setTimeScale(float v) {
 // ===== ANTI-KICK & OYUNCU ATMA =====
 static bool g_isManualKick = false;
 static bool (*o_closeConnection)(void*) = NULL;
-static bool (*pn_closeConnection)(void*) = NULL;   // PhotonNetwork.CloseConnection DIREKT (hook olmadan) 0x5938844
+static bool (*pn_closeConnection)(void*) = NULL;   // PhotonNetwork.CloseConnection DIREKT (hook olmadan) 0x5939824
 static bool h_closeConnection(void* kickPlayer) {
     fConn++;
     if (g_isManualKick) return o_closeConnection ? o_closeConnection(kickPlayer) : false;
@@ -2264,7 +2268,7 @@ static void few1n_applySelektor(void) {
 
 // ===== GERCEK COZUM: CarPlayerInput.FixedUpdate (SADECE YEREL OYUNCU) =====
 // script.json + il2cpp.h ile dogrulandi:
-//   CarPlayerInput$$FixedUpdate = RVA 0x54D0BC0  (88935360)
+//   CarPlayerInput$$FixedUpdate = RVA 0x54CEB4C  (88935360)
 //   CarPlayerInput_Fields: +0x20 jhr=CarDriveSystem*, +0x28 jhs=CarNitro*
 //   CarDriveSystem_Fields: +0x48 _jfu_k__BackingField = UnityEngine.Rigidbody*
 // NOT: CarDriveSystem'de Update/FixedUpdate YOK -> eski hooklar bu yuzden hic tetiklenmedi.
@@ -3003,11 +3007,11 @@ static int g_lastRoomLineFrame = 0;
 static void(*lobbySetScene)(void*, void*) = NULL;
 static void(*pn_setAutomaticallySyncScene)(bool) = NULL;
 static void(*unity_loadSceneStr)(void*) = NULL;
-static void* (*mapList_getInstance)(void) = NULL;   // MapList.ely() -> MapList instance (0x54B3630)
-static void(*photonMgrEnp)(void*, bool) = NULL;     // PhotonManager.enp(string, bool) - static sahne yukleyici (0x54B5260)
-static void(*mapSel_selectMap)(void*, void*) = NULL; // MapSelection.SelectMap(string) - (0x54B389C)
-static void(*lobbyStartGame)(void*) = NULL;          // HR_PhotonLobbyManager.StartGameButton() - (0x54A93B0)
-static void(*lobbyDummyStartGame)(void*) = NULL;     // HR_PhotonLobbyManagerDummy.StartGameButton() - (0x54AF76C)
+static void* (*mapList_getInstance)(void) = NULL;   // MapList.ely() -> MapList instance (0x54E8F58)
+static void(*photonMgrEnp)(void*, bool) = NULL;     // PhotonManager.enp(string, bool) - static sahne yukleyici (0x54B2DE0)
+static void(*mapSel_selectMap)(void*, void*) = NULL; // MapSelection.SelectMap(string) - (0x54B1414)
+static void(*lobbyStartGame)(void*) = NULL;          // HR_PhotonLobbyManager.StartGameButton() - (0x54A7144)
+static void(*lobbyDummyStartGame)(void*) = NULL;     // HR_PhotonLobbyManagerDummy.StartGameButton() - (0x54AD500)
 
 // ===== AUTO MASTER HOOK =====
 static bool isAutoMasterEnabled = false;
@@ -10239,105 +10243,105 @@ static void InstallEverything(uintptr_t b) {
     FLog([NSString stringWithFormat:@"Base bulundu: 0x%lX", (unsigned long)b]);
     few1n_initIl2cpp();
 
-    chatGetInst               = (void*(*)(void))(b + 0x31A6168);
-    chatSend                  = (void(*)(void*,void*))(b + 0x31A626C);
-    tmp_set_text              = (void(*)(void*,void*))(b + 0x65F4CC8);
-    tmp_get_text              = (void*(*)(void*))(b + 0x65F4CC0);
-    tmp_set_richText          = (void(*)(void*,bool))(b + 0x66017B8);   // v84: renk tag'lari render
-    rinfo_getName             = (void*(*)(void*))(b + 0x59293A4);   // RoomInfo.get_Name
-    pn_setNickName            = (void(*)(void*))(b + 0x5933940);
-    pn_joinRoom               = (bool(*)(void*,void*))(b + 0x593A64C);
-    pn_getInRoom              = (bool(*)(void))(b + 0x5934FA4);   // oda tespiti (otomatik karsilama)
-    pn_getConnReady           = (bool(*)(void))(b + 0x59333A8);   // oda kurma on-kosulu (bagli+hazir)
-    mbp_getPhotonView         = (void*(*)(void*))(b + 0x594DB48);  // dogru lobi instance secimi (kick RPC)
-    pn_getCurrentRoom         = (void*(*)(void))(b + 0x592DA0C);   // mevcut oda
-    room_setMaxPlayers        = (void(*)(void*,int))(b + 0x5927B70); // odayi buyut
-    room_getMaxPlayers        = (int(*)(void*))(b + 0x5927B68);
-    room_setIsOpen            = (void(*)(void*,bool))(b + 0x59279B0);  // kilit
-    room_setIsVisible         = (void(*)(void*,bool))(b + 0x5927A90);  // gizli
-    room_setCustomProperties  = (bool(*)(void*,void*,void*,void*))(b + 0x5916158); // sifre
-    pn_getNickName            = (void*(*)(void))(b + 0x59338C0);
-    pn_leaveRoom              = (bool(*)(bool))(b + 0x593B2D8);
-    pn_closeConnection        = (bool(*)(void*))(b + 0x5938844);   // kick direkt (hook olmadan)
-    lobbyGetInst              = (void*(*)(void))(b + 0x54A8098);
-    playerManagerGetInst      = (void*(*)(void))(b + 0x5A2DE20);
-    pm_updateNicknameInternal = (void(*)(void*,void*))(b + 0x5A3DDD4);
-    pm_getMoney               = (int(*)(void*))(b + 0x5A4346C);
-    pm_syncWithServer         = (void(*)(void*))(b + 0x5A2DF80);
-    pm_addMoney               = (void(*)(void*,int))(b + 0x5A43A2C);
-    ts_get                    = (float(*)(void))(b + 0x67718D8);
-    rb_getVel                 = (void(*)(void*,Vec3*))(b + 0x6837B7C);
-    rb_setVel                 = (void(*)(void*,Vec3*))(b + 0x6837C88);
-    rb_getPos                 = (void(*)(void*,Vec3*))(b + 0x6838E24);   // get_position_Injected
-    rb_setPos                 = (void(*)(void*,Vec3*))(b + 0x6838F30);   // set_position_Injected
-    lobby_createRoom          = (void(*)(void*))(b + 0x54A94A4);
-    lobby_leaveRoom           = (void(*)(void*))(b + 0x54A9F1C);
-    pn_createRoom             = (bool(*)(void*,void*,void*,void*))(b + 0x5939B4C);
-    pn_joinOrCreateRoom       = (bool(*)(void*,void*,void*,void*))(b + 0x593A05C);   // YENİ: Dolu odalara katılma bypass
-    pn_setMasterClient        = (bool(*)(void*))(b + 0x5938B3C);   // YENI: Oda master alma
-    pn_loadLevelStr           = (bool(*)(void*))(b + 0x5941D94);   // YENI: Harita yukleme (string)
-    pn_loadLevelInt           = (bool(*)(int))(b + 0x5941B64);     // YENI: Harita yukleme (int)
-    hrMainStartRace           = (void(*)(void*))(b + 0x549130C);   // HR_MainMenuHandler.StartRace()
-    unity_LoadSceneStr        = (void(*)(void*))(b + 0x6781268);   // UnityEngine.SceneManager.LoadScene(string)
-    unity_LoadSceneInt        = (void(*)(int))(b + 0x6781430);     // UnityEngine.SceneManager.LoadScene(int)
-    pn_getActiveSceneName       = (void*(*)(void))(b + 0x59618B0); // YENI: Aktif sahne adi
-    pn_getActiveSceneBuildIndex = (int(*)(void))(b + 0x5961920);   // YENI: Aktif sahne indeksi
-    pn_getPlayerList          = (void*(*)(void))(b + 0x59339D0);
-    pn_getPlayerListOthers    = (void*(*)(void))(b + 0x5933B88);
-    pn_getLocalPlayer         = (void*(*)(void))(b + 0x5933814);   // master miyim kontrolu
-    ply_getNickName           = (void*(*)(void*))(b + 0x5924574);
-    ply_getActorNumber        = (int(*)(void*))(b + 0x592455C);
-    ply_getIsMaster           = (bool(*)(void*))(b + 0x5924640);
-    ply_getUserId             = (void*(*)(void*))(b + 0x5924630);
-    lobby_carSelectMenu       = (void(*)(void*))(b + 0x54ABFD4);
-    cps_TeleportCar_RPC       = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A49AE0);
-    rbps_TeleportCar_RPC      = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A4C494);
-    hrph_TeleportPlayerRPC    = (void(*)(void*,Vec3,void*))(b + 0x54A6F00);
-    ssrcc_RpcTeleport         = (void(*)(void*,Vec3,Vec3,Vec3,float,void*))(b + 0x5A5B788);
-    pn_setAutomaticallySyncScene = (void(*)(bool))(b + 0x5934408);     // PhotonNetwork.AutomaticallySyncScene = true
-    unity_loadSceneStr           = (void(*)(void*))(b + 0x6781268);    // UnityEngine.SceneManagement.SceneManager.LoadScene(string)
-    lobbySetScene                = (void(*)(void*,void*))(b + 0x54ABFFC);    // HR_PhotonLobbyManager.SetScene(string)
-    mapList_getInstance          = (void*(*)(void))(b + 0x54B3630);          // MapList.ely() -> instance
-    photonMgrEnp                 = (void(*)(void*,bool))(b + 0x54B5260);     // PhotonManager.enp(string, bool)
-    mapSel_selectMap             = (void(*)(void*,void*))(b + 0x54B389C);    // MapSelection.SelectMap(string)
-    lobbyStartGame               = (void(*)(void*))(b + 0x54A93B0);          // HR_PhotonLobbyManager.StartGameButton()
-    lobbyDummyStartGame          = (void(*)(void*))(b + 0x54AF76C);          // HR_PhotonLobbyManagerDummy.StartGameButton()
-    room_getIsOpen               = (bool(*)(void*))(b + 0x59279A8);           // Room.get_IsOpen
-    room_setIsOpen               = (void(*)(void*,bool))(b + 0x59279B0);      // Room.set_IsOpen (kilitle/ac)
-    room_getIsVisible            = (bool(*)(void*))(b + 0x5927A88);           // Room.get_IsVisible
-    room_setIsVisible            = (void(*)(void*,bool))(b + 0x5927A90);      // Room.set_IsVisible (gizle/goster)
-    pn_raiseEvent           = (void(*)(unsigned char,void*,bool,void*))(b + 0x593C000); // PhotonNetwork.RaiseEvent (dump.cs'den dogrula)
+    chatGetInst               = (void*(*)(void))(b + 0x31A90B4);
+    chatSend                  = (void(*)(void*,void*))(b + 0x31A91B8);
+    tmp_set_text              = (void(*)(void*,void*))(b + 0x65F36E4);
+    tmp_get_text              = (void*(*)(void*))(b + 0x65F36DC);
+    tmp_set_richText          = (void(*)(void*,bool))(b + 0x6604D14);   // v84: renk tag'lari render
+    rinfo_getName             = (void*(*)(void*))(b + 0x592A384);   // RoomInfo.get_Name
+    pn_setNickName            = (void(*)(void*))(b + 0x5934920);
+    pn_joinRoom               = (bool(*)(void*,void*))(b + 0x593B62C);
+    pn_getInRoom              = (bool(*)(void))(b + 0x5935F84);   // oda tespiti (otomatik karsilama)
+    pn_getConnReady           = (bool(*)(void))(b + 0x5934388);   // oda kurma on-kosulu (bagli+hazir)
+    mbp_getPhotonView         = (void*(*)(void*))(b + 0x594EB28);  // dogru lobi instance secimi (kick RPC)
+    pn_getCurrentRoom         = (void*(*)(void))(b + 0x592E9EC);   // mevcut oda
+    room_setMaxPlayers        = (void(*)(void*,int))(b + 0x5928B50); // odayi buyut
+    room_getMaxPlayers        = (int(*)(void*))(b + 0x5928B48);
+    room_setIsOpen            = (void(*)(void*,bool))(b + 0x5928990);  // kilit
+    room_setIsVisible         = (void(*)(void*,bool))(b + 0x5928A70);  // gizli
+    room_setCustomProperties  = (bool(*)(void*,void*,void*,void*))(b + 0x5917138); // sifre
+    pn_getNickName            = (void*(*)(void))(b + 0x59348A0);
+    pn_leaveRoom              = (bool(*)(bool))(b + 0x593C2B8);
+    pn_closeConnection        = (bool(*)(void*))(b + 0x5939824);   // kick direkt (hook olmadan)
+    lobbyGetInst              = (void*(*)(void))(b + 0x54A5E2C);
+    playerManagerGetInst      = (void*(*)(void))(b + 0x5A2D2B8);
+    pm_updateNicknameInternal = (void(*)(void*,void*))(b + 0x5A3D26C);
+    pm_getMoney               = (int(*)(void*))(b + 0x5A42904);
+    pm_syncWithServer         = (void(*)(void*))(b + 0x5A2D418);
+    pm_addMoney               = (void(*)(void*,int))(b + 0x5A42EC4);
+    ts_get                    = (float(*)(void))(b + 0x6770564);
+    rb_getVel                 = (void(*)(void*,Vec3*))(b + 0x683699C);
+    rb_setVel                 = (void(*)(void*,Vec3*))(b + 0x6836AA8);
+    rb_getPos                 = (void(*)(void*,Vec3*))(b + 0x6837C44);   // get_position_Injected
+    rb_setPos                 = (void(*)(void*,Vec3*))(b + 0x6837D50);   // set_position_Injected
+    lobby_createRoom          = (void(*)(void*))(b + 0x54A7238);
+    lobby_leaveRoom           = (void(*)(void*))(b + 0x54A7CB0);
+    pn_createRoom             = (bool(*)(void*,void*,void*,void*))(b + 0x593AB2C);
+    pn_joinOrCreateRoom       = (bool(*)(void*,void*,void*,void*))(b + 0x593B03C);   // YENİ: Dolu odalara katılma bypass
+    pn_setMasterClient        = (bool(*)(void*))(b + 0x5939B1C);   // YENI: Oda master alma
+    pn_loadLevelStr           = (bool(*)(void*))(b + 0x5942D74);   // YENI: Harita yukleme (string)
+    pn_loadLevelInt           = (bool(*)(int))(b + 0x5942B44);     // YENI: Harita yukleme (int)
+    hrMainStartRace           = (void(*)(void*))(b + 0x548E898);   // HR_MainMenuHandler.StartRace()
+    unity_LoadSceneStr        = (void(*)(void*))(b + 0x677FEF4);   // UnityEngine.SceneManager.LoadScene(string)
+    unity_LoadSceneInt        = (void(*)(int))(b + 0x67800BC);     // UnityEngine.SceneManager.LoadScene(int)
+    pn_getActiveSceneName       = (void*(*)(void))(b + 0x5962890); // YENI: Aktif sahne adi
+    pn_getActiveSceneBuildIndex = (int(*)(void))(b + 0x5962900);   // YENI: Aktif sahne indeksi
+    pn_getPlayerList          = (void*(*)(void))(b + 0x59349B0);
+    pn_getPlayerListOthers    = (void*(*)(void))(b + 0x5934B68);
+    pn_getLocalPlayer         = (void*(*)(void))(b + 0x59347F4);   // master miyim kontrolu
+    ply_getNickName           = (void*(*)(void*))(b + 0x5925554);
+    ply_getActorNumber        = (int(*)(void*))(b + 0x592553C);
+    ply_getIsMaster           = (bool(*)(void*))(b + 0x5925620);
+    ply_getUserId             = (void*(*)(void*))(b + 0x5925610);
+    lobby_carSelectMenu       = (void(*)(void*))(b + 0x54A9D68);
+    cps_TeleportCar_RPC       = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A48F78);
+    rbps_TeleportCar_RPC      = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A4C42C);
+    hrph_TeleportPlayerRPC    = (void(*)(void*,Vec3,void*))(b + 0x54A5014);
+    ssrcc_RpcTeleport         = (void(*)(void*,Vec3,Vec3,Vec3,float,void*))(b + 0x5A5B810);
+    pn_setAutomaticallySyncScene = (void(*)(bool))(b + 0x59353E8);     // PhotonNetwork.AutomaticallySyncScene = true
+    unity_loadSceneStr           = (void(*)(void*))(b + 0x677FEF4);    // UnityEngine.SceneManagement.SceneManager.LoadScene(string)
+    lobbySetScene                = (void(*)(void*,void*))(b + 0x54A9D90);    // HR_PhotonLobbyManager.SetScene(string)
+    mapList_getInstance          = (void*(*)(void))(b + 0x54E8F58);          // MapList.ely() -> instance
+    photonMgrEnp                 = (void(*)(void*,bool))(b + 0x54B2DE0);     // PhotonManager.enp(string, bool)
+    mapSel_selectMap             = (void(*)(void*,void*))(b + 0x54B1414);    // MapSelection.SelectMap(string)
+    lobbyStartGame               = (void(*)(void*))(b + 0x54A7144);          // HR_PhotonLobbyManager.StartGameButton()
+    lobbyDummyStartGame          = (void(*)(void*))(b + 0x54AD500);          // HR_PhotonLobbyManagerDummy.StartGameButton()
+    room_getIsOpen               = (bool(*)(void*))(b + 0x5928988);           // Room.get_IsOpen
+    room_setIsOpen               = (void(*)(void*,bool))(b + 0x5928990);      // Room.set_IsOpen (kilitle/ac)
+    room_getIsVisible            = (bool(*)(void*))(b + 0x5928A68);           // Room.get_IsVisible
+    room_setIsVisible            = (void(*)(void*,bool))(b + 0x5928A70);      // Room.set_IsVisible (gizle/goster)
+    pn_raiseEvent           = (void(*)(unsigned char,void*,bool,void*))(b + 0x593CFE0); // PhotonNetwork.RaiseEvent (dump.cs'den dogrula)
 
-    safeHook((void*)(b + 0x54AA35C), (void*)h_onRoomListUpdate,(void**)&o_onRoomListUpdate,"HR_PhotonLobbyManager.OnRoomListUpdate");
-    safeHook((void*)(b + 0x54A9BF4), (void*)h_onMasterClientSwitched,(void**)&o_onMasterClientSwitched,"HR_PhotonLobbyManager.OnMasterClientSwitched");
-    safeHook((void*)(b + 0x6771918), (void*)h_setTimeScale,  (void**)&o_setTimeScale,     "set_timeScale");
-    safeHook((void*)(b + 0x5938844), (void*)h_closeConnection,(void**)&o_closeConnection, "CloseConnection");
-    safeHook((void*)(b + 0x54CFE14), (void*)h_getNitro,       (void**)&o_getNitro,        "get_nitroAmount");
-    safeHook((void*)(b + 0x54CFE1C), (void*)h_setNitro,       (void**)&o_setNitro,        "set_nitroAmount");
-    safeHook((void*)(b + 0x54CCAA0), (void*)h_driveMove,      (void**)&o_driveMove,       "CarDriveSystem.Move");
-    safeHook((void*)(b + 0x54D0BC0), (void*)h_playerInputFixed,(void**)&o_playerInputFixed,"CarPlayerInput.FixedUpdate *ANA*");
-    safeHook((void*)(b + 0x59C4BCC), (void*)h_rccpUpdate,     (void**)&o_rccpUpdate,      "RCCP.Update(rb yakala)");
+    safeHook((void*)(b + 0x54A80F0), (void*)h_onRoomListUpdate,(void**)&o_onRoomListUpdate,"HR_PhotonLobbyManager.OnRoomListUpdate");
+    safeHook((void*)(b + 0x54A7988), (void*)h_onMasterClientSwitched,(void**)&o_onMasterClientSwitched,"HR_PhotonLobbyManager.OnMasterClientSwitched");
+    safeHook((void*)(b + 0x67705A4), (void*)h_setTimeScale,  (void**)&o_setTimeScale,     "set_timeScale");
+    safeHook((void*)(b + 0x5939824), (void*)h_closeConnection,(void**)&o_closeConnection, "CloseConnection");
+    safeHook((void*)(b + 0x54CDDA0), (void*)h_getNitro,       (void**)&o_getNitro,        "get_nitroAmount");
+    safeHook((void*)(b + 0x54CDDA8), (void*)h_setNitro,       (void**)&o_setNitro,        "set_nitroAmount");
+    safeHook((void*)(b + 0x54CAA2C), (void*)h_driveMove,      (void**)&o_driveMove,       "CarDriveSystem.Move");
+    safeHook((void*)(b + 0x54CEB4C), (void*)h_playerInputFixed,(void**)&o_playerInputFixed,"CarPlayerInput.FixedUpdate *ANA*");
+    safeHook((void*)(b + 0x59C4048), (void*)h_rccpUpdate,     (void**)&o_rccpUpdate,      "RCCP.Update(rb yakala)");
     // v92: RCCP_Damage.Update hook KALDIRILDI (dokunmatik bug sebep)
-    safeHook((void*)(b + 0x5A57390), (void*)h_smRCC,          (void**)&o_smRCC,           "SmoothSyncRCC.Update(rb!)");
-    safeHook((void*)(b + 0x5A4F72C), (void*)h_smPUN,          (void**)&o_smPUN,           "SmoothSyncPUN2.Update");
-    safeHook((void*)(b + 0x54EA1FC), (void*)h_plateChange,    (void**)&o_plateChange,     "PlateVariant.Change");
-    safeHook((void*)(b + 0x31A626C), (void*)h_chatSend,       (void**)&o_chatSend,        "ChatManager.Send");
-    safeHook((void*)(b + 0x31A6208), (void*)h_chatFup,        (void**)&o_chatFup,         "ChatManager.fup (gelen chat)");
-    safeHook((void*)(b + 0x65F4CC8), (void*)h_tmpSetText,     (void**)&o_tmpSetText,      "TMPro.TMP_Text.set_text(richtext)");
-    safeHook((void*)(b + 0x54B32F4), (void*)h_roomConnect,    (void**)&o_roomConnect,     "RoomListLine.Connect");
-    safeHook((void*)(b + 0x54B33E0), (void*)h_roomLineSetup,  (void**)&o_roomLineSetup,   "RoomListLine.Setup(richtext)");
-    safeHook((void*)(b + 0x54A9A30), (void*)h_onCreateFail,   (void**)&o_onCreateFail,    "OnCreateRoomFailed(teshis)");
-    safeHook((void*)(b + 0x54A9498), (void*)h_onJoinFail,     (void**)&o_onJoinFail,      "OnJoinRoomFailed(teshis)");
-    safeHook((void*)(b + 0x54A94A4), (void*)h_createRoomBtn,  (void**)&o_createRoomBtn,   "CreateRoomButton(richtext)");
-    safeHook((void*)(b + 0x5A43A2C), (void*)h_addMoney,       (void**)&o_addMoney,        "PlayerManager.AddMoney");
-    safeHook((void*)(b + 0x3211FC0), (void*)h_casShowAd,        (void**)&o_casShowAd,        "CAS_CASManagerBase.ShowAd");
-    safeHook((void*)(b + 0x3217B18), (void*)h_casClientShowAd,  (void**)&o_casClientShowAd,  "CAS_iOS_CASManagerClient.ShowAd");
-    safeHook((void*)(b + 0x3217AF0), (void*)h_casIsReadyAd,     (void**)&o_casIsReadyAd,     "CAS_iOS_CASManagerClient.IsReadyAd");
-    safeHook((void*)(b + 0x32160C8), (void*)h_casExternsShowAd, (void**)&o_casExternsShowAd, "CAS_iOS_CASExterns.CASUShowAd");
-    safeHook((void*)(b + 0x31A3E38), (void*)h_casAdCount,       (void**)&o_casAdCount,       "CASAd_AdIntervalCounter.Count");
-    safeHook((void*)(b + 0x31A4508), (void*)h_casInterGin,      (void**)&o_casInterGin,      "CASAd_InterstitialAd.gin");
-    safeHook((void*)(b + 0x31A4514), (void*)h_casInterGio,      (void**)&o_casInterGio,      "CASAd_InterstitialAd.gio");
-    safeHook((void*)(b + 0x31A4BE4), (void*)h_casRewardPresent, (void**)&o_casRewardPresent, "CASAd_RewardedAd.Present");
+    safeHook((void*)(b + 0x5A56828), (void*)h_smRCC,          (void**)&o_smRCC,           "SmoothSyncRCC.Update(rb!)");
+    safeHook((void*)(b + 0x5A4EBC4), (void*)h_smPUN,          (void**)&o_smPUN,           "SmoothSyncPUN2.Update");
+    safeHook((void*)(b + 0x54E8188), (void*)h_plateChange,    (void**)&o_plateChange,     "PlateVariant.Change");
+    safeHook((void*)(b + 0x31A91B8), (void*)h_chatSend,       (void**)&o_chatSend,        "ChatManager.Send");
+    safeHook((void*)(b + 0x31A9304), (void*)h_chatFup,        (void**)&o_chatFup,         "ChatManager.fup (gelen chat)");
+    safeHook((void*)(b + 0x65F36E4), (void*)h_tmpSetText,     (void**)&o_tmpSetText,      "TMPro.TMP_Text.set_text(richtext)");
+    safeHook((void*)(b + 0x54B1088), (void*)h_roomConnect,    (void**)&o_roomConnect,     "RoomListLine.Connect");
+    safeHook((void*)(b + 0x54B1174), (void*)h_roomLineSetup,  (void**)&o_roomLineSetup,   "RoomListLine.Setup(richtext)");
+    safeHook((void*)(b + 0x54A77C4), (void*)h_onCreateFail,   (void**)&o_onCreateFail,    "OnCreateRoomFailed(teshis)");
+    safeHook((void*)(b + 0x54A722C), (void*)h_onJoinFail,     (void**)&o_onJoinFail,      "OnJoinRoomFailed(teshis)");
+    safeHook((void*)(b + 0x54A7238), (void*)h_createRoomBtn,  (void**)&o_createRoomBtn,   "CreateRoomButton(richtext)");
+    safeHook((void*)(b + 0x5A42EC4), (void*)h_addMoney,       (void**)&o_addMoney,        "PlayerManager.AddMoney");
+    safeHook((void*)(b + 0x3214F0C), (void*)h_casShowAd,        (void**)&o_casShowAd,        "CAS_CASManagerBase.ShowAd");
+    safeHook((void*)(b + 0x321AA64), (void*)h_casClientShowAd,  (void**)&o_casClientShowAd,  "CAS_iOS_CASManagerClient.ShowAd");
+    safeHook((void*)(b + 0x321AA3C), (void*)h_casIsReadyAd,     (void**)&o_casIsReadyAd,     "CAS_iOS_CASManagerClient.IsReadyAd");
+    safeHook((void*)(b + 0x3219014), (void*)h_casExternsShowAd, (void**)&o_casExternsShowAd, "CAS_iOS_CASExterns.CASUShowAd");
+    safeHook((void*)(b + 0x31A6B0C), (void*)h_casAdCount,       (void**)&o_casAdCount,       "CASAd_AdIntervalCounter.Count");
+    safeHook((void*)(b + 0x31A7454), (void*)h_casInterGin,      (void**)&o_casInterGin,      "CASAd_InterstitialAd.gin");
+    safeHook((void*)(b + 0x31A7460), (void*)h_casInterGio,      (void**)&o_casInterGio,      "CASAd_InterstitialAd.gio");
+    safeHook((void*)(b + 0x31A7B30), (void*)h_casRewardPresent, (void**)&o_casRewardPresent, "CASAd_RewardedAd.Present");
 
     FLog([NSString stringWithFormat:@"Bitti: %d hook OK, %d fail", hookSuccessCount, hookFailCount]);
     [[FEW1NMenu shared] build];
