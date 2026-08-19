@@ -12,11 +12,15 @@
 #import <objc/runtime.h>
 
 // ============================================================
-//  v115.0 - FEW1N MOD MENU  (derlemeye hazir guncel surum)
+//  v115.1 - FEW1N MOD MENU  (derlemeye hazir guncel surum)
+//  v115.1 RUNTIME RESOLVE (Faz 2): 53 obfuscated oyun metodu artik SINIF+INDEX ile
+//  runtime cozuluyor (few1n_mp_idx): sinif adi sabit, metot sirasi metadata'da sabit;
+//  param-sayisi+static ile dogrulanir, tutmazsa offset fallback. Toplam 88/89 method
+//  runtime cozuluyor (sadece Player.SetCustomProperties offset'te - Room/Player belirsizligi).
+//  ARTIK: yeniden-derleme guncellemelerinde (adres kayar, sira korunur) tweak kendini iyilestirir.
 //  v115.0 RUNTIME RESOLVE (Faz 1): sabit-isimli 35 kutuphane metodu (Photon/Unity/TMP/Player)
-//  artik il2cpp metadata'sindan ISIMLE cozuluyor (few1n_mp) -> oyun guncellense bu metotlar
-//  offset guncellemeye gerek DUYMAZ; bulamazsa eski offset'e duser (regresyon yok). Sonraki faz:
-//  obfuscated oyun metotlarini imza+sira ile runtime cozmek. Log: "Runtime-resolve: N isimle cozuldu".
+//  il2cpp metadata'sindan ISIMLE cozuluyor (few1n_mp) -> bunlar hic offset guncellemesi istemez.
+//  Bulamazsa eski offset'e duser (regresyon yok). Log: "Runtime-resolve: N isimle cozuldu".
 //  v114.9 OFFSET RESYNC: TUM method offsetleri TAZE dump.cs'e gore yeniden cikarildi (89 offset).
 //  Eslesme yontemi: okunur eski dump ile YENI (obf) dump SINIF-BAZLI hizalandi (imza+sira dogrulamasi)
 //  + yerel modul-kaymasi capraz kontrolu (Photon +0xFE0, PlayerManager/SmoothSync -0xB68, CoreModule -0x1374,
@@ -538,6 +542,10 @@ static void* g_mPrevCar   = NULL;
 // UnityEngine.Object.FindObjectOfType(Type) ile arabayi her saniye ARIYORUZ.
 static void* (*i_class_get_type)(void*) = NULL;
 static void* (*i_type_get_object)(void*) = NULL;
+// v115.1 Faz 2: metot enumerasyonu (index-tabanli runtime cozumleme icin)
+static void* (*i_class_get_methods)(void*, void**) = NULL;   // il2cpp_class_get_methods (iter)
+static int   (*i_method_get_param_count)(void*) = NULL;       // il2cpp_method_get_param_count
+static uint32_t (*i_method_get_flags)(void*, uint32_t*) = NULL; // il2cpp_method_get_flags
 // Sinif adiyla tarama (namespace tahmini gerektirmez - en saglam yol)
 static size_t (*i_image_get_class_count)(const void*) = NULL;
 static const void* (*i_image_get_class)(const void*, size_t) = NULL;
@@ -620,6 +628,9 @@ static void few1n_initIl2cpp(void) {
     i_field_get_offset          = (size_t(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_field_get_offset");
     i_class_get_type            = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_class_get_type");
     i_type_get_object           = (void*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_type_get_object");
+    i_class_get_methods         = (void*(*)(void*,void**))dlsym(RTLD_DEFAULT, "il2cpp_class_get_methods");
+    i_method_get_param_count    = (int(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_method_get_param_count");
+    i_method_get_flags          = (uint32_t(*)(void*,uint32_t*))dlsym(RTLD_DEFAULT, "il2cpp_method_get_flags");
     i_image_get_class_count     = (size_t(*)(const void*))dlsym(RTLD_DEFAULT, "il2cpp_image_get_class_count");
     i_image_get_class           = (const void*(*)(const void*,size_t))dlsym(RTLD_DEFAULT, "il2cpp_image_get_class");
     i_class_get_name            = (const char*(*)(void*))dlsym(RTLD_DEFAULT, "il2cpp_class_get_name");
@@ -10272,13 +10283,54 @@ static void* few1n_mp(const char* ns, const char* cls, const char* method, int a
     return fbOff ? (void*)(base + fbOff) : NULL;
 }
 
+// ============================================================
+//  v115.1 RUNTIME RESOLVE (Faz 2): INDEX-tabanli cozumleme.
+//  Obfuscated oyun metotlari isimle bulunamaz (isim her build'de degisir), ama
+//  sinif ADI sabit + metot SIRASI (metadata index) sabittir. Sinifin N. metodunu
+//  il2cpp_class_get_methods ile alir; param-sayisi + static bayragi ile DOGRULAR.
+//  Dogrulama tutmazsa (sinifa metot eklenmis/cikarilmis) offset'e duser -> guvenli.
+//  Boylece "yeniden-derleme" guncellemelerinde (sira korunur, adres kayar) tweak
+//  KENDINI IYILESTIRIR; sadece buyuk yapisal degisikliklerde elle bakim gerekir.
+// ============================================================
+static void* few1n_mp_idx(const char* ns, const char* cls, int index,
+                          int expectParams, int expectStatic,
+                          uintptr_t base, uintptr_t fbOff) {
+    @try {
+        if (i_class_get_methods) {
+            void* k = few1n_classAnyImage(ns, cls);
+            if (k) {
+                void* iter = NULL; void* m; int i = 0;
+                while ((m = i_class_get_methods(k, &iter))) {
+                    if (i == index) {
+                        int ok = 1;
+                        if (i_method_get_param_count && i_method_get_param_count(m) != expectParams) ok = 0;
+                        if (ok && i_method_get_flags) {
+                            uint32_t ifl = 0;
+                            uint32_t f = i_method_get_flags(m, &ifl);
+                            if (((f & 0x10) ? 1 : 0) != expectStatic) ok = 0;
+                        }
+                        if (ok) {
+                            void* fp = *(void**)m;   // MethodInfo.methodPointer (ilk alan)
+                            if (fp && few1n_memOk(fp)) { few1n_rtResolved++; return fp; }
+                        }
+                        break;   // index bulundu ama imza tutmadi -> fallback
+                    }
+                    i++;
+                }
+            }
+        }
+    } @catch (...) {}
+    few1n_rtFallback++;
+    return fbOff ? (void*)(base + fbOff) : NULL;
+}
+
 static void InstallEverything(uintptr_t b) {
     global_base = b;
     FLog([NSString stringWithFormat:@"Base bulundu: 0x%lX", (unsigned long)b]);
     few1n_initIl2cpp();
 
-    chatGetInst               = (void*(*)(void))(b + 0x31A90B4);
-    chatSend                  = (void(*)(void*,void*))(b + 0x31A91B8);
+    chatGetInst               = (void*(*)(void))few1n_mp_idx("","ChatManager",0,0,1,b,0x31A90B4);
+    chatSend                  = (void(*)(void*,void*))few1n_mp_idx("","ChatManager",3,1,0,b,0x31A91B8);
     tmp_set_text              = (void(*)(void*,void*))few1n_mp("TMPro","TMP_InputField","set_text",1,b,0x65F36E4);
     tmp_get_text              = (void*(*)(void*))few1n_mp("TMPro","TMP_InputField","get_text",0,b,0x65F36DC);
     tmp_set_richText          = (void(*)(void*,bool))few1n_mp("TMPro","TMP_Text","set_richText",1,b,0x6604D14);   // v84: renk tag'lari render
@@ -10297,27 +10349,27 @@ static void InstallEverything(uintptr_t b) {
     pn_getNickName            = (void*(*)(void))few1n_mp("Photon.Pun","PhotonNetwork","get_NickName",0,b,0x59348A0);
     pn_leaveRoom              = (bool(*)(bool))few1n_mp("Photon.Pun","PhotonNetwork","LeaveRoom",1,b,0x593C2B8);
     pn_closeConnection        = (bool(*)(void*))few1n_mp("Photon.Pun","PhotonNetwork","CloseConnection",1,b,0x5939824);   // kick direkt (hook olmadan)
-    lobbyGetInst              = (void*(*)(void))(b + 0x54A5E2C);
-    playerManagerGetInst      = (void*(*)(void))(b + 0x5A2D2B8);
-    pm_updateNicknameInternal = (void(*)(void*,void*))(b + 0x5A3D26C);
-    pm_getMoney               = (int(*)(void*))(b + 0x5A42904);
-    pm_syncWithServer         = (void(*)(void*))(b + 0x5A2D418);
-    pm_addMoney               = (void(*)(void*,int))(b + 0x5A42EC4);
+    lobbyGetInst              = (void*(*)(void))few1n_mp_idx("","HR_PhotonLobbyManager",0,0,1,b,0x54A5E2C);
+    playerManagerGetInst      = (void*(*)(void))few1n_mp_idx("","PlayerManager",0,0,1,b,0x5A2D2B8);
+    pm_updateNicknameInternal = (void(*)(void*,void*))few1n_mp_idx("","PlayerManager",27,1,0,b,0x5A3D26C);
+    pm_getMoney               = (int(*)(void*))few1n_mp_idx("","PlayerManager",10,0,0,b,0x5A42904);
+    pm_syncWithServer         = (void(*)(void*))few1n_mp_idx("","PlayerManager",23,0,0,b,0x5A2D418);
+    pm_addMoney               = (void(*)(void*,int))few1n_mp_idx("","PlayerManager",26,1,0,b,0x5A42EC4);
     ts_get                    = (float(*)(void))few1n_mp("UnityEngine","Time","get_timeScale",0,b,0x6770564);
-    rb_getVel                 = (void(*)(void*,Vec3*))(b + 0x683699C);
-    rb_setVel                 = (void(*)(void*,Vec3*))(b + 0x6836AA8);
-    rb_getPos                 = (void(*)(void*,Vec3*))(b + 0x6837C44);   // get_position_Injected
-    rb_setPos                 = (void(*)(void*,Vec3*))(b + 0x6837D50);   // set_position_Injected
-    lobby_createRoom          = (void(*)(void*))(b + 0x54A7238);
-    lobby_leaveRoom           = (void(*)(void*))(b + 0x54A7CB0);
+    rb_getVel                 = (void(*)(void*,Vec3*))few1n_mp_idx("UnityEngine","Rigidbody",40,2,1,b,0x683699C);
+    rb_setVel                 = (void(*)(void*,Vec3*))few1n_mp_idx("UnityEngine","Rigidbody",41,2,1,b,0x6836AA8);
+    rb_getPos                 = (void(*)(void*,Vec3*))few1n_mp_idx("UnityEngine","Rigidbody",58,2,1,b,0x6837C44);   // get_position_Injected
+    rb_setPos                 = (void(*)(void*,Vec3*))few1n_mp_idx("UnityEngine","Rigidbody",59,2,1,b,0x6837D50);   // set_position_Injected
+    lobby_createRoom          = (void(*)(void*))few1n_mp_idx("","HR_PhotonLobbyManager",25,0,0,b,0x54A7238);
+    lobby_leaveRoom           = (void(*)(void*))few1n_mp_idx("","HR_PhotonLobbyManager",27,0,0,b,0x54A7CB0);
     pn_createRoom             = (bool(*)(void*,void*,void*,void*))few1n_mp("Photon.Pun","PhotonNetwork","CreateRoom",4,b,0x593AB2C);
     pn_joinOrCreateRoom       = (bool(*)(void*,void*,void*,void*))few1n_mp("Photon.Pun","PhotonNetwork","JoinOrCreateRoom",4,b,0x593B03C);   // YENİ: Dolu odalara katılma bypass
     pn_setMasterClient        = (bool(*)(void*))few1n_mp("Photon.Pun","PhotonNetwork","SetMasterClient",1,b,0x5939B1C);   // YENI: Oda master alma
-    pn_loadLevelStr           = (bool(*)(void*))(b + 0x5942D74);   // YENI: Harita yukleme (string)
-    pn_loadLevelInt           = (bool(*)(int))(b + 0x5942B44);     // YENI: Harita yukleme (int)
-    hrMainStartRace           = (void(*)(void*))(b + 0x548E898);   // HR_MainMenuHandler.StartRace()
-    unity_LoadSceneStr        = (void(*)(void*))(b + 0x677FEF4);   // UnityEngine.SceneManager.LoadScene(string)
-    unity_LoadSceneInt        = (void(*)(int))(b + 0x67800BC);     // UnityEngine.SceneManager.LoadScene(int)
+    pn_loadLevelStr           = (bool(*)(void*))few1n_mp_idx("Photon.Pun","PhotonNetwork",120,1,1,b,0x5942D74);   // YENI: Harita yukleme (string)
+    pn_loadLevelInt           = (bool(*)(int))few1n_mp_idx("Photon.Pun","PhotonNetwork",119,1,1,b,0x5942B44);     // YENI: Harita yukleme (int)
+    hrMainStartRace           = (void(*)(void*))few1n_mp_idx("","HR_MainMenuHandler",14,0,0,b,0x548E898);   // HR_MainMenuHandler.StartRace()
+    unity_LoadSceneStr        = (void(*)(void*))few1n_mp_idx("UnityEngine.SceneManagement","SceneManager",13,1,1,b,0x677FEF4);   // UnityEngine.SceneManager.LoadScene(string)
+    unity_LoadSceneInt        = (void(*)(int))few1n_mp_idx("UnityEngine.SceneManagement","SceneManager",15,1,1,b,0x67800BC);     // UnityEngine.SceneManager.LoadScene(int)
     pn_getActiveSceneName       = (void*(*)(void))few1n_mp("Photon.Pun","SceneManagerHelper","get_ActiveSceneName",0,b,0x5962890); // YENI: Aktif sahne adi
     pn_getActiveSceneBuildIndex = (int(*)(void))few1n_mp("Photon.Pun","SceneManagerHelper","get_ActiveSceneBuildIndex",0,b,0x5962900);   // YENI: Aktif sahne indeksi
     pn_getPlayerList          = (void*(*)(void))few1n_mp("Photon.Pun","PhotonNetwork","get_PlayerList",0,b,0x59349B0);
@@ -10327,55 +10379,55 @@ static void InstallEverything(uintptr_t b) {
     ply_getActorNumber        = (int(*)(void*))few1n_mp("Photon.Realtime","Player","get_ActorNumber",0,b,0x592553C);
     ply_getIsMaster           = (bool(*)(void*))few1n_mp("Photon.Realtime","Player","get_IsMasterClient",0,b,0x5925620);
     ply_getUserId             = (void*(*)(void*))few1n_mp("Photon.Realtime","Player","get_UserId",0,b,0x5925610);
-    lobby_carSelectMenu       = (void(*)(void*))(b + 0x54A9D68);
-    cps_TeleportCar_RPC       = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A48F78);
-    rbps_TeleportCar_RPC      = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A4C42C);
-    hrph_TeleportPlayerRPC    = (void(*)(void*,Vec3,void*))(b + 0x54A5014);
-    ssrcc_RpcTeleport         = (void(*)(void*,Vec3,Vec3,Vec3,float,void*))(b + 0x5A5B810);
+    lobby_carSelectMenu       = (void(*)(void*))few1n_mp_idx("","HR_PhotonLobbyManager",47,0,0,b,0x54A9D68);
+    cps_TeleportCar_RPC       = (void(*)(void*,Vec3,Quaternion,void*))few1n_mp_idx("","CarPhotonSync",5,2,0,b,0x5A48F78);
+    rbps_TeleportCar_RPC      = (void(*)(void*,Vec3,Quaternion,void*))few1n_mp_idx("","RigidbodyPhotonSync",5,2,0,b,0x5A4C42C);
+    hrph_TeleportPlayerRPC    = (void(*)(void*,Vec3,void*))few1n_mp_idx("","HR_PhotonHandler",18,1,0,b,0x54A5014);
+    ssrcc_RpcTeleport         = (void(*)(void*,Vec3,Vec3,Vec3,float,void*))few1n_mp_idx("Smooth","SmoothSyncRCC",55,4,0,b,0x5A5B810);
     pn_setAutomaticallySyncScene = (void(*)(bool))few1n_mp("Photon.Pun","PhotonNetwork","set_AutomaticallySyncScene",1,b,0x59353E8);     // PhotonNetwork.AutomaticallySyncScene = true
-    unity_loadSceneStr           = (void(*)(void*))(b + 0x677FEF4);    // UnityEngine.SceneManagement.SceneManager.LoadScene(string)
-    lobbySetScene                = (void(*)(void*,void*))(b + 0x54A9D90);    // HR_PhotonLobbyManager.SetScene(string)
-    mapList_getInstance          = (void*(*)(void))(b + 0x54E8F58);          // MapList.ely() -> instance
-    photonMgrEnp                 = (void(*)(void*,bool))(b + 0x54B2DE0);     // PhotonManager.enp(string, bool)
-    mapSel_selectMap             = (void(*)(void*,void*))(b + 0x54B1414);    // MapSelection.SelectMap(string)
-    lobbyStartGame               = (void(*)(void*))(b + 0x54A7144);          // HR_PhotonLobbyManager.StartGameButton()
-    lobbyDummyStartGame          = (void(*)(void*))(b + 0x54AD500);          // HR_PhotonLobbyManagerDummy.StartGameButton()
+    unity_loadSceneStr           = (void(*)(void*))few1n_mp_idx("UnityEngine.SceneManagement","SceneManager",13,1,1,b,0x677FEF4);    // UnityEngine.SceneManagement.SceneManager.LoadScene(string)
+    lobbySetScene                = (void(*)(void*,void*))few1n_mp_idx("","HR_PhotonLobbyManager",48,1,0,b,0x54A9D90);    // HR_PhotonLobbyManager.SetScene(string)
+    mapList_getInstance          = (void*(*)(void))few1n_mp_idx("","MapList",0,0,1,b,0x54E8F58);          // MapList.ely() -> instance
+    photonMgrEnp                 = (void(*)(void*,bool))few1n_mp_idx("","PhotonManager",32,2,1,b,0x54B2DE0);     // PhotonManager.enp(string, bool)
+    mapSel_selectMap             = (void(*)(void*,void*))few1n_mp_idx("","MapSelection",3,1,0,b,0x54B1414);    // MapSelection.SelectMap(string)
+    lobbyStartGame               = (void(*)(void*))few1n_mp_idx("","HR_PhotonLobbyManager",31,0,0,b,0x54A7144);          // HR_PhotonLobbyManager.StartGameButton()
+    lobbyDummyStartGame          = (void(*)(void*))few1n_mp_idx("","HR_PhotonLobbyManagerDummy",30,0,0,b,0x54AD500);          // HR_PhotonLobbyManagerDummy.StartGameButton()
     room_getIsOpen               = (bool(*)(void*))few1n_mp("Photon.Realtime","Room","get_IsOpen",0,b,0x5928988);           // Room.get_IsOpen
     room_setIsOpen               = (void(*)(void*,bool))few1n_mp("Photon.Realtime","Room","set_IsOpen",1,b,0x5928990);      // Room.set_IsOpen (kilitle/ac)
     room_getIsVisible            = (bool(*)(void*))few1n_mp("Photon.Realtime","Room","get_IsVisible",0,b,0x5928A68);           // Room.get_IsVisible
     room_setIsVisible            = (void(*)(void*,bool))few1n_mp("Photon.Realtime","Room","set_IsVisible",1,b,0x5928A70);      // Room.set_IsVisible (gizle/goster)
     pn_raiseEvent           = (void(*)(unsigned char,void*,bool,void*))few1n_mp("Photon.Pun","PhotonNetwork","RaiseEvent",4,b,0x593CFE0); // PhotonNetwork.RaiseEvent (dump.cs'den dogrula)
 
-    safeHook((void*)(b + 0x54A80F0), (void*)h_onRoomListUpdate,(void**)&o_onRoomListUpdate,"HR_PhotonLobbyManager.OnRoomListUpdate");
-    safeHook((void*)(b + 0x54A7988), (void*)h_onMasterClientSwitched,(void**)&o_onMasterClientSwitched,"HR_PhotonLobbyManager.OnMasterClientSwitched");
+    safeHook((void*)few1n_mp_idx("","HR_PhotonLobbyManager",34,1,0,b,0x54A80F0), (void*)h_onRoomListUpdate,(void**)&o_onRoomListUpdate,"HR_PhotonLobbyManager.OnRoomListUpdate");
+    safeHook((void*)few1n_mp_idx("","HR_PhotonLobbyManager",19,1,0,b,0x54A7988), (void*)h_onMasterClientSwitched,(void**)&o_onMasterClientSwitched,"HR_PhotonLobbyManager.OnMasterClientSwitched");
     safeHook((void*)few1n_mp("UnityEngine","Time","set_timeScale",1,b,0x67705A4), (void*)h_setTimeScale,  (void**)&o_setTimeScale,     "set_timeScale");
     safeHook((void*)few1n_mp("Photon.Pun","PhotonNetwork","CloseConnection",1,b,0x5939824), (void*)h_closeConnection,(void**)&o_closeConnection, "CloseConnection");
-    safeHook((void*)(b + 0x54CDDA0), (void*)h_getNitro,       (void**)&o_getNitro,        "get_nitroAmount");
-    safeHook((void*)(b + 0x54CDDA8), (void*)h_setNitro,       (void**)&o_setNitro,        "set_nitroAmount");
-    safeHook((void*)(b + 0x54CAA2C), (void*)h_driveMove,      (void**)&o_driveMove,       "CarDriveSystem.Move");
-    safeHook((void*)(b + 0x54CEB4C), (void*)h_playerInputFixed,(void**)&o_playerInputFixed,"CarPlayerInput.FixedUpdate *ANA*");
-    safeHook((void*)(b + 0x59C4048), (void*)h_rccpUpdate,     (void**)&o_rccpUpdate,      "RCCP.Update(rb yakala)");
+    safeHook((void*)few1n_mp_idx("TurnTheGameOn.IKAvatarDriver","CarNitro",2,0,0,b,0x54CDDA0), (void*)h_getNitro,       (void**)&o_getNitro,        "get_nitroAmount");
+    safeHook((void*)few1n_mp_idx("TurnTheGameOn.IKAvatarDriver","CarNitro",3,1,0,b,0x54CDDA8), (void*)h_setNitro,       (void**)&o_setNitro,        "set_nitroAmount");
+    safeHook((void*)few1n_mp_idx("TurnTheGameOn.IKAvatarDriver","CarDriveSystem",38,4,0,b,0x54CAA2C), (void*)h_driveMove,      (void**)&o_driveMove,       "CarDriveSystem.Move");
+    safeHook((void*)few1n_mp_idx("TurnTheGameOn.IKAvatarDriver","CarPlayerInput",6,0,0,b,0x54CEB4C), (void*)h_playerInputFixed,(void**)&o_playerInputFixed,"CarPlayerInput.FixedUpdate *ANA*");
+    safeHook((void*)few1n_mp_idx("","RCCP_CarController",7,0,0,b,0x59C4048), (void*)h_rccpUpdate,     (void**)&o_rccpUpdate,      "RCCP.Update(rb yakala)");
     // v92: RCCP_Damage.Update hook KALDIRILDI (dokunmatik bug sebep)
-    safeHook((void*)(b + 0x5A56828), (void*)h_smRCC,          (void**)&o_smRCC,           "SmoothSyncRCC.Update(rb!)");
-    safeHook((void*)(b + 0x5A4EBC4), (void*)h_smPUN,          (void**)&o_smPUN,           "SmoothSyncPUN2.Update");
-    safeHook((void*)(b + 0x54E8188), (void*)h_plateChange,    (void**)&o_plateChange,     "PlateVariant.Change");
-    safeHook((void*)(b + 0x31A91B8), (void*)h_chatSend,       (void**)&o_chatSend,        "ChatManager.Send");
-    safeHook((void*)(b + 0x31A9304), (void*)h_chatFup,        (void**)&o_chatFup,         "ChatManager.fup (gelen chat)");
+    safeHook((void*)few1n_mp_idx("Smooth","SmoothSyncRCC",4,0,0,b,0x5A56828), (void*)h_smRCC,          (void**)&o_smRCC,           "SmoothSyncRCC.Update(rb!)");
+    safeHook((void*)few1n_mp_idx("Smooth","SmoothSyncPUN2",4,0,0,b,0x5A4EBC4), (void*)h_smPUN,          (void**)&o_smPUN,           "SmoothSyncPUN2.Update");
+    safeHook((void*)few1n_mp_idx("","PlateVariant",0,1,0,b,0x54E8188), (void*)h_plateChange,    (void**)&o_plateChange,     "PlateVariant.Change");
+    safeHook((void*)few1n_mp_idx("","ChatManager",3,1,0,b,0x31A91B8), (void*)h_chatSend,       (void**)&o_chatSend,        "ChatManager.Send");
+    safeHook((void*)few1n_mp_idx("","ChatManager",5,1,0,b,0x31A9304), (void*)h_chatFup,        (void**)&o_chatFup,         "ChatManager.fup (gelen chat)");
     safeHook((void*)few1n_mp("TMPro","TMP_InputField","set_text",1,b,0x65F36E4), (void*)h_tmpSetText,     (void**)&o_tmpSetText,      "TMPro.TMP_Text.set_text(richtext)");
-    safeHook((void*)(b + 0x54B1088), (void*)h_roomConnect,    (void**)&o_roomConnect,     "RoomListLine.Connect");
-    safeHook((void*)(b + 0x54B1174), (void*)h_roomLineSetup,  (void**)&o_roomLineSetup,   "RoomListLine.Setup(richtext)");
-    safeHook((void*)(b + 0x54A77C4), (void*)h_onCreateFail,   (void**)&o_onCreateFail,    "OnCreateRoomFailed(teshis)");
-    safeHook((void*)(b + 0x54A722C), (void*)h_onJoinFail,     (void**)&o_onJoinFail,      "OnJoinRoomFailed(teshis)");
-    safeHook((void*)(b + 0x54A7238), (void*)h_createRoomBtn,  (void**)&o_createRoomBtn,   "CreateRoomButton(richtext)");
-    safeHook((void*)(b + 0x5A42EC4), (void*)h_addMoney,       (void**)&o_addMoney,        "PlayerManager.AddMoney");
-    safeHook((void*)(b + 0x3214F0C), (void*)h_casShowAd,        (void**)&o_casShowAd,        "CAS_CASManagerBase.ShowAd");
-    safeHook((void*)(b + 0x321AA64), (void*)h_casClientShowAd,  (void**)&o_casClientShowAd,  "CAS_iOS_CASManagerClient.ShowAd");
-    safeHook((void*)(b + 0x321AA3C), (void*)h_casIsReadyAd,     (void**)&o_casIsReadyAd,     "CAS_iOS_CASManagerClient.IsReadyAd");
-    safeHook((void*)(b + 0x3219014), (void*)h_casExternsShowAd, (void**)&o_casExternsShowAd, "CAS_iOS_CASExterns.CASUShowAd");
-    safeHook((void*)(b + 0x31A6B0C), (void*)h_casAdCount,       (void**)&o_casAdCount,       "CASAd_AdIntervalCounter.Count");
-    safeHook((void*)(b + 0x31A7454), (void*)h_casInterGin,      (void**)&o_casInterGin,      "CASAd_InterstitialAd.gin");
-    safeHook((void*)(b + 0x31A7460), (void*)h_casInterGio,      (void**)&o_casInterGio,      "CASAd_InterstitialAd.gio");
-    safeHook((void*)(b + 0x31A7B30), (void*)h_casRewardPresent, (void**)&o_casRewardPresent, "CASAd_RewardedAd.Present");
+    safeHook((void*)few1n_mp_idx("","HR_UI_RoomListLine",1,0,0,b,0x54B1088), (void*)h_roomConnect,    (void**)&o_roomConnect,     "RoomListLine.Connect");
+    safeHook((void*)few1n_mp_idx("","HR_UI_RoomListLine",2,6,0,b,0x54B1174), (void*)h_roomLineSetup,  (void**)&o_roomLineSetup,   "RoomListLine.Setup(richtext)");
+    safeHook((void*)few1n_mp_idx("","HR_PhotonLobbyManager",14,2,0,b,0x54A77C4), (void*)h_onCreateFail,   (void**)&o_onCreateFail,    "OnCreateRoomFailed(teshis)");
+    safeHook((void*)few1n_mp_idx("","HR_PhotonLobbyManager",11,2,0,b,0x54A722C), (void*)h_onJoinFail,     (void**)&o_onJoinFail,      "OnJoinRoomFailed(teshis)");
+    safeHook((void*)few1n_mp_idx("","HR_PhotonLobbyManager",25,0,0,b,0x54A7238), (void*)h_createRoomBtn,  (void**)&o_createRoomBtn,   "CreateRoomButton(richtext)");
+    safeHook((void*)few1n_mp_idx("","PlayerManager",26,1,0,b,0x5A42EC4), (void*)h_addMoney,       (void**)&o_addMoney,        "PlayerManager.AddMoney");
+    safeHook((void*)few1n_mp_idx("CAS","CASManagerBase",85,1,0,b,0x3214F0C), (void*)h_casShowAd,        (void**)&o_casShowAd,        "CAS_CASManagerBase.ShowAd");
+    safeHook((void*)few1n_mp_idx("CAS.iOS","CASManagerClient",7,2,0,b,0x321AA64), (void*)h_casClientShowAd,  (void**)&o_casClientShowAd,  "CAS_iOS_CASManagerClient.ShowAd");
+    safeHook((void*)few1n_mp_idx("CAS.iOS","CASManagerClient",5,1,0,b,0x321AA3C), (void*)h_casIsReadyAd,     (void**)&o_casIsReadyAd,     "CAS_iOS_CASManagerClient.IsReadyAd");
+    safeHook((void*)few1n_mp_idx("CAS.iOS","CASExterns",54,3,1,b,0x3219014), (void*)h_casExternsShowAd, (void**)&o_casExternsShowAd, "CAS_iOS_CASExterns.CASUShowAd");
+    safeHook((void*)few1n_mp_idx("CASAd","AdIntervalCounter",0,0,0,b,0x31A6B0C), (void*)h_casAdCount,       (void**)&o_casAdCount,       "CASAd_AdIntervalCounter.Count");
+    safeHook((void*)few1n_mp_idx("CASAd","InterstitialAd",2,0,0,b,0x31A7454), (void*)h_casInterGin,      (void**)&o_casInterGin,      "CASAd_InterstitialAd.gin");
+    safeHook((void*)few1n_mp_idx("CASAd","InterstitialAd",3,0,0,b,0x31A7460), (void*)h_casInterGio,      (void**)&o_casInterGio,      "CASAd_InterstitialAd.gio");
+    safeHook((void*)few1n_mp_idx("CASAd","RewardedAd",2,0,0,b,0x31A7B30), (void*)h_casRewardPresent, (void**)&o_casRewardPresent, "CASAd_RewardedAd.Present");
 
     FLog([NSString stringWithFormat:@"Bitti: %d hook OK, %d fail", hookSuccessCount, hookFailCount]);
     FLog([NSString stringWithFormat:@"Runtime-resolve: %d isimle cozuldu, %d offset-fallback (toplam %d cagri)",
