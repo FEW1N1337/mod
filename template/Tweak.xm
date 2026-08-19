@@ -12,7 +12,11 @@
 #import <objc/runtime.h>
 
 // ============================================================
-//  v114.9 - FEW1N MOD MENU  (derlemeye hazir guncel surum)
+//  v115.0 - FEW1N MOD MENU  (derlemeye hazir guncel surum)
+//  v115.0 RUNTIME RESOLVE (Faz 1): sabit-isimli 35 kutuphane metodu (Photon/Unity/TMP/Player)
+//  artik il2cpp metadata'sindan ISIMLE cozuluyor (few1n_mp) -> oyun guncellense bu metotlar
+//  offset guncellemeye gerek DUYMAZ; bulamazsa eski offset'e duser (regresyon yok). Sonraki faz:
+//  obfuscated oyun metotlarini imza+sira ile runtime cozmek. Log: "Runtime-resolve: N isimle cozuldu".
 //  v114.9 OFFSET RESYNC: TUM method offsetleri TAZE dump.cs'e gore yeniden cikarildi (89 offset).
 //  Eslesme yontemi: okunur eski dump ile YENI (obf) dump SINIF-BAZLI hizalandi (imza+sira dogrulamasi)
 //  + yerel modul-kaymasi capraz kontrolu (Photon +0xFE0, PlayerManager/SmoothSync -0xB68, CoreModule -0x1374,
@@ -10238,6 +10242,36 @@ static uintptr_t GetUnityFrameworkBase(void) {
     return 0;
 }
 
+// ============================================================
+//  v115.0 RUNTIME RESOLVE (Faz 1): sabit-isimli (Photon/Unity/TMP/Player)
+//  metotlari oyunun il2cpp metadata'sindan ISIMLE bulur. Oyun guncellense de
+//  bu metotlar offset guncellemeye ihtiyac duymaz (isimleri kutuphane API'si,
+//  degismez). Bulamazsa fallback olarak eski offset'e duser -> REGRESYON YOK.
+//  Not: MethodInfo struct'inin ILK alani = methodPointer (derlenmis fonksiyon
+//  adresi = base+offset'in tam karsiligi). Sadece (isim+argc) BENZERSIZ olan
+//  metotlar cevrildi; overload'lular (LoadLevel/LoadScene/SetCustomProperties)
+//  ve Rigidbody _Injected offset'te birakildi.
+// ============================================================
+static int few1n_rtResolved = 0;   // isimle cozulen
+static int few1n_rtFallback = 0;   // offset'e dusen
+static void* few1n_mp(const char* ns, const char* cls, const char* method, int argc,
+                      uintptr_t base, uintptr_t fbOff) {
+    @try {
+        if (i_class_from_name && i_class_get_method_from_name) {
+            void* k = few1n_classAnyImage(ns, cls);
+            if (k) {
+                void* m = i_class_get_method_from_name(k, method, argc);
+                if (m) {
+                    void* fp = *(void**)m;   // MethodInfo.methodPointer (ilk alan)
+                    if (fp && few1n_memOk(fp)) { few1n_rtResolved++; return fp; }
+                }
+            }
+        }
+    } @catch (...) {}
+    few1n_rtFallback++;
+    return fbOff ? (void*)(base + fbOff) : NULL;
+}
+
 static void InstallEverything(uintptr_t b) {
     global_base = b;
     FLog([NSString stringWithFormat:@"Base bulundu: 0x%lX", (unsigned long)b]);
@@ -10245,60 +10279,60 @@ static void InstallEverything(uintptr_t b) {
 
     chatGetInst               = (void*(*)(void))(b + 0x31A90B4);
     chatSend                  = (void(*)(void*,void*))(b + 0x31A91B8);
-    tmp_set_text              = (void(*)(void*,void*))(b + 0x65F36E4);
-    tmp_get_text              = (void*(*)(void*))(b + 0x65F36DC);
-    tmp_set_richText          = (void(*)(void*,bool))(b + 0x6604D14);   // v84: renk tag'lari render
-    rinfo_getName             = (void*(*)(void*))(b + 0x592A384);   // RoomInfo.get_Name
-    pn_setNickName            = (void(*)(void*))(b + 0x5934920);
-    pn_joinRoom               = (bool(*)(void*,void*))(b + 0x593B62C);
-    pn_getInRoom              = (bool(*)(void))(b + 0x5935F84);   // oda tespiti (otomatik karsilama)
-    pn_getConnReady           = (bool(*)(void))(b + 0x5934388);   // oda kurma on-kosulu (bagli+hazir)
-    mbp_getPhotonView         = (void*(*)(void*))(b + 0x594EB28);  // dogru lobi instance secimi (kick RPC)
-    pn_getCurrentRoom         = (void*(*)(void))(b + 0x592E9EC);   // mevcut oda
-    room_setMaxPlayers        = (void(*)(void*,int))(b + 0x5928B50); // odayi buyut
-    room_getMaxPlayers        = (int(*)(void*))(b + 0x5928B48);
-    room_setIsOpen            = (void(*)(void*,bool))(b + 0x5928990);  // kilit
-    room_setIsVisible         = (void(*)(void*,bool))(b + 0x5928A70);  // gizli
+    tmp_set_text              = (void(*)(void*,void*))few1n_mp("TMPro","TMP_InputField","set_text",1,b,0x65F36E4);
+    tmp_get_text              = (void*(*)(void*))few1n_mp("TMPro","TMP_InputField","get_text",0,b,0x65F36DC);
+    tmp_set_richText          = (void(*)(void*,bool))few1n_mp("TMPro","TMP_Text","set_richText",1,b,0x6604D14);   // v84: renk tag'lari render
+    rinfo_getName             = (void*(*)(void*))few1n_mp("Photon.Realtime","RoomInfo","get_Name",0,b,0x592A384);   // RoomInfo.get_Name
+    pn_setNickName            = (void(*)(void*))few1n_mp("Photon.Pun","PhotonNetwork","set_NickName",1,b,0x5934920);
+    pn_joinRoom               = (bool(*)(void*,void*))few1n_mp("Photon.Pun","PhotonNetwork","JoinRoom",2,b,0x593B62C);
+    pn_getInRoom              = (bool(*)(void))few1n_mp("Photon.Pun","PhotonNetwork","get_InRoom",0,b,0x5935F84);   // oda tespiti (otomatik karsilama)
+    pn_getConnReady           = (bool(*)(void))few1n_mp("Photon.Pun","PhotonNetwork","get_IsConnectedAndReady",0,b,0x5934388);   // oda kurma on-kosulu (bagli+hazir)
+    mbp_getPhotonView         = (void*(*)(void*))few1n_mp("Photon.Pun","MonoBehaviourPun","get_photonView",0,b,0x594EB28);  // dogru lobi instance secimi (kick RPC)
+    pn_getCurrentRoom         = (void*(*)(void))few1n_mp("Photon.Pun","PhotonNetwork","get_CurrentRoom",0,b,0x592E9EC);   // mevcut oda
+    room_setMaxPlayers        = (void(*)(void*,int))few1n_mp("Photon.Realtime","Room","set_MaxPlayers",1,b,0x5928B50); // odayi buyut
+    room_getMaxPlayers        = (int(*)(void*))few1n_mp("Photon.Realtime","Room","get_MaxPlayers",0,b,0x5928B48);
+    room_setIsOpen            = (void(*)(void*,bool))few1n_mp("Photon.Realtime","Room","set_IsOpen",1,b,0x5928990);  // kilit
+    room_setIsVisible         = (void(*)(void*,bool))few1n_mp("Photon.Realtime","Room","set_IsVisible",1,b,0x5928A70);  // gizli
     room_setCustomProperties  = (bool(*)(void*,void*,void*,void*))(b + 0x5917138); // sifre
-    pn_getNickName            = (void*(*)(void))(b + 0x59348A0);
-    pn_leaveRoom              = (bool(*)(bool))(b + 0x593C2B8);
-    pn_closeConnection        = (bool(*)(void*))(b + 0x5939824);   // kick direkt (hook olmadan)
+    pn_getNickName            = (void*(*)(void))few1n_mp("Photon.Pun","PhotonNetwork","get_NickName",0,b,0x59348A0);
+    pn_leaveRoom              = (bool(*)(bool))few1n_mp("Photon.Pun","PhotonNetwork","LeaveRoom",1,b,0x593C2B8);
+    pn_closeConnection        = (bool(*)(void*))few1n_mp("Photon.Pun","PhotonNetwork","CloseConnection",1,b,0x5939824);   // kick direkt (hook olmadan)
     lobbyGetInst              = (void*(*)(void))(b + 0x54A5E2C);
     playerManagerGetInst      = (void*(*)(void))(b + 0x5A2D2B8);
     pm_updateNicknameInternal = (void(*)(void*,void*))(b + 0x5A3D26C);
     pm_getMoney               = (int(*)(void*))(b + 0x5A42904);
     pm_syncWithServer         = (void(*)(void*))(b + 0x5A2D418);
     pm_addMoney               = (void(*)(void*,int))(b + 0x5A42EC4);
-    ts_get                    = (float(*)(void))(b + 0x6770564);
+    ts_get                    = (float(*)(void))few1n_mp("UnityEngine","Time","get_timeScale",0,b,0x6770564);
     rb_getVel                 = (void(*)(void*,Vec3*))(b + 0x683699C);
     rb_setVel                 = (void(*)(void*,Vec3*))(b + 0x6836AA8);
     rb_getPos                 = (void(*)(void*,Vec3*))(b + 0x6837C44);   // get_position_Injected
     rb_setPos                 = (void(*)(void*,Vec3*))(b + 0x6837D50);   // set_position_Injected
     lobby_createRoom          = (void(*)(void*))(b + 0x54A7238);
     lobby_leaveRoom           = (void(*)(void*))(b + 0x54A7CB0);
-    pn_createRoom             = (bool(*)(void*,void*,void*,void*))(b + 0x593AB2C);
-    pn_joinOrCreateRoom       = (bool(*)(void*,void*,void*,void*))(b + 0x593B03C);   // YENİ: Dolu odalara katılma bypass
-    pn_setMasterClient        = (bool(*)(void*))(b + 0x5939B1C);   // YENI: Oda master alma
+    pn_createRoom             = (bool(*)(void*,void*,void*,void*))few1n_mp("Photon.Pun","PhotonNetwork","CreateRoom",4,b,0x593AB2C);
+    pn_joinOrCreateRoom       = (bool(*)(void*,void*,void*,void*))few1n_mp("Photon.Pun","PhotonNetwork","JoinOrCreateRoom",4,b,0x593B03C);   // YENİ: Dolu odalara katılma bypass
+    pn_setMasterClient        = (bool(*)(void*))few1n_mp("Photon.Pun","PhotonNetwork","SetMasterClient",1,b,0x5939B1C);   // YENI: Oda master alma
     pn_loadLevelStr           = (bool(*)(void*))(b + 0x5942D74);   // YENI: Harita yukleme (string)
     pn_loadLevelInt           = (bool(*)(int))(b + 0x5942B44);     // YENI: Harita yukleme (int)
     hrMainStartRace           = (void(*)(void*))(b + 0x548E898);   // HR_MainMenuHandler.StartRace()
     unity_LoadSceneStr        = (void(*)(void*))(b + 0x677FEF4);   // UnityEngine.SceneManager.LoadScene(string)
     unity_LoadSceneInt        = (void(*)(int))(b + 0x67800BC);     // UnityEngine.SceneManager.LoadScene(int)
-    pn_getActiveSceneName       = (void*(*)(void))(b + 0x5962890); // YENI: Aktif sahne adi
-    pn_getActiveSceneBuildIndex = (int(*)(void))(b + 0x5962900);   // YENI: Aktif sahne indeksi
-    pn_getPlayerList          = (void*(*)(void))(b + 0x59349B0);
-    pn_getPlayerListOthers    = (void*(*)(void))(b + 0x5934B68);
-    pn_getLocalPlayer         = (void*(*)(void))(b + 0x59347F4);   // master miyim kontrolu
-    ply_getNickName           = (void*(*)(void*))(b + 0x5925554);
-    ply_getActorNumber        = (int(*)(void*))(b + 0x592553C);
-    ply_getIsMaster           = (bool(*)(void*))(b + 0x5925620);
-    ply_getUserId             = (void*(*)(void*))(b + 0x5925610);
+    pn_getActiveSceneName       = (void*(*)(void))few1n_mp("Photon.Pun","SceneManagerHelper","get_ActiveSceneName",0,b,0x5962890); // YENI: Aktif sahne adi
+    pn_getActiveSceneBuildIndex = (int(*)(void))few1n_mp("Photon.Pun","SceneManagerHelper","get_ActiveSceneBuildIndex",0,b,0x5962900);   // YENI: Aktif sahne indeksi
+    pn_getPlayerList          = (void*(*)(void))few1n_mp("Photon.Pun","PhotonNetwork","get_PlayerList",0,b,0x59349B0);
+    pn_getPlayerListOthers    = (void*(*)(void))few1n_mp("Photon.Pun","PhotonNetwork","get_PlayerListOthers",0,b,0x5934B68);
+    pn_getLocalPlayer         = (void*(*)(void))few1n_mp("Photon.Pun","PhotonNetwork","get_LocalPlayer",0,b,0x59347F4);   // master miyim kontrolu
+    ply_getNickName           = (void*(*)(void*))few1n_mp("Photon.Realtime","Player","get_NickName",0,b,0x5925554);
+    ply_getActorNumber        = (int(*)(void*))few1n_mp("Photon.Realtime","Player","get_ActorNumber",0,b,0x592553C);
+    ply_getIsMaster           = (bool(*)(void*))few1n_mp("Photon.Realtime","Player","get_IsMasterClient",0,b,0x5925620);
+    ply_getUserId             = (void*(*)(void*))few1n_mp("Photon.Realtime","Player","get_UserId",0,b,0x5925610);
     lobby_carSelectMenu       = (void(*)(void*))(b + 0x54A9D68);
     cps_TeleportCar_RPC       = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A48F78);
     rbps_TeleportCar_RPC      = (void(*)(void*,Vec3,Quaternion,void*))(b + 0x5A4C42C);
     hrph_TeleportPlayerRPC    = (void(*)(void*,Vec3,void*))(b + 0x54A5014);
     ssrcc_RpcTeleport         = (void(*)(void*,Vec3,Vec3,Vec3,float,void*))(b + 0x5A5B810);
-    pn_setAutomaticallySyncScene = (void(*)(bool))(b + 0x59353E8);     // PhotonNetwork.AutomaticallySyncScene = true
+    pn_setAutomaticallySyncScene = (void(*)(bool))few1n_mp("Photon.Pun","PhotonNetwork","set_AutomaticallySyncScene",1,b,0x59353E8);     // PhotonNetwork.AutomaticallySyncScene = true
     unity_loadSceneStr           = (void(*)(void*))(b + 0x677FEF4);    // UnityEngine.SceneManagement.SceneManager.LoadScene(string)
     lobbySetScene                = (void(*)(void*,void*))(b + 0x54A9D90);    // HR_PhotonLobbyManager.SetScene(string)
     mapList_getInstance          = (void*(*)(void))(b + 0x54E8F58);          // MapList.ely() -> instance
@@ -10306,16 +10340,16 @@ static void InstallEverything(uintptr_t b) {
     mapSel_selectMap             = (void(*)(void*,void*))(b + 0x54B1414);    // MapSelection.SelectMap(string)
     lobbyStartGame               = (void(*)(void*))(b + 0x54A7144);          // HR_PhotonLobbyManager.StartGameButton()
     lobbyDummyStartGame          = (void(*)(void*))(b + 0x54AD500);          // HR_PhotonLobbyManagerDummy.StartGameButton()
-    room_getIsOpen               = (bool(*)(void*))(b + 0x5928988);           // Room.get_IsOpen
-    room_setIsOpen               = (void(*)(void*,bool))(b + 0x5928990);      // Room.set_IsOpen (kilitle/ac)
-    room_getIsVisible            = (bool(*)(void*))(b + 0x5928A68);           // Room.get_IsVisible
-    room_setIsVisible            = (void(*)(void*,bool))(b + 0x5928A70);      // Room.set_IsVisible (gizle/goster)
-    pn_raiseEvent           = (void(*)(unsigned char,void*,bool,void*))(b + 0x593CFE0); // PhotonNetwork.RaiseEvent (dump.cs'den dogrula)
+    room_getIsOpen               = (bool(*)(void*))few1n_mp("Photon.Realtime","Room","get_IsOpen",0,b,0x5928988);           // Room.get_IsOpen
+    room_setIsOpen               = (void(*)(void*,bool))few1n_mp("Photon.Realtime","Room","set_IsOpen",1,b,0x5928990);      // Room.set_IsOpen (kilitle/ac)
+    room_getIsVisible            = (bool(*)(void*))few1n_mp("Photon.Realtime","Room","get_IsVisible",0,b,0x5928A68);           // Room.get_IsVisible
+    room_setIsVisible            = (void(*)(void*,bool))few1n_mp("Photon.Realtime","Room","set_IsVisible",1,b,0x5928A70);      // Room.set_IsVisible (gizle/goster)
+    pn_raiseEvent           = (void(*)(unsigned char,void*,bool,void*))few1n_mp("Photon.Pun","PhotonNetwork","RaiseEvent",4,b,0x593CFE0); // PhotonNetwork.RaiseEvent (dump.cs'den dogrula)
 
     safeHook((void*)(b + 0x54A80F0), (void*)h_onRoomListUpdate,(void**)&o_onRoomListUpdate,"HR_PhotonLobbyManager.OnRoomListUpdate");
     safeHook((void*)(b + 0x54A7988), (void*)h_onMasterClientSwitched,(void**)&o_onMasterClientSwitched,"HR_PhotonLobbyManager.OnMasterClientSwitched");
-    safeHook((void*)(b + 0x67705A4), (void*)h_setTimeScale,  (void**)&o_setTimeScale,     "set_timeScale");
-    safeHook((void*)(b + 0x5939824), (void*)h_closeConnection,(void**)&o_closeConnection, "CloseConnection");
+    safeHook((void*)few1n_mp("UnityEngine","Time","set_timeScale",1,b,0x67705A4), (void*)h_setTimeScale,  (void**)&o_setTimeScale,     "set_timeScale");
+    safeHook((void*)few1n_mp("Photon.Pun","PhotonNetwork","CloseConnection",1,b,0x5939824), (void*)h_closeConnection,(void**)&o_closeConnection, "CloseConnection");
     safeHook((void*)(b + 0x54CDDA0), (void*)h_getNitro,       (void**)&o_getNitro,        "get_nitroAmount");
     safeHook((void*)(b + 0x54CDDA8), (void*)h_setNitro,       (void**)&o_setNitro,        "set_nitroAmount");
     safeHook((void*)(b + 0x54CAA2C), (void*)h_driveMove,      (void**)&o_driveMove,       "CarDriveSystem.Move");
@@ -10327,7 +10361,7 @@ static void InstallEverything(uintptr_t b) {
     safeHook((void*)(b + 0x54E8188), (void*)h_plateChange,    (void**)&o_plateChange,     "PlateVariant.Change");
     safeHook((void*)(b + 0x31A91B8), (void*)h_chatSend,       (void**)&o_chatSend,        "ChatManager.Send");
     safeHook((void*)(b + 0x31A9304), (void*)h_chatFup,        (void**)&o_chatFup,         "ChatManager.fup (gelen chat)");
-    safeHook((void*)(b + 0x65F36E4), (void*)h_tmpSetText,     (void**)&o_tmpSetText,      "TMPro.TMP_Text.set_text(richtext)");
+    safeHook((void*)few1n_mp("TMPro","TMP_InputField","set_text",1,b,0x65F36E4), (void*)h_tmpSetText,     (void**)&o_tmpSetText,      "TMPro.TMP_Text.set_text(richtext)");
     safeHook((void*)(b + 0x54B1088), (void*)h_roomConnect,    (void**)&o_roomConnect,     "RoomListLine.Connect");
     safeHook((void*)(b + 0x54B1174), (void*)h_roomLineSetup,  (void**)&o_roomLineSetup,   "RoomListLine.Setup(richtext)");
     safeHook((void*)(b + 0x54A77C4), (void*)h_onCreateFail,   (void**)&o_onCreateFail,    "OnCreateRoomFailed(teshis)");
@@ -10344,6 +10378,8 @@ static void InstallEverything(uintptr_t b) {
     safeHook((void*)(b + 0x31A7B30), (void*)h_casRewardPresent, (void**)&o_casRewardPresent, "CASAd_RewardedAd.Present");
 
     FLog([NSString stringWithFormat:@"Bitti: %d hook OK, %d fail", hookSuccessCount, hookFailCount]);
+    FLog([NSString stringWithFormat:@"Runtime-resolve: %d isimle cozuldu, %d offset-fallback (toplam %d cagri)",
+          few1n_rtResolved, few1n_rtFallback, few1n_rtResolved + few1n_rtFallback]);
     [[FEW1NMenu shared] build];
 }
 

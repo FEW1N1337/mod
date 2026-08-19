@@ -1,9 +1,9 @@
 Package: com.few1n.dreamroadmod114
 Name: FEW1N Mod Menu
 Depends: mobilesubstrate, firmware (>= 14.0)
-Version: 114.9
+Version: 115.0
 Architecture: iphoneos-arm64
-Description: FEW1N Mod Menu v114.9 - OFFSET RESYNC: tum method offsetleri taze dump.cs'e gore yeniden cikarildi (89 offset, sinif-bazli imza/sira hizalamasi + modul-kaymasi capraz dogrulama). Field offsetleri degismedi. Onceki: CRASH GUARD v2 (sigjmp SIGSEGV/SIGBUS korumasi, safeHook few1n_memOk, unityAlive guard).
+Description: FEW1N Mod Menu v115.0 - RUNTIME RESOLVE (Faz 1): 35 sabit-isimli kutuphane metodu il2cpp metadata'sindan ISIMLE cozuluyor (offset-bagimsiz, fallback offsetli). Onceki v114.9 OFFSET RESYNC: tum method offsetleri taze dump.cs'e gore yeniden cikarildi (89 offset, sinif-bazli imza/sira hizalamasi + modul-kaymasi capraz dogrulama). Field offsetleri degismedi. Onceki: CRASH GUARD v2 (sigjmp SIGSEGV/SIGBUS korumasi, safeHook few1n_memOk, unityAlive guard).
 Maintainer: few1n
 Author: few1n
 Section: Tweaks
