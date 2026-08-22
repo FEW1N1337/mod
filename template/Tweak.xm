@@ -12408,19 +12408,23 @@ static void few1n_joinTargetRoom(NSString *nm) {
                     tf.placeholder = @"Örn: FEW1N 34";
                     tf.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
                 }];
-                [pin addAction:[UIAlertAction actionWithTitle:@"Uygula & Yayınla" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a2){
-                    NSString *t = pin.textFields.firstObject.text;
-                    if (!t || t.length == 0) return;
-                    // v114.88: eah (oyunun kendi yayini, gecerli JSON -> alicida cokmez) + guard.
-                    // Manuel RPC yolu (few1n_setTargetPlateNonOwner) alicida cokuyordu, birakildi.
-                    bool ok = few1n_hijackPlateToTarget(actor, t);
+                // v114.97: iki yontem de test edilebilsin. A=eah (oyun yayini), B=manuel RPC.
+                void (^showRes)(bool) = ^(bool ok){
                     NSString *diag = [NSString stringWithUTF8String:g_plateDiag];
                     UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Gönderildi" : @"⚠️ Olmadı")
-                        message:(ok ? [NSString stringWithFormat:@"Plakan hedefe uygulandı + yayınlandı.\n\n⚠️ ÖNEMLİ: Oyun, aracın SAHİBİNE kendi plakasını gösterir — yani HEDEFİN kendi ekranında ve muhtemelen SENDE görünmez; ama 3. bir oyuncunun ekranında görünür. Başka bir oyuncuya sor.\n\nTeşhis: %@", diag]
-                                    : [NSString stringWithFormat:@"Başarısız.\nTeşhis: %@\n\n(Bu metni bana gönder, tam nerede takıldığını görürüm.)", diag])
+                        message:(ok ? [NSString stringWithFormat:@"Plakan hedefe uygulandı + yayınlandı.\n\n⚠️ ÖNEMLİ: Oyun, aracın SAHİBİNE kendi plakasını gösterir — yani HEDEFİN ekranında ve muhtemelen SENDE görünmez; 3. bir oyuncuda görünür. Başka oyuncuya sor.\n\nTeşhis: %@", diag]
+                                    : [NSString stringWithFormat:@"Başarısız.\nTeşhis: %@\n\n(Bu metni bana gönder.)", diag])
                         preferredStyle:UIAlertControllerStyleAlert];
                     [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
                     [self present:r];
+                };
+                [pin addAction:[UIAlertAction actionWithTitle:@"Yöntem A — eah (oyun yayını)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a2){
+                    NSString *t = pin.textFields.firstObject.text; if (!t || t.length == 0) return;
+                    showRes(few1n_hijackPlateToTarget(actor, t));
+                }]];
+                [pin addAction:[UIAlertAction actionWithTitle:@"Yöntem B — RPC enjeksiyon" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a2){
+                    NSString *t = pin.textFields.firstObject.text; if (!t || t.length == 0) return;
+                    showRes(few1n_setTargetPlateNonOwner(actor, t));
                 }]];
                 [pin addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
                 [self present:pin];
