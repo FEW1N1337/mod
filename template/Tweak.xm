@@ -147,6 +147,7 @@ static bool  isAntiKickEnabled = false;
 static char  g_lastRoomName[128] = "";     // en son bulundugum odanin ismi (geri girmek icin)
 static double g_mapRejoinDelaySec = 1.3;   // v114.78: harita gir-cik MANUEL gecikmesi
 static int    g_rejoinMode = 1;            // v114.88: 0=Kapali, 1=Otomatik(hazir-bekle), 2=Manuel(sabit sure)
+static char   g_plateDiag[192] = "";       // v114.91: baskasinin plakasi teshis (hangi adima kadar gitti)
 // ==== SARKI SOZU -> CHAT (altyazi gibi) ====
 static bool isLyricsEnabled = false;
 static int  g_lyricsIdx = 0;             // hangi satir
@@ -3890,25 +3891,26 @@ static void* few1n_plateTunerOfActor(int actor) {
 }
 
 static bool few1n_hijackPlateToTarget(int targetActor, NSString* text) {
-    if (!text || text.length == 0 || !i_runtime_invoke || !i_class_get_method_from_name) return false;
+    strcpy(g_plateDiag, "baslamadi");
+    if (!text || text.length == 0 || !i_runtime_invoke || !i_class_get_method_from_name) { strcpy(g_plateDiag, "temel pointer/metin yok"); return false; }
     // 1) hedefin PlateTuner'i + plakami Apply et
     void* ptCls = few1n_classAnyImage("", "PlateTuner");
-    if (!ptCls) { FLog(@"HedefPlaka: PlateTuner sinifi yok"); return false; }
+    if (!ptCls) { strcpy(g_plateDiag, "PlateTuner sinifi yok"); FLog(@"HedefPlaka: PlateTuner sinifi yok"); return false; }
     void* mApply = i_class_get_method_from_name(ptCls, "Apply", 2);
-    if (!mApply) { FLog(@"HedefPlaka: PlateTuner.Apply(2) yok"); return false; }
+    if (!mApply) { strcpy(g_plateDiag, "PlateTuner.Apply yok"); FLog(@"HedefPlaka: PlateTuner.Apply(2) yok"); return false; }
     void* tgtPT = few1n_plateTunerOfActor(targetActor);
-    if (!ptrOk(tgtPT)) { FLog([NSString stringWithFormat:@"HedefPlaka: actor=%d PlateTuner yok (hedef yarista/gorunur olmali)", targetActor]); return false; }
+    if (!ptrOk(tgtPT)) { strcpy(g_plateDiag, "hedef PlateTuner BULUNAMADI (arac gorunur degil?)"); FLog([NSString stringWithFormat:@"HedefPlaka: actor=%d PlateTuner yok", targetActor]); return false; }
     void* euStr  = mkStr(@"eu1");
     void* txtStr = mkStr(text);
-    if (!euStr || !txtStr) return false;
+    if (!euStr || !txtStr) { strcpy(g_plateDiag, "string olusmadi"); return false; }
     // v114.88: Apply BASKA oyuncunun component'inde -> ic null-deref segfault olabilir.
-    // GUARD altinda: cokme yerine temiz iptal.
     { bool crashed=false; void* args[2] = { euStr, txtStr };
       few1n_guardedInvoke(mApply, tgtPT, args, &crashed);
-      if (crashed) { FLog(@"HedefPlaka: Apply segfault yakalandi -> iptal"); return false; } }
+      if (crashed) { strcpy(g_plateDiag, "Apply SEGFAULT yakalandi"); FLog(@"HedefPlaka: Apply segfault -> iptal"); return false; } }
+    strcpy(g_plateDiag, "Apply OK, TM araniyor");
     // 2) hedefin TuningManager'inda eah/ead/eae -> hedefin view'inden LoadTuners yayin
     void* tgtTM = few1n_tuningManagerOfActor(targetActor);
-    if (!ptrOk(tgtTM)) { FLog(@"HedefPlaka: hedef TuningManager yok"); return false; }
+    if (!ptrOk(tgtTM)) { strcpy(g_plateDiag, "Apply OK ama hedef TuningManager YOK"); FLog(@"HedefPlaka: hedef TuningManager yok"); return false; }
     void* tmCls = few1n_classAnyImage("", "TuningManager");
     void* mEah = tmCls ? i_class_get_method_from_name(tmCls, "eah", 1) : NULL;
     void* mEad = tmCls ? i_class_get_method_from_name(tmCls, "ead", 0) : NULL;
@@ -3930,11 +3932,14 @@ static bool few1n_hijackPlateToTarget(int targetActor, NSString* text) {
     }
     // v114.88: eah oyunun KENDI yayin metodu (gecerli JSON serialize -> alicida cokmez,
     // kendi plakan gibi). GUARD altinda: gonderici tarafi segfault yaparsa cokme yerine iptal.
-    if (mEah) { bool cr=false; unsigned char t=1; void* a[1]={&t}; few1n_guardedInvoke(mEah, tgtTM, a, &cr); }
+    bool eahSent = false;
+    if (mEah) { bool cr=false; unsigned char t=1; void* a[1]={&t}; few1n_guardedInvoke(mEah, tgtTM, a, &cr); if (!cr) eahSent = true; }
     if (mEad) { bool cr=false; few1n_guardedInvoke(mEad, tgtTM, NULL, &cr); }
     if (mEae) { bool cr=false; few1n_guardedInvoke(mEae, tgtTM, NULL, &cr); }
     if (flipped) *(unsigned char*)((uintptr_t)tgtPV + g_isMineOff) = savedMine;   // geri al
-    FLog([NSString stringWithFormat:@"🎭 HedefPlaka: actor=%d arabasina '%@' uygulandi + IsMine-flip yayin (flip=%d)", targetActor, text, flipped]);
+    snprintf(g_plateDiag, sizeof(g_plateDiag), "TAM: Apply OK, TM OK, eah=%s, IsMine-flip=%s, eahYok=%s",
+        eahSent?"gonderildi":"YOK", flipped?"evet":"HAYIR(offset?)", mEah?"":"eah-metodu-YOK");
+    FLog([NSString stringWithFormat:@"🎭 HedefPlaka: actor=%d '%@' uygulandi (flip=%d eah=%d)", targetActor, text, flipped, eahSent]);
     return true;
 }
 
@@ -12273,9 +12278,10 @@ static void few1n_joinTargetRoom(NSString *nm) {
                     // v114.88: eah (oyunun kendi yayini, gecerli JSON -> alicida cokmez) + guard.
                     // Manuel RPC yolu (few1n_setTargetPlateNonOwner) alicida cokuyordu, birakildi.
                     bool ok = few1n_hijackPlateToTarget(actor, t);
+                    NSString *diag = [NSString stringWithUTF8String:g_plateDiag];
                     UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Gönderildi" : @"⚠️ Olmadı")
-                        message:(ok ? @"Hedefin arabasına plakan uygulandı + oyunun kendi yayınıyla (eah) herkese gönderildi. Diğer oyuncularda görünüyor mu kontrol et. (Deneysel — hedef tekrar tuning yaparsa dönebilir.)"
-                                    : @"Hedefin PlateTuner/TuningManager'ı bulunamadı. Hedef yarışta ve görünür olmalı (aracı spawn olmuş olmalı).")
+                        message:(ok ? [NSString stringWithFormat:@"Plakan hedefe uygulandı + yayınlandı.\n\n⚠️ ÖNEMLİ: Oyun, aracın SAHİBİNE kendi plakasını gösterir — yani HEDEFİN kendi ekranında ve muhtemelen SENDE görünmez; ama 3. bir oyuncunun ekranında görünür. Başka bir oyuncuya sor.\n\nTeşhis: %@", diag]
+                                    : [NSString stringWithFormat:@"Başarısız.\nTeşhis: %@\n\n(Bu metni bana gönder, tam nerede takıldığını görürüm.)", diag])
                         preferredStyle:UIAlertControllerStyleAlert];
                     [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
                     [self present:r];
