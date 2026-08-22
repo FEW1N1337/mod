@@ -12411,20 +12411,18 @@ static void few1n_joinTargetRoom(NSString *nm) {
                 // v114.97: iki yontem de test edilebilsin. A=eah (oyun yayini), B=manuel RPC.
                 void (^showRes)(bool) = ^(bool ok){
                     NSString *diag = [NSString stringWithUTF8String:g_plateDiag];
-                    UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Gönderildi" : @"⚠️ Olmadı")
-                        message:(ok ? [NSString stringWithFormat:@"Plakan hedefe uygulandı + yayınlandı.\n\n⚠️ ÖNEMLİ: Oyun, aracın SAHİBİNE kendi plakasını gösterir — yani HEDEFİN ekranında ve muhtemelen SENDE görünmez; 3. bir oyuncuda görünür. Başka oyuncuya sor.\n\nTeşhis: %@", diag]
-                                    : [NSString stringWithFormat:@"Başarısız.\nTeşhis: %@\n\n(Bu metni bana gönder.)", diag])
+                    UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"ℹ️ Sadece Sende" : @"⚠️ Olmadı")
+                        message:(ok ? [NSString stringWithFormat:@"Plaka SENİN ekranında değişti (lokal). Ne yazık ki bu oyunda sahibi olmadığın aracın plaka yayını sunucuya/diğerlerine GİTMİYOR — herkeste değişmez, gir-çık yapınca eskiye döner. (Mimari sınır.)\n\nHerkeste değişen isim için '🏷️ İsmini Değiştir'i dene.\n\nTeşhis: %@", diag]
+                                    : [NSString stringWithFormat:@"Başarısız.\nTeşhis: %@", diag])
                         preferredStyle:UIAlertControllerStyleAlert];
                     [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
                     [self present:r];
                 };
-                [pin addAction:[UIAlertAction actionWithTitle:@"Yöntem A — eah (oyun yayını)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a2){
+                // v114.98: Yontem B (manuel RPC) KALDIRILDI — RpcTarget.All ile alicida
+                // asenkron cokuyordu (send-guard yakalayamaz). Sadece eah (guvenli) kaldi.
+                [pin addAction:[UIAlertAction actionWithTitle:@"Uygula & Yayınla (eah)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a2){
                     NSString *t = pin.textFields.firstObject.text; if (!t || t.length == 0) return;
                     showRes(few1n_hijackPlateToTarget(actor, t));
-                }]];
-                [pin addAction:[UIAlertAction actionWithTitle:@"Yöntem B — RPC enjeksiyon" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a2){
-                    NSString *t = pin.textFields.firstObject.text; if (!t || t.length == 0) return;
-                    showRes(few1n_setTargetPlateNonOwner(actor, t));
                 }]];
                 [pin addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
                 [self present:pin];
