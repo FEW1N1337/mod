@@ -4136,6 +4136,23 @@ static void few1n_lockLaunchTick(void) {
     } @catch (...) {}
 }
 
+// v114.92: DONDUR/KILITLE — hedefi yakalanan konumda tutar (surekli ayni noktaya
+// isinlar -> hareket edemez). ~0.3sn'de bir tick'ten cagrilir.
+static int  g_freezeActor = -1;
+static Vec3 g_freezePos = {0,0,0};
+static int  g_freezeFrame = 0;
+static void few1n_freezeTick(void) {
+    if (g_freezeActor <= 0) return;
+    if (!pn_getInRoom || !pn_getInRoom()) { g_freezeActor = -1; return; }
+    if (++g_freezeFrame < 18) return;   // ~0.3sn (60fps) -> siki kilit
+    g_freezeFrame = 0;
+    @try {
+        void* p = few1n_playerByActor(g_freezeActor);
+        if (p) few1n_teleportPlayerTo(p, g_freezeActor, g_freezePos);
+        else   g_freezeActor = -1;   // oyuncu ciktı -> birak
+    } @catch (...) {}
+}
+
 // Zorla kazandir: hedefin PhotonView'inde enz() (NetworkPlayerWonRPC gonderici).
 static bool few1n_forceWinTarget(int targetActor) {
     if (!g_hrPhotonHandlerTypeObj || !i_runtime_invoke || !i_class_get_method_from_name || !mbp_getPhotonView) return false;
@@ -5887,6 +5904,8 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)griefSavePos;            // v114.68
 - (void)teleportToSavedPick;     // v114.68
 - (void)lockLaunchPick;          // v114.68
+- (void)freezePlayerPick;        // v114.92 (dondur/kilitle)
+- (void)massGatherSaved;         // v114.92 (herkesi kayitli konuma topla)
 - (void)forceWinPick;            // v114.68
 - (void)copyCarPick;             // v114.69
 - (void)stealCarPick;            // v114.70
@@ -6356,6 +6375,8 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"🚀  Oyuncuyu Zıplat/Fırlat (Seç — zıpla/fırlat/uzaya)" color:C_RED atY:y action:@selector(launchPlayerPick)];
     y = [self actionRow:@"🧲  Oyuncuyu Sana Çek (yanına ışınla)" color:C_RED atY:y action:@selector(pullPlayerPick)];
     y = [self actionRow:@"🧲  Herkesi Bana Çek (Mass — tek tuş)" color:C_RED atY:y action:@selector(massPull)];   // v114.90
+    y = [self actionRow:@"❄️  Oyuncuyu Dondur / Yerinde Kilitle" color:C_RED atY:y action:@selector(freezePlayerPick)];   // v114.92
+    y = [self actionRow:@"🧲  Herkesi Kayıtlı Konuma Topla" color:C_RED atY:y action:@selector(massGatherSaved)];   // v114.92
     y = [self actionRow:@"🌪️  Herkesi Fırlat (Mass — tek tuş)" color:C_RED atY:y action:@selector(massLaunch)];
     y = [self actionRow:@"📍  Konum Kaydet (buraya ışınlamak için)" color:C_GOLD atY:y action:@selector(griefSavePos)];
     y = [self actionRow:@"🎯  Oyuncuyu Kaydedilen Konuma Işınla (Seç)" color:C_RED atY:y action:@selector(teleportToSavedPick)];
@@ -7705,6 +7726,7 @@ static UIViewController* few1n_topVC(void) {
     few1n_pollPasswordPrefill();// v114.38: hooksuz sifre otomatik doldurma (sadece sideload/g_hooksDead)
     few1n_antiKickTick();       // v114.46: Anti-Kick — kicklenirsen otomatik geri gir + master ol
     few1n_lockLaunchTick();     // v114.68: Surekli Firlat kilidi (hedefi ~0.5sn'de bir havaya at)
+    few1n_freezeTick();         // v114.92: Dondur/Kilitle (hedefi yerinde tut)
     few1n_forceRoomRichText();  // v114.47: hooksuz renkli oda ismi (richText zorla, sideload)
     // v92: BALATA SICAK TUT + HASAR YOK frame update GERI ALINDI — dokunmatik/input bug sebep olabilir
     // Toggle'lar UI'da duruyor ama etkisiz (placeholder). Bug root cause'u bulunca gercek fix gelecek.
@@ -12502,6 +12524,38 @@ static void few1n_joinTargetRoom(NSString *nm) {
         g_lockLaunchActor = actor; g_lockLaunchFrame = 0;
         [self simpleAlert:@"🔒 Sürekli Fırlat" msg:[NSString stringWithFormat:@"%@ artık ~0.5sn'de bir havaya fırlatılıyor.\nKapatmak için butona tekrar bas.", nick]];
     }];
+}
+// ❄️ v114.92: Dondur/Kilitle — hedefi yerinde tutar (hareket edemez). Tekrar bas kapat.
+- (void)freezePlayerPick {
+    if (g_freezeActor > 0) { g_freezeActor = -1; [self simpleAlert:@"❄️ Dondur" msg:@"Kilit KAPATILDI (oyuncu serbest)."]; return; }
+    [self pickOtherPlayer:@"❄️ Dondur / Yerinde Kilitle" emoji:@"❄️" handler:^(void* p, int actor, NSString* nick){
+        Vec3 pos; if (!few1n_playerCarPos(actor, &pos)) { [self simpleAlert:@"❄️ Dondur" msg:@"Hedefin konumu okunamadı (yarışta/görünür olmalı)."]; return; }
+        g_freezePos = pos; g_freezeActor = actor; g_freezeFrame = 0;
+        [self simpleAlert:@"❄️ Donduruldu" msg:[NSString stringWithFormat:@"%@ yerinde kilitlendi — hareket edemez (~0.3sn'de bir aynı noktaya çekilir).\nKapatmak için butona TEKRAR bas.", nick]];
+    }];
+}
+// 🧲 v114.92: Herkesi kayıtlı konuma topla (mass gather — non-owner)
+- (void)massGatherSaved {
+    if (!g_griefSavedValid) { [self simpleAlert:@"🧲 Herkesi Topla" msg:@"Önce '📍 Konum Kaydet'e bas (toplama noktası)."]; return; }
+    if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🧲 Herkesi Topla" msg:@"Odada olmalisin."]; return; }
+    @try {
+        void* pa = pn_getPlayerListOthers ? pn_getPlayerListOthers() : NULL;
+        BOOL useAll = NO; if (!ptrOk(pa) && pn_getPlayerList){ pa = pn_getPlayerList(); useAll = YES; }
+        if (!ptrOk(pa)) { [self simpleAlert:@"🧲 Herkesi Topla" msg:@"Liste yok."]; return; }
+        int cnt = few1n_rdI32(pa, 0x18, 0);
+        if (cnt <= 0 || cnt > 64) { [self simpleAlert:@"🧲 Herkesi Topla" msg:@"Baska oyuncu yok."]; return; }
+        void* me = (useAll && pn_getLocalPlayer) ? pn_getLocalPlayer() : NULL;
+        int done = 0;
+        for (int i = 0; i < cnt && i < 32; i++) {
+            void* p = few1n_rdPtr(pa, 0x20 + (uintptr_t)i * sizeof(void*));
+            if (!ptrOk(p) || !few1n_memOk(p)) continue;
+            if (me && p == me) continue;
+            int actor = ply_getActorNumber ? ply_getActorNumber(p) : 0; if (actor <= 0) continue;
+            Vec3 dst = g_griefSavedPos; dst.y += 2.0f + (float)(done % 6);
+            if (few1n_teleportPlayerTo(p, actor, dst)) done++;
+        }
+        [self simpleAlert:@"🧲 Herkesi Topla" msg:[NSString stringWithFormat:@"%d oyuncu kayıtlı konuma toplandı.", done]];
+    } @catch (...) { [self simpleAlert:@"🧲 Herkesi Topla" msg:@"Hata."]; }
 }
 // 🏁 Zorla kazandır (oyuncu seç)
 - (void)forceWinPick {
