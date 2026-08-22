@@ -2680,24 +2680,34 @@ static inline bool unityAlive(void* obj);
 static void few1n_joinTargetRoom(NSString *nm);   // v114.75: harita cik-gir icin
 // DOGRU lobi yoneticisini bul: PhotonView'i OLAN instance (yoksa KickPlayer RPC'den once patlar).
 static void* few1n_findLobbyMgr(void) {
-    if (!g_lobbyDummyType || !g_mFindObjectsPlural || !i_runtime_invoke) return NULL;
+    if (!g_lobbyDummyType || !i_runtime_invoke) return NULL;
     @try {
-        void* a[1]; a[0] = g_lobbyDummyType;
-        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
-        if (!ptrOk(arr)) return NULL;
-        int cnt = (int)(*(uintptr_t*)((uintptr_t)arr + 0x18));
-        if (cnt <= 0 || cnt > 32) return NULL;
-        void** insts = (void**)((uintptr_t)arr + 0x20);
         void* fallback = NULL;
-        for (int i = 0; i < cnt; i++) {
-            void* inst = insts[i]; if (!unityAlive(inst)) continue;
-            if (!fallback) fallback = inst;
-            if (mbp_getPhotonView) {
-                void* pv = NULL; @try { pv = mbp_getPhotonView(inst); } @catch (...) {}
-                if (ptrOk(pv)) return inst;   // photonView'li instance -> RPC gercekten gider
+        // 1) Aktif plural: photonView'li instance ara (oda/bekleme ekraninda aktifse)
+        if (g_mFindObjectsPlural) {
+            void* a[1]; a[0] = g_lobbyDummyType;
+            void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
+            if (ptrOk(arr)) {
+                int cnt = few1n_rdI32(arr, 0x18, 0);
+                if (cnt > 0 && cnt <= 32) {
+                    for (int i = 0; i < cnt; i++) {
+                        void* inst = few1n_rdPtr(arr, 0x20 + (uintptr_t)i * sizeof(void*)); if (!unityAlive(inst)) continue;
+                        if (!fallback) fallback = inst;
+                        if (mbp_getPhotonView) { void* pv=NULL; @try { pv=mbp_getPhotonView(inst); } @catch (...) {}
+                            if (ptrOk(pv)) return inst; }   // photonView'li -> RPC gider
+                    }
+                }
             }
         }
-        return fallback;   // hicbirinde yoksa ilkini dene
+        // 2) v115.2: PASIF-DAHIL ara — yaris/oda sirasinda LobbyDummy inactive olabilir,
+        // aktif-only FindObjectsOfType bulamiyor. few1n_findByType inactive'i de tarar.
+        void* any = few1n_findByType(g_lobbyDummyType);
+        if (unityAlive(any)) {
+            if (mbp_getPhotonView) { void* pv=NULL; @try { pv=mbp_getPhotonView(any); } @catch (...) {}
+                if (ptrOk(pv)) return any; }   // photonView'li -> tercih et
+            if (!fallback) fallback = any;
+        }
+        return fallback;   // photonView'li yoksa eldeki en iyi instance
     } @catch (...) { return NULL; }
 }
 static void few1n_kickPlayer(void* playerObj) {
@@ -2741,16 +2751,14 @@ static void few1n_kickPlayer(void* playerObj) {
         }
 
         // 4. Oyunun kendi Lobi RPC Kick mekanizması (LobbyManagerDummy.KickPlayer)
-        if (g_lobbyDummyType && g_mFindObjectsPlural && i_runtime_invoke && g_mDummyKick && ptrOk(nmeStr)) {
+        if (g_lobbyDummyType && i_runtime_invoke && g_mDummyKick && ptrOk(nmeStr)) {
             void* mgr = few1n_findLobbyMgr();
-            if (unityAlive(mgr)) {
-                *(void**)((uintptr_t)mgr + OFFR_DUMMY_KICKNAME) = nmeStr;
-                @try {
-                    i_runtime_invoke(g_mDummyKick, mgr, NULL, NULL);
-                    FLog(@"  → Lobby RPC KickPlayer gönderildi ✓");
-                } @catch (...) { FLog(@"  → Lobby RPC kick HATA"); }
+            if (unityAlive(mgr) && few1n_memOk((void*)((uintptr_t)mgr + OFFR_DUMMY_KICKNAME))) {
+                *(void**)((uintptr_t)mgr + OFFR_DUMMY_KICKNAME) = nmeStr;   // jdz = hedef isim
+                bool cr=false; few1n_guardedInvoke(g_mDummyKick, mgr, NULL, &cr);   // v115.2: guard'li (inactive instance)
+                FLog(cr ? @"  → Lobby RPC kick HATA (segfault yakalandi)" : @"  → Lobby RPC KickPlayer gönderildi ✓ (KickPlayerRPC — non-master calisabilir)");
             } else {
-                FLog(@"  → Lobby RPC: Manager bulunamadı (PhotonView'li instance yok)");
+                FLog(@"  → Lobby RPC: Manager bulunamadı (pasif-dahil arama da bos)");
             }
         } else {
             FLog(@"  → Lobby RPC kick: Gerekli pointer(lar) hazır değil");
