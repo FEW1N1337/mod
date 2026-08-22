@@ -4117,6 +4117,43 @@ static bool few1n_myCarPos(Vec3* out) {
     return false;
 }
 
+// v114.95: BASKASININ ISMINI DEGISTIR (herkeste) — NON-OWNER Photon aktor-property.
+// Isim, Player.NickName = ActorProperties.PlayerName (byte key 255) property'sinde.
+// player.SetCustomProperties({255: yeniIsim}) -> OpSetPropertiesOfActor(hedefActor)
+// -> Photon sunucu relay -> tum client'larda o oyuncunun ismi degisir. Photon cogu
+// zaman baska aktorun property'sini set etmeye izin verir (sahiplik yok) -> plakadan
+// daha umutlu. DENEYSEL: sunucu 'check user'/property kisiti varsa tutmaz.
+static bool few1n_setTargetNameNonOwner(int targetActor, NSString* name) {
+    strcpy(g_plateDiag, "isim: baslamadi");
+    if (!name || name.length == 0 || !i_runtime_invoke || !i_class_get_method_from_name) { strcpy(g_plateDiag,"isim: temel yok"); return false; }
+    void* p = few1n_playerByActor(targetActor);
+    if (!ptrOk(p)) { strcpy(g_plateDiag,"isim: hedef Player bulunamadi"); return false; }
+    void* plyCls = few1n_classAnyImage("Photon.Realtime", "Player");
+    if (!plyCls) plyCls = few1n_classAnyImage("", "Player");
+    void* mSet = plyCls ? i_class_get_method_from_name(plyCls, "SetCustomProperties", 3) : NULL;
+    if (!mSet) { strcpy(g_plateDiag,"isim: SetCustomProperties yok"); return false; }
+    if (!g_hashtableClass || !g_mHashtableCtor || !g_mHashtableSetItem || !i_object_new || !i_value_box) { strcpy(g_plateDiag,"isim: hashtable altyapi yok"); return false; }
+    void* byteCls = few1n_classAnyImage("System", "Byte");
+    if (!byteCls) { strcpy(g_plateDiag,"isim: Byte class yok"); return false; }
+    void* ht = i_object_new(g_hashtableClass);
+    if (!ht) { strcpy(g_plateDiag,"isim: hashtable new yok"); return false; }
+    @try { i_runtime_invoke(g_mHashtableCtor, ht, NULL, NULL); } @catch (...) { strcpy(g_plateDiag,"isim: ctor hata"); return false; }
+    unsigned char keyByte = 255;   // ActorProperties.PlayerName
+    void* boxedKey = i_value_box(byteCls, &keyByte);
+    void* valStr = mkStr(name);
+    if (!boxedKey || !valStr) { strcpy(g_plateDiag,"isim: key/val olusmadi"); return false; }
+    @try { void* a[2] = { boxedKey, valStr }; i_runtime_invoke(g_mHashtableSetItem, ht, a, NULL); } @catch (...) { strcpy(g_plateDiag,"isim: hashtable set hata"); return false; }
+    // hedef Player uzerinde SetCustomProperties(ht, null, null) -> guard
+    { bool cr=false; void* args[3] = { ht, NULL, NULL }; few1n_guardedInvoke(mSet, p, args, &cr);
+      if (cr) { strcpy(g_plateDiag,"isim: SetCustomProperties SEGFAULT"); return false; } }
+    // lokal gorunum icin set_NickName (hedefte) da yaz
+    void* mSetNick = i_class_get_method_from_name(plyCls, "set_NickName", 1);
+    if (mSetNick) { bool c2=false; void* na[1]={valStr}; few1n_guardedInvoke(mSetNick, p, na, &c2); }
+    strcpy(g_plateDiag, "isim: SetCustomProperties(255) gonderildi");
+    FLog([NSString stringWithFormat:@"🏷️ HedefIsim: actor=%d -> '%@' (property 255)", targetActor, name]);
+    return true;
+}
+
 // Kaydedilen grief konumu + "surekli firlat" kilit hedefi (oturumluk).
 static Vec3 g_griefSavedPos = {0,0,0};
 static bool g_griefSavedValid = false;
@@ -5965,6 +6002,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)swapPlayerPick;          // v114.93 (yer degistir)
 - (void)massFreezeToggle;        // v114.94 (herkesi dondur)
 - (void)yoyoPlayerPick;          // v114.94 (firlatip-getir)
+- (void)changeNamePick;          // v114.95 (baskasinin ismini degistir)
 - (void)forceWinPick;            // v114.68
 - (void)copyCarPick;             // v114.69
 - (void)stealCarPick;            // v114.70
@@ -6431,6 +6469,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"Sunucudan Rastgele Plaka Al" color:C_ON atY:y action:@selector(spinServerPlate)];
     y = [self actionRow:@"🔰  Özel Plaka — HERKESTE Göster (yaz + yayınla)" color:C_GOLD atY:y action:@selector(setServerPlate)];
     y = [self actionRow:@"🎭  Başkasının Plakasını Değiştir (Seç — deneysel)" color:C_RED atY:y action:@selector(hijackPlatePick)];
+    y = [self actionRow:@"🏷️  Başkasının İsmini Değiştir (Seç — deneysel)" color:C_RED atY:y action:@selector(changeNamePick)];   // v114.95
     y = [self actionRow:@"🚀  Oyuncuyu Zıplat/Fırlat (Seç — zıpla/fırlat/uzaya)" color:C_RED atY:y action:@selector(launchPlayerPick)];
     y = [self actionRow:@"🧲  Oyuncuyu Sana Çek (yanına ışınla)" color:C_RED atY:y action:@selector(pullPlayerPick)];
     y = [self actionRow:@"🧲  Herkesi Bana Çek (Mass — tek tuş)" color:C_RED atY:y action:@selector(massPull)];   // v114.90
@@ -12676,6 +12715,25 @@ static void few1n_joinTargetRoom(NSString *nm) {
     [self pickOtherPlayer:@"🎢 Fırlatıp-Getir (yo-yo)" emoji:@"🎢" handler:^(void* p, int actor, NSString* nick){
         g_yoyoActor = actor; g_yoyoFrame = 0; g_yoyoUp = true;
         [self simpleAlert:@"🎢 Fırlatıp-Getir" msg:[NSString stringWithFormat:@"%@ sürekli havaya fırlatılıp yanına getiriliyor.\nKapatmak için butona TEKRAR bas.", nick]];
+    }];
+}
+// 🏷️ v114.95: Baskasinin ismini degistir (herkeste — non-owner property).
+- (void)changeNamePick {
+    [self pickOtherPlayer:@"🏷️ İsmini Değiştir" emoji:@"🏷️" handler:^(void* p, int actor, NSString* nick){
+        UIAlertController *in = [UIAlertController alertControllerWithTitle:@"🏷️ Yeni İsim"
+            message:[NSString stringWithFormat:@"'%@' oyuncusunun yeni ismi:", nick] preferredStyle:UIAlertControllerStyleAlert];
+        [in addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.placeholder = @"Örn: NOOB"; }];
+        [in addAction:[UIAlertAction actionWithTitle:@"Değiştir & Yayınla" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a2){
+            NSString *nm = in.textFields.firstObject.text;
+            if (!nm || nm.length == 0) return;
+            bool ok = few1n_setTargetNameNonOwner(actor, nm);
+            NSString *diag = [NSString stringWithUTF8String:g_plateDiag];
+            [self simpleAlert:(ok?@"✅ Gönderildi":@"⚠️ Olmadı")
+                msg:(ok?[NSString stringWithFormat:@"'%@' -> '%@' ismi Photon property (255) ile yayınlandı. Diğer oyuncularda değişti mi kontrol et. (Deneysel — sunucu izin vermezse tutmaz.)\n\nTeşhis: %@", nick, nm, diag]
+                       :[NSString stringWithFormat:@"Başarısız.\nTeşhis: %@\n(Bu satırı bana gönder.)", diag])];
+        }]];
+        [in addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+        [self present:in];
     }];
 }
 // 🏁 Zorla kazandır (oyuncu seç)
