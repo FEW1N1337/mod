@@ -9995,6 +9995,34 @@ static NSArray<NSString*>* few1n_readMapNames(void) {
     return names;
 }
 
+// v115.7: BUILD sahne yolunu index ile oku — UnityEngine.SceneManagement.SceneUtility
+// .GetScenePathByBuildIndex(int). LoadLevel(int) build index kullaniyor; boylece hangi
+// index hangi sahne, KESIN olarak runtime'dan ogrenilir (deneme-yanilma yok).
+static NSString* few1n_scenePathByBuildIndex(int idx) {
+    static void* mGet = NULL; static bool tried = false;
+    if (!tried) { tried = true;
+        void* cls = few1n_classAnyImage("UnityEngine.SceneManagement", "SceneUtility");
+        if (!cls) cls = few1n_classAnyImage("", "SceneUtility");
+        if (cls && i_class_get_method_from_name) mGet = i_class_get_method_from_name(cls, "GetScenePathByBuildIndex", 1);
+        FLog([NSString stringWithFormat:@"🗺️ SceneUtility.GetScenePathByBuildIndex=%p", mGet]);
+    }
+    if (!mGet || !i_runtime_invoke) return nil;
+    @try { void* a[1] = { &idx }; void* s = i_runtime_invoke(mGet, NULL, a, NULL); return readStr(s); } @catch (...) {}
+    return nil;
+}
+// isim -> build index. Build sahne listesini tarar, dosya adini isimle eslestirir.
+static int few1n_buildIndexForName(NSString* name) {
+    if (!name || name.length == 0) return -1;
+    NSString *target = name.lowercaseString;
+    for (int i = 0; i < 80; i++) {
+        NSString *path = few1n_scenePathByBuildIndex(i);
+        if (!path || path.length == 0) { if (i > 2) break; else continue; }   // liste bitti
+        NSString *base = path.lastPathComponent.stringByDeletingPathExtension.lowercaseString;
+        if ([base isEqualToString:target]) return i;   // birebir isim eslesme -> kesin index
+    }
+    return -1;
+}
+
 // ===== v83: v77 CALISAN VERSIYON — master claim + photonMgrEnp + LoadLevel fallback =====
 static void few1n_loadMap(NSString *scene, int idx) {
     (void)idx;   // v114.84: artik SADECE isim yolu (ese) — LoadLevel(int) kaldirildi
@@ -10310,15 +10338,18 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
             : [NSString stringWithFormat:@"MapList okunamadı (oyuna tam gir). Numara ile (Y5). Gir-Çık: %@.", modeNow])
         preferredStyle:UIAlertControllerStyleActionSheet];
     if (realMaps.count > 0) {
-        // v115.6: KULLANICI: 'sadece el ile (LoadLevel int) calisiyor, isim listesi (ese)
-        // calismiyor'. Liste artik y5LoadIdx = pn_loadLevelInt(dizi-index) kullaniyor —
-        // el-ile-giris ile AYNI calisan yol. Isim etiket; dizi pozisyonu = build index.
+        // v115.7: ANALIZ — her isim icin DOGRU build index'i SceneUtility.GetScenePath
+        // ByBuildIndex ile runtime'dan bul (deneme-yanilma yok). Bulunursa o index'le
+        // LoadLevel(int) yukle; bulunamazsa (build'de yoksa) dizi pozisyonuna dus.
         int i = 0;
         for (NSString *mapName in realMaps) {
-            int idx = i++;
+            int arrIdx = i++;
             NSString *cap = mapName;
-            [ac addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@  (#%d)", mapName, idx] style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
-                [self y5LoadIdx:idx label:cap];
+            int bi = few1n_buildIndexForName(mapName);       // KESIN build index
+            int useIdx = (bi >= 0) ? bi : arrIdx;            // bulunamazsa dizi pozisyonu
+            NSString *tag = (bi >= 0) ? [NSString stringWithFormat:@"#%d ✓", bi] : [NSString stringWithFormat:@"#%d ?", arrIdx];
+            [ac addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@  %@", mapName, tag] style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+                [self y5LoadIdx:useIdx label:cap];
             }]];
         }
     } else {
