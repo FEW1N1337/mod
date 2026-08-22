@@ -3920,25 +3920,52 @@ static bool few1n_hijackPlateToTarget(int targetActor, NSString* text) {
     // PhotonView.<IsMine>k__BackingField (dump: 0x68 = g_isMineOff) GECICI 1 yapilir ->
     // get_IsMine() bu alani okur -> true doner -> eah LoadTuners RPC'sini hedefin
     // view'inden yayinlar -> herkes hedefin arabasinda benim plakami gorur. Sonra geri alinir.
-    void* tgtPV = NULL; unsigned char savedMine = 0; bool flipped = false;
-    if (mbp_getPhotonView && g_isMineOff > 0) {
-        @try { tgtPV = mbp_getPhotonView(tgtTM); } @catch (...) {}
-        // v114.88: IsMine backing alanina ham yazma -> once memOk (offset drift = cokme onle)
-        if (ptrOk(tgtPV) && few1n_memOk((void*)((uintptr_t)tgtPV + g_isMineOff))) {
-            savedMine = *(unsigned char*)((uintptr_t)tgtPV + g_isMineOff);
-            *(unsigned char*)((uintptr_t)tgtPV + g_isMineOff) = 1;   // gecici "benim"
-            flipped = true;
-        }
+    // v114.99: TAM SAHIPLIK SPOOF. Dump: IsMine sadece @0x68 backing; ama eah muhtemelen
+    // ownerActorNr(@0x88)/AmOwner'i kontrol ediyor -> tek IsMine-flip yayin yaptirmadi
+    // (lokal kaldi). Cozum: TUM sahiplik alanlarini GECICI bana ayarla, eah'i oyle cagir
+    // -> RPC("LoadTuners",All) GERCEKTEN gitsin. g_isMineOff'a GORE-goreli offset (drift'e dayanikli).
+    void* tgtPV = NULL;
+    if (mbp_getPhotonView) { @try { tgtPV = mbp_getPhotonView(tgtTM); } @catch (...) {} }
+    int myAN = 0; void* myLP = pn_getLocalPlayer ? pn_getLocalPlayer() : NULL;
+    if (myLP && ply_getActorNumber) { @try { myAN = ply_getActorNumber(myLP); } @catch (...) {} }
+    bool spoofed = false;
+    unsigned char sMine=0, sAmOwner=0; void *sCtrl=NULL, *sOwner=NULL; int sOwnerAN=0, sCtrlAN=0;
+    uintptr_t b = (uintptr_t)tgtPV; int oM = g_isMineOff;   // 0x68
+    // offsetler oM'e goreli: Controller +0x08, AmOwner +0x14, Owner +0x18, ownerActorNr +0x20, ctrlActorNr +0x24
+    if (ptrOk(tgtPV) && oM > 0 && myAN > 0
+        && few1n_memOk((void*)(b + oM)) && few1n_memOk((void*)(b + oM + 0x24))) {
+        @try {
+            sMine    = *(unsigned char*)(b + oM);
+            sCtrl    = *(void**)(b + oM + 0x08);
+            sAmOwner = *(unsigned char*)(b + oM + 0x14);
+            sOwner   = *(void**)(b + oM + 0x18);
+            sOwnerAN = *(int*)(b + oM + 0x20);
+            sCtrlAN  = *(int*)(b + oM + 0x24);
+            *(unsigned char*)(b + oM)        = 1;      // IsMine
+            *(void**)(b + oM + 0x08)         = myLP;   // Controller
+            *(unsigned char*)(b + oM + 0x14) = 1;      // AmOwner
+            *(void**)(b + oM + 0x18)         = myLP;   // Owner
+            *(int*)(b + oM + 0x20)           = myAN;   // ownerActorNr
+            *(int*)(b + oM + 0x24)           = myAN;   // controllerActorNr
+            spoofed = true;
+        } @catch (...) {}
     }
-    // v114.88: eah oyunun KENDI yayin metodu (gecerli JSON serialize -> alicida cokmez,
-    // kendi plakan gibi). GUARD altinda: gonderici tarafi segfault yaparsa cokme yerine iptal.
+    // eah = oyunun kendi yayini (gecerli JSON -> alicida cokmez). Guard'li.
     bool eahSent = false;
     if (mEah) { bool cr=false; unsigned char t=1; void* a[1]={&t}; few1n_guardedInvoke(mEah, tgtTM, a, &cr); if (!cr) eahSent = true; }
     if (mEad) { bool cr=false; few1n_guardedInvoke(mEad, tgtTM, NULL, &cr); }
     if (mEae) { bool cr=false; few1n_guardedInvoke(mEae, tgtTM, NULL, &cr); }
-    if (flipped) *(unsigned char*)((uintptr_t)tgtPV + g_isMineOff) = savedMine;   // geri al
-    snprintf(g_plateDiag, sizeof(g_plateDiag), "TAM: Apply OK, TM OK, eah=%s, IsMine-flip=%s, eahYok=%s",
-        eahSent?"gonderildi":"YOK", flipped?"evet":"HAYIR(offset?)", mEah?"":"eah-metodu-YOK");
+    // GERI AL (RPC zaten senkron gitti)
+    if (spoofed) { @try {
+        *(unsigned char*)(b + oM)        = sMine;
+        *(void**)(b + oM + 0x08)         = sCtrl;
+        *(unsigned char*)(b + oM + 0x14) = sAmOwner;
+        *(void**)(b + oM + 0x18)         = sOwner;
+        *(int*)(b + oM + 0x20)           = sOwnerAN;
+        *(int*)(b + oM + 0x24)           = sCtrlAN;
+    } @catch (...) {} }
+    snprintf(g_plateDiag, sizeof(g_plateDiag), "TAM-SPOOF: Apply OK, eah=%s, spoof=%s(myAN=%d)",
+        eahSent?"gonderildi":"YOK", spoofed?"evet":"HAYIR", myAN);
     FLog([NSString stringWithFormat:@"🎭 HedefPlaka: actor=%d '%@' uygulandi (flip=%d eah=%d)", targetActor, text, flipped, eahSent]);
     return true;
 }
@@ -12411,8 +12438,8 @@ static void few1n_joinTargetRoom(NSString *nm) {
                 // v114.97: iki yontem de test edilebilsin. A=eah (oyun yayini), B=manuel RPC.
                 void (^showRes)(bool) = ^(bool ok){
                     NSString *diag = [NSString stringWithUTF8String:g_plateDiag];
-                    UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"ℹ️ Sadece Sende" : @"⚠️ Olmadı")
-                        message:(ok ? [NSString stringWithFormat:@"Plaka SENİN ekranında değişti (lokal). Ne yazık ki bu oyunda sahibi olmadığın aracın plaka yayını sunucuya/diğerlerine GİTMİYOR — herkeste değişmez, gir-çık yapınca eskiye döner. (Mimari sınır.)\n\nHerkeste değişen isim için '🏷️ İsmini Değiştir'i dene.\n\nTeşhis: %@", diag]
+                    UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Denendi (TAM SPOOF)" : @"⚠️ Olmadı")
+                        message:(ok ? [NSString stringWithFormat:@"YENİ: tüm sahiplik alanları spoof edilip eah çağrıldı — artık yayın gitmiş OLABİLİR.\n\n🔎 BAŞKA bir oyuncunun ekranından plakanın değişip değişmediğine bak (kendi ekranın yanıltır).\n\nTeşhis: %@\n\nSonucu + bu satırı bana yaz.", diag]
                                     : [NSString stringWithFormat:@"Başarısız.\nTeşhis: %@", diag])
                         preferredStyle:UIAlertControllerStyleAlert];
                     [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
