@@ -10306,17 +10306,19 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
     NSString *modeNow = (g_rejoinMode==0) ? @"KAPALI" : (g_rejoinMode==1) ? @"OTOMATİK" : @"MANUEL";
     UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🗺️ Harita Seç"
         message:(realMaps.count > 0
-            ? [NSString stringWithFormat:@"Oyundaki %lu harita — GERÇEK isimle. İsimle yüklenir. Gir-Çık: %@.", (unsigned long)realMaps.count, modeNow]
+            ? [NSString stringWithFormat:@"Oyundaki %lu harita. NUMARA (LoadLevel int) ile yüklenir — sende ÇALIŞAN yol. İsim yanlış haritaya denk gelirse #numarayı söyle. Gir-Çık: %@.", (unsigned long)realMaps.count, modeNow]
             : [NSString stringWithFormat:@"MapList okunamadı (oyuna tam gir). Numara ile (Y5). Gir-Çık: %@.", modeNow])
         preferredStyle:UIAlertControllerStyleActionSheet];
     if (realMaps.count > 0) {
-        // GERCEK adlar -> isim yolu (ese) ile yukle. Addressable sahneler LoadLevel(int)
-        // ile degil, isimle gelir. few1n_loadMap master+ese+LoadLevel-str+gir-cik yapar.
+        // v115.6: KULLANICI: 'sadece el ile (LoadLevel int) calisiyor, isim listesi (ese)
+        // calismiyor'. Liste artik y5LoadIdx = pn_loadLevelInt(dizi-index) kullaniyor —
+        // el-ile-giris ile AYNI calisan yol. Isim etiket; dizi pozisyonu = build index.
+        int i = 0;
         for (NSString *mapName in realMaps) {
+            int idx = i++;
             NSString *cap = mapName;
-            [ac addAction:[UIAlertAction actionWithTitle:mapName style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
-                @try { few1n_loadMap(cap, -1); } @catch (...) {}
-                [self simpleAlert:@"🗺️ Gönderildi" msg:[NSString stringWithFormat:@"'%@' uygulanıyor. Birkaç saniye bekle.", cap]];
+            [ac addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@  (#%d)", mapName, idx] style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+                [self y5LoadIdx:idx label:cap];
             }]];
         }
     } else {
