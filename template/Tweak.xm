@@ -4169,6 +4169,45 @@ static void few1n_followTick(void) {
     } @catch (...) {}
 }
 
+// v114.94: HERKESI DONDUR — tum odayi yakalanan konumlarda kilitler.
+#define FEW1N_MAXFREEZE 32
+static bool g_massFreezeOn = false;
+static int  g_massFreezeCount = 0;
+static int  g_massFreezeActors[FEW1N_MAXFREEZE];
+static Vec3 g_massFreezePos[FEW1N_MAXFREEZE];
+static int  g_massFreezeFrame = 0;
+static void few1n_massFreezeTick(void) {
+    if (!g_massFreezeOn) return;
+    if (!pn_getInRoom || !pn_getInRoom()) { g_massFreezeOn = false; return; }
+    if (++g_massFreezeFrame < 18) return;   // ~0.3sn
+    g_massFreezeFrame = 0;
+    @try {
+        for (int i = 0; i < g_massFreezeCount && i < FEW1N_MAXFREEZE; i++) {
+            int actor = g_massFreezeActors[i]; if (actor <= 0) continue;
+            void* p = few1n_playerByActor(actor);
+            if (p) few1n_teleportPlayerTo(p, actor, g_massFreezePos[i]);
+        }
+    } @catch (...) {}
+}
+
+// v114.94: FIRLATIP-GETIR (yo-yo) — hedefi sirayla yukari firlat / yanina getir.
+static int  g_yoyoActor = -1;
+static int  g_yoyoFrame = 0;
+static bool g_yoyoUp = true;
+static void few1n_yoyoTick(void) {
+    if (g_yoyoActor <= 0) return;
+    if (!pn_getInRoom || !pn_getInRoom()) { g_yoyoActor = -1; return; }
+    if (++g_yoyoFrame < 24) return;   // ~0.4sn
+    g_yoyoFrame = 0;
+    @try {
+        void* p = few1n_playerByActor(g_yoyoActor);
+        if (!p) { g_yoyoActor = -1; return; }
+        if (g_yoyoUp) { few1n_launchPlayerNetworked(p, g_yoyoActor, 80.0f); }        // yukari firlat
+        else { Vec3 my; if (few1n_myCarPos(&my)) { my.y += 2.0f; few1n_teleportPlayerTo(p, g_yoyoActor, my); } }  // yanina getir
+        g_yoyoUp = !g_yoyoUp;
+    } @catch (...) {}
+}
+
 // Zorla kazandir: hedefin PhotonView'inde enz() (NetworkPlayerWonRPC gonderici).
 static bool few1n_forceWinTarget(int targetActor) {
     if (!g_hrPhotonHandlerTypeObj || !i_runtime_invoke || !i_class_get_method_from_name || !mbp_getPhotonView) return false;
@@ -5924,6 +5963,8 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)massGatherSaved;         // v114.92 (herkesi kayitli konuma topla)
 - (void)followPlayerPick;        // v114.93 (oto-takip)
 - (void)swapPlayerPick;          // v114.93 (yer degistir)
+- (void)massFreezeToggle;        // v114.94 (herkesi dondur)
+- (void)yoyoPlayerPick;          // v114.94 (firlatip-getir)
 - (void)forceWinPick;            // v114.68
 - (void)copyCarPick;             // v114.69
 - (void)stealCarPick;            // v114.70
@@ -6397,6 +6438,8 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"🧲  Herkesi Kayıtlı Konuma Topla" color:C_RED atY:y action:@selector(massGatherSaved)];   // v114.92
     y = [self actionRow:@"🎯  Oyuncuyu Oto-Takip (yanında tut)" color:C_RED atY:y action:@selector(followPlayerPick)];   // v114.93
     y = [self actionRow:@"🔄  Oyuncuyla Yer Değiştir" color:C_RED atY:y action:@selector(swapPlayerPick)];   // v114.93
+    y = [self actionRow:@"🧊  Herkesi Dondur (tüm oda — toggle)" color:C_RED atY:y action:@selector(massFreezeToggle)];   // v114.94
+    y = [self actionRow:@"🎢  Oyuncuyu Fırlatıp-Getir (yo-yo)" color:C_RED atY:y action:@selector(yoyoPlayerPick)];   // v114.94
     y = [self actionRow:@"🌪️  Herkesi Fırlat (Mass — tek tuş)" color:C_RED atY:y action:@selector(massLaunch)];
     y = [self actionRow:@"📍  Konum Kaydet (buraya ışınlamak için)" color:C_GOLD atY:y action:@selector(griefSavePos)];
     y = [self actionRow:@"🎯  Oyuncuyu Kaydedilen Konuma Işınla (Seç)" color:C_RED atY:y action:@selector(teleportToSavedPick)];
@@ -7748,6 +7791,8 @@ static UIViewController* few1n_topVC(void) {
     few1n_lockLaunchTick();     // v114.68: Surekli Firlat kilidi (hedefi ~0.5sn'de bir havaya at)
     few1n_freezeTick();         // v114.92: Dondur/Kilitle (hedefi yerinde tut)
     few1n_followTick();         // v114.93: Oto-Takip (hedefi senin yanina cek)
+    few1n_massFreezeTick();     // v114.94: Herkesi Dondur (tum odayi kilitle)
+    few1n_yoyoTick();           // v114.94: Firlatip-Getir (yo-yo)
     few1n_forceRoomRichText();  // v114.47: hooksuz renkli oda ismi (richText zorla, sideload)
     // v92: BALATA SICAK TUT + HASAR YOK frame update GERI ALINDI — dokunmatik/input bug sebep olabilir
     // Toggle'lar UI'da duruyor ama etkisiz (placeholder). Bug root cause'u bulunca gercek fix gelecek.
@@ -12598,6 +12643,39 @@ static void few1n_joinTargetRoom(NSString *nm) {
         @try { Vec3 t = tgtPos; rbSetPosIl(g_rb, &t); Vec3 z = {0,0,0}; rbSetVelIl(g_rb, &z); } @catch (...) {}
         bool ok = few1n_teleportPlayerTo(p, actor, myPos);
         [self simpleAlert:(ok?@"🔄 Yer Değiştirildi":@"⚠️ Kısmi") msg:(ok?[NSString stringWithFormat:@"Sen ve %@ yer değiştirdiniz.", nick]:[NSString stringWithFormat:@"Sen %@'in yerine ışınlandın ama onu taşımak tutmadı (görünür olmalı).", nick])];
+    }];
+}
+// 🧊 v114.94: Herkesi Dondur — tum odayi yakalanan yerlerde kilitle. Toggle.
+- (void)massFreezeToggle {
+    if (g_massFreezeOn) { g_massFreezeOn = false; [self simpleAlert:@"🧊 Herkesi Dondur" msg:@"Dondurma KAPATILDI (herkes serbest)."]; return; }
+    if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🧊 Herkesi Dondur" msg:@"Odada olmalisin."]; return; }
+    @try {
+        void* pa = pn_getPlayerListOthers ? pn_getPlayerListOthers() : NULL;
+        BOOL useAll = NO; if (!ptrOk(pa) && pn_getPlayerList){ pa = pn_getPlayerList(); useAll = YES; }
+        if (!ptrOk(pa)) { [self simpleAlert:@"🧊 Herkesi Dondur" msg:@"Liste yok."]; return; }
+        int cnt = few1n_rdI32(pa, 0x18, 0);
+        if (cnt <= 0 || cnt > 64) { [self simpleAlert:@"🧊 Herkesi Dondur" msg:@"Baska oyuncu yok."]; return; }
+        void* me = (useAll && pn_getLocalPlayer) ? pn_getLocalPlayer() : NULL;
+        int n = 0;
+        for (int i = 0; i < cnt && i < 32 && n < FEW1N_MAXFREEZE; i++) {
+            void* p = few1n_rdPtr(pa, 0x20 + (uintptr_t)i * sizeof(void*));
+            if (!ptrOk(p) || !few1n_memOk(p)) continue;
+            if (me && p == me) continue;
+            int actor = ply_getActorNumber ? ply_getActorNumber(p) : 0; if (actor <= 0) continue;
+            Vec3 pos; if (!few1n_playerCarPos(actor, &pos)) continue;   // konumu yakala
+            g_massFreezeActors[n] = actor; g_massFreezePos[n] = pos; n++;
+        }
+        if (n == 0) { [self simpleAlert:@"🧊 Herkesi Dondur" msg:@"Konumu okunabilen oyuncu yok (görünür olmalılar)."]; return; }
+        g_massFreezeCount = n; g_massFreezeFrame = 0; g_massFreezeOn = true;
+        [self simpleAlert:@"🧊 Herkesi Dondur" msg:[NSString stringWithFormat:@"%d oyuncu yerinde donduruldu (hareket edemezler).\nKapatmak için butona TEKRAR bas.", n]];
+    } @catch (...) { [self simpleAlert:@"🧊 Herkesi Dondur" msg:@"Hata."]; }
+}
+// 🎢 v114.94: Firlatip-Getir (yo-yo) — hedefi surekli yukari at / yanina getir. Toggle.
+- (void)yoyoPlayerPick {
+    if (g_yoyoActor > 0) { g_yoyoActor = -1; [self simpleAlert:@"🎢 Fırlatıp-Getir" msg:@"KAPATILDI."]; return; }
+    [self pickOtherPlayer:@"🎢 Fırlatıp-Getir (yo-yo)" emoji:@"🎢" handler:^(void* p, int actor, NSString* nick){
+        g_yoyoActor = actor; g_yoyoFrame = 0; g_yoyoUp = true;
+        [self simpleAlert:@"🎢 Fırlatıp-Getir" msg:[NSString stringWithFormat:@"%@ sürekli havaya fırlatılıp yanına getiriliyor.\nKapatmak için butona TEKRAR bas.", nick]];
     }];
 }
 // 🏁 Zorla kazandır (oyuncu seç)
