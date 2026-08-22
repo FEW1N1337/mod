@@ -4181,6 +4181,40 @@ static bool few1n_setTargetNameNonOwner(int targetActor, NSString* name) {
     return true;
 }
 
+// v115.0: GENEL Photon property enjektoru — hedef Player'da SetCustomProperties({key:val}).
+// numericKey=true -> key byte box'lanir (255=isim gibi well-known); false -> string custom key.
+static bool few1n_setTargetPropNonOwner(int targetActor, NSString* keyStr, bool numericKey, NSString* val) {
+    strcpy(g_plateDiag, "prop: baslamadi");
+    if (!keyStr || keyStr.length==0 || !val || !i_runtime_invoke || !i_class_get_method_from_name) { strcpy(g_plateDiag,"prop: temel yok"); return false; }
+    void* p = few1n_playerByActor(targetActor);
+    if (!ptrOk(p)) { strcpy(g_plateDiag,"prop: hedef Player yok"); return false; }
+    void* plyCls = few1n_classAnyImage("Photon.Realtime", "Player");
+    if (!plyCls) plyCls = few1n_classAnyImage("", "Player");
+    void* mSet = plyCls ? i_class_get_method_from_name(plyCls, "SetCustomProperties", 3) : NULL;
+    if (!mSet) { strcpy(g_plateDiag,"prop: SetCustomProperties yok"); return false; }
+    if (!g_hashtableClass || !g_mHashtableCtor || !g_mHashtableSetItem || !i_object_new) { strcpy(g_plateDiag,"prop: hashtable yok"); return false; }
+    void* ht = i_object_new(g_hashtableClass);
+    if (!ht) { strcpy(g_plateDiag,"prop: ht new yok"); return false; }
+    @try { i_runtime_invoke(g_mHashtableCtor, ht, NULL, NULL); } @catch (...) { strcpy(g_plateDiag,"prop: ctor hata"); return false; }
+    void* keyObj = NULL;
+    if (numericKey) {
+        void* byteCls = few1n_classAnyImage("System", "Byte");
+        if (!byteCls || !i_value_box) { strcpy(g_plateDiag,"prop: Byte/box yok"); return false; }
+        unsigned char kb = (unsigned char)keyStr.intValue;
+        keyObj = i_value_box(byteCls, &kb);
+    } else {
+        keyObj = mkStr(keyStr);
+    }
+    void* valStr = mkStr(val);
+    if (!keyObj || !valStr) { strcpy(g_plateDiag,"prop: key/val olusmadi"); return false; }
+    @try { void* a[2] = { keyObj, valStr }; i_runtime_invoke(g_mHashtableSetItem, ht, a, NULL); } @catch(...) { strcpy(g_plateDiag,"prop: set hata"); return false; }
+    { bool cr=false; void* args[3] = { ht, NULL, NULL }; few1n_guardedInvoke(mSet, p, args, &cr);
+      if (cr) { strcpy(g_plateDiag,"prop: SetCustomProperties SEGFAULT"); return false; } }
+    snprintf(g_plateDiag, sizeof(g_plateDiag), "prop: key=%s(%s) gonderildi", keyStr.UTF8String, numericKey?"num":"str");
+    FLog([NSString stringWithFormat:@"🧬 HedefProp: actor=%d key=%@ val=%@", targetActor, keyStr, val]);
+    return true;
+}
+
 // Kaydedilen grief konumu + "surekli firlat" kilit hedefi (oturumluk).
 static Vec3 g_griefSavedPos = {0,0,0};
 static bool g_griefSavedValid = false;
@@ -6030,6 +6064,9 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)massFreezeToggle;        // v114.94 (herkesi dondur)
 - (void)yoyoPlayerPick;          // v114.94 (firlatip-getir)
 - (void)changeNamePick;          // v114.95 (baskasinin ismini degistir)
+- (void)massNameChange;          // v115.0 (herkesin ismini degistir)
+- (void)injectPropertyPick;      // v115.0 (photon property enjektoru)
+- (void)kickAllPlayers;          // v115.0 (mass kick — menuye eklendi)
 - (void)forceWinPick;            // v114.68
 - (void)copyCarPick;             // v114.69
 - (void)stealCarPick;            // v114.70
@@ -6668,6 +6705,9 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"\U0001F511  Oda Sifresi Koy / Kaldir" color:C_GOLD atY:y action:@selector(tapRoomPassword)];
     // v114.61: 'ODAYI KAPAT' + 'Odadaki Herkesi At (Mass Kick)' SILINDI (calismiyor)
     y = [self actionRow:@"🎯  Belirli Oyuncuyu At (Sec ve Kick)" color:C_RED atY:y action:@selector(nativeKickPick)];
+    y = [self actionRow:@"⚔️  Herkesi At (Mass Kick — master iken)" color:C_RED atY:y action:@selector(kickAllPlayers)];   // v115.0
+    y = [self actionRow:@"🏷️  Herkesin İsmini Değiştir" color:C_RED atY:y action:@selector(massNameChange)];   // v115.0
+    y = [self actionRow:@"🧬  Photon Property Enjektörü (Seç — deneysel)" color:C_RED atY:y action:@selector(injectPropertyPick)];   // v115.0
     y = [self actionRow:@"🚫  Ban Listesi (geri geleni otomatik at)" color:C_RED atY:y action:@selector(manageBans)];
     // v114.61: 'HEDEFLİ BOMBA + CRASH' SILINDI (calismiyor)
     y = [self actionRow:@"🆔  Oyuncu ID Listesi (ActorNumber + UserId)" color:C_ON atY:y action:@selector(showPlayerIDs)];
@@ -12772,6 +12812,61 @@ static void few1n_joinTargetRoom(NSString *nm) {
         }]];
         [in addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
         [self present:in];
+    }];
+}
+// 🏷️ v115.0: HERKESIN ismini degistir (mass — non-owner property).
+- (void)massNameChange {
+    if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🏷️ Herkesin İsmi" msg:@"Odada olmalisin."]; return; }
+    UIAlertController *in = [UIAlertController alertControllerWithTitle:@"🏷️ Herkesin İsmi"
+        message:@"Odadaki TÜM oyunculara verilecek isim:" preferredStyle:UIAlertControllerStyleAlert];
+    [in addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.placeholder = @"Örn: BOT"; }];
+    [in addAction:[UIAlertAction actionWithTitle:@"Herkese Uygula" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a2){
+        NSString *nm = in.textFields.firstObject.text; if (!nm || nm.length == 0) return;
+        @try {
+            void* pa = pn_getPlayerListOthers ? pn_getPlayerListOthers() : NULL;
+            BOOL useAll = NO; if (!ptrOk(pa) && pn_getPlayerList){ pa = pn_getPlayerList(); useAll = YES; }
+            if (!ptrOk(pa)) { [self simpleAlert:@"🏷️ Herkesin İsmi" msg:@"Liste yok."]; return; }
+            int cnt = few1n_rdI32(pa, 0x18, 0);
+            if (cnt <= 0 || cnt > 64) { [self simpleAlert:@"🏷️ Herkesin İsmi" msg:@"Baska oyuncu yok."]; return; }
+            void* me = (useAll && pn_getLocalPlayer) ? pn_getLocalPlayer() : NULL;
+            int done = 0;
+            for (int i = 0; i < cnt && i < 32; i++) {
+                void* p = few1n_rdPtr(pa, 0x20 + (uintptr_t)i * sizeof(void*));
+                if (!ptrOk(p) || !few1n_memOk(p)) continue;
+                if (me && p == me) continue;
+                int actor = ply_getActorNumber ? ply_getActorNumber(p) : 0; if (actor <= 0) continue;
+                if (few1n_setTargetNameNonOwner(actor, nm)) done++;
+            }
+            [self simpleAlert:@"🏷️ Herkesin İsmi" msg:[NSString stringWithFormat:@"%d oyuncunun ismi '%@' yapıldı. Başka oyuncudan kontrol et.", done, nm]];
+        } @catch (...) { [self simpleAlert:@"🏷️ Herkesin İsmi" msg:@"Hata."]; }
+    }]];
+    [in addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+    [self present:in];
+}
+// 🧬 v115.0: Photon Property Enjektoru — hedefe key/deger gonder (isim=255 gibi).
+- (void)injectPropertyPick {
+    [self pickOtherPlayer:@"🧬 Property Enjekte" emoji:@"🧬" handler:^(void* p, int actor, NSString* nick){
+        UIAlertController *kc = [UIAlertController alertControllerWithTitle:@"🧬 Property Key"
+            message:[NSString stringWithFormat:@"'%@' için property anahtarı.\nSayı = byte key (255=isim); yazı = string custom key.", nick] preferredStyle:UIAlertControllerStyleAlert];
+        [kc addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.placeholder = @"Örn: 255 veya score"; }];
+        [kc addAction:[UIAlertAction actionWithTitle:@"İleri" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a2){
+            NSString *keyS = kc.textFields.firstObject.text; if (!keyS || keyS.length==0) return;
+            BOOL numeric = YES; for (NSUInteger i=0;i<keyS.length;i++){ unichar c=[keyS characterAtIndex:i]; if(c<'0'||c>'9'){numeric=NO;break;} }
+            UIAlertController *vc = [UIAlertController alertControllerWithTitle:@"🧬 Değer"
+                message:@"Property değeri (metin):" preferredStyle:UIAlertControllerStyleAlert];
+            [vc addTextFieldWithConfigurationHandler:^(UITextField *tf){ tf.placeholder = @"Örn: 999999"; }];
+            [vc addAction:[UIAlertAction actionWithTitle:@"Enjekte" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a3){
+                NSString *val = vc.textFields.firstObject.text; if (!val) return;
+                bool ok = few1n_setTargetPropNonOwner(actor, keyS, numeric, val);
+                NSString *diag = [NSString stringWithUTF8String:g_plateDiag];
+                [self simpleAlert:(ok?@"✅ Gönderildi":@"⚠️ Olmadı")
+                    msg:[NSString stringWithFormat:@"key=%@ (%@), değer=%@\n\nBaşka oyuncudan/oyundan etki oldu mu kontrol et.\n\nTeşhis: %@", keyS, numeric?@"sayı":@"yazı", val, diag]];
+            }]];
+            [vc addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+            [self present:vc];
+        }]];
+        [kc addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
+        [self present:kc];
     }];
 }
 // 🏁 Zorla kazandır (oyuncu seç)
