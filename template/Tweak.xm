@@ -9979,8 +9979,8 @@ static void few1n_loadMap(NSString *scene, int idx) {
             // 'Y5 kismen calisiyor, sadece isimli calissin'). Artik SADECE isim yolu (ese).
             // v114.76: OTOMATIK CIK-GIR — sahne set edildikten sonra odadan cikip ayni
             // odaya geri gir -> yeni harita yuklenir, "baglaniyor"da takilmaz (kullanici cozumu).
-            if (rnCopy.length > 0) {
-                double _rjDelay = (g_mapRejoinDelaySec > 0.05) ? g_mapRejoinDelaySec : 1.3;   // v114.78: ayarlanabilir gir-cik gecikmesi
+            if (rnCopy.length > 0 && g_rejoinMode != 0) {   // v114.96: gir-cik modu Kapali degilse
+                double _rjDelay = (g_rejoinMode == 2 && g_mapRejoinDelaySec > 0.05) ? g_mapRejoinDelaySec : 0.9;
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(_rjDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     @try { few1n_joinTargetRoom(rnCopy); FLog([NSString stringWithFormat:@"🗺️ [v253] otomatik cik-gir (%.1fs): '%@'", _rjDelay, rnCopy]); } @catch (...) {}
                 });
@@ -10213,30 +10213,39 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
     [self simpleAlert:@"🗺️ Gönderildi" msg:[NSString stringWithFormat:@"%@ (#%d) yükleniyor — %@.\nYanlış harita geldiyse söyle, numarayı düzeltirim.", title, idx, modeTxt]];
 }
 - (void)mapListY5 {
-    if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🗺️ Harita Seç (Y5)" msg:@"Odada olmalisin (kendi odanda + master iken)."]; return; }
-    if (!pn_loadLevelInt) { [self simpleAlert:@"🗺️ Harita Seç (Y5)" msg:@"LoadLevel(int) pointeri yok."]; return; }
-    NSArray *maps = @[
-        @{@"t":@"🏁 Yarış Pisti (Track)",   @"i":@0},
-        @{@"t":@"🏙️ Şehir (City)",          @"i":@1},
-        @{@"t":@"🛣️ Otoyol (Highway)",      @"i":@2},
-        @{@"t":@"🏜️ Çöl (Desert)",          @"i":@3},
-        @{@"t":@"⚓ Liman (Port)",           @"i":@4},
-        @{@"t":@"⛰️ Arazi (Offroad)",       @"i":@5},
-        @{@"t":@"🌲 Orman (Forest)",         @"i":@6},
-        @{@"t":@"🌙 Gece Şehri (City Night)",@"i":@7},
-    ];
+    if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🗺️ Harita Seç" msg:@"Odada olmalisin (kendi odanda + master iken)."]; return; }
+    // v114.96: oyunun KENDI MapList'inden GERCEK harita adlari (canli okuma — dogru isimler).
+    NSArray<NSString*> *realMaps = few1n_readMapNames();
     NSString *modeNow = (g_rejoinMode==0) ? @"KAPALI" : (g_rejoinMode==1) ? @"OTOMATİK" : @"MANUEL";
-    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🗺️ Harita Seç (Y5)"
-        message:[NSString stringWithFormat:@"Seçtiğin harita herkese yüklenir. Gir-Çık: %@ (aşağıdan değiştir).", modeNow]
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🗺️ Harita Seç"
+        message:(realMaps.count > 0
+            ? [NSString stringWithFormat:@"Oyundaki %lu harita — GERÇEK isimle. İsimle yüklenir. Gir-Çık: %@.", (unsigned long)realMaps.count, modeNow]
+            : [NSString stringWithFormat:@"MapList okunamadı (oyuna tam gir). Numara ile (Y5). Gir-Çık: %@.", modeNow])
         preferredStyle:UIAlertControllerStyleActionSheet];
-    for (NSDictionary *m in maps) {
-        int idx = [m[@"i"] intValue];
-        NSString *title = m[@"t"];
-        [ac addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
-            [self y5LoadIdx:idx label:title];
-        }]];
+    if (realMaps.count > 0) {
+        // GERCEK adlar -> isim yolu (ese) ile yukle. Addressable sahneler LoadLevel(int)
+        // ile degil, isimle gelir. few1n_loadMap master+ese+LoadLevel-str+gir-cik yapar.
+        for (NSString *mapName in realMaps) {
+            NSString *cap = mapName;
+            [ac addAction:[UIAlertAction actionWithTitle:mapName style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+                @try { few1n_loadMap(cap, -1); } @catch (...) {}
+                [self simpleAlert:@"🗺️ Gönderildi" msg:[NSString stringWithFormat:@"'%@' uygulanıyor. Birkaç saniye bekle.", cap]];
+            }]];
+        }
+    } else {
+        // Fallback: MapList init olmadi -> onayli build sahneleri (LoadLevel int)
+        NSArray *maps = @[
+            @{@"t":@"Track", @"i":@0}, @{@"t":@"City", @"i":@1}, @{@"t":@"Highway", @"i":@2}, @{@"t":@"Desert", @"i":@3},
+            @{@"t":@"Port", @"i":@4}, @{@"t":@"Offroad", @"i":@5}, @{@"t":@"Forest", @"i":@6}, @{@"t":@"City Night", @"i":@7},
+        ];
+        for (NSDictionary *m in maps) {
+            int idx = [m[@"i"] intValue]; NSString *title = m[@"t"];
+            [ac addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@ (#%d)", title, idx] style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+                [self y5LoadIdx:idx label:title];
+            }]];
+        }
     }
-    // Ek harita tipleri: elle numara (8, 9, 10... build sahneleri varsa)
+    // Ek: elle numara (Y5 LoadLevel int — isim yolu tutmazsa)
     [ac addAction:[UIAlertAction actionWithTitle:@"🔢 Elle Numara (ek harita — 8,9,10...)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
         UIAlertController *in = [UIAlertController alertControllerWithTitle:@"🔢 Harita Numarası"
             message:@"Sahne numarası yaz (0-60). Ek harita/hava varsa burada." preferredStyle:UIAlertControllerStyleAlert];
