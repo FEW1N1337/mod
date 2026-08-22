@@ -3966,7 +3966,7 @@ static bool few1n_hijackPlateToTarget(int targetActor, NSString* text) {
     } @catch (...) {} }
     snprintf(g_plateDiag, sizeof(g_plateDiag), "TAM-SPOOF: Apply OK, eah=%s, spoof=%s(myAN=%d)",
         eahSent?"gonderildi":"YOK", spoofed?"evet":"HAYIR", myAN);
-    FLog([NSString stringWithFormat:@"🎭 HedefPlaka: actor=%d '%@' uygulandi (flip=%d eah=%d)", targetActor, text, flipped, eahSent]);
+    FLog([NSString stringWithFormat:@"🎭 HedefPlaka: actor=%d '%@' uygulandi (spoof=%d eah=%d)", targetActor, text, spoofed, eahSent]);
     return true;
 }
 
