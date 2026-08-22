@@ -2679,6 +2679,7 @@ static inline bool ptrOk(void* p);
 static inline bool unityAlive(void* obj);
 static void few1n_joinTargetRoom(NSString *nm);   // v114.75: harita cik-gir icin
 // DOGRU lobi yoneticisini bul: PhotonView'i OLAN instance (yoksa KickPlayer RPC'den once patlar).
+static void* few1n_findByType(void* typeObj);   // v115.3: ileri bildirim (tanim asagida)
 static void* few1n_findLobbyMgr(void) {
     if (!g_lobbyDummyType || !i_runtime_invoke) return NULL;
     @try {
