@@ -5878,6 +5878,7 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)pickOtherPlayer:(NSString*)title emoji:(NSString*)emoji handler:(void(^)(void* player, int actor, NSString* nick))cb; // v114.68
 - (void)pullPlayerPick;          // v114.68
 - (void)massLaunch;              // v114.68
+- (void)massPull;                // v114.90 (herkesi bana cek)
 - (void)griefSavePos;            // v114.68
 - (void)teleportToSavedPick;     // v114.68
 - (void)lockLaunchPick;          // v114.68
@@ -6349,6 +6350,7 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"🎭  Başkasının Plakasını Değiştir (Seç — deneysel)" color:C_RED atY:y action:@selector(hijackPlatePick)];
     y = [self actionRow:@"🚀  Oyuncuyu Zıplat/Fırlat (Seç — zıpla/fırlat/uzaya)" color:C_RED atY:y action:@selector(launchPlayerPick)];
     y = [self actionRow:@"🧲  Oyuncuyu Sana Çek (yanına ışınla)" color:C_RED atY:y action:@selector(pullPlayerPick)];
+    y = [self actionRow:@"🧲  Herkesi Bana Çek (Mass — tek tuş)" color:C_RED atY:y action:@selector(massPull)];   // v114.90
     y = [self actionRow:@"🌪️  Herkesi Fırlat (Mass — tek tuş)" color:C_RED atY:y action:@selector(massLaunch)];
     y = [self actionRow:@"📍  Konum Kaydet (buraya ışınlamak için)" color:C_GOLD atY:y action:@selector(griefSavePos)];
     y = [self actionRow:@"🎯  Oyuncuyu Kaydedilen Konuma Işınla (Seç)" color:C_RED atY:y action:@selector(teleportToSavedPick)];
@@ -12447,6 +12449,31 @@ static void few1n_joinTargetRoom(NSString *nm) {
         }
         [self simpleAlert:@"🌪️ Herkesi Fırlat" msg:[NSString stringWithFormat:@"%d oyuncu havaya fırlatıldı.", done]];
     } @catch (...) { [self simpleAlert:@"🌪️ Herkesi Fırlat" msg:@"Hata."]; }
+}
+// 🧲 v114.90: HERKESI BANA CEK (mass pull — non-owner). few1n_teleportPlayerTo
+// (eod + RPC injection) tum oyunculari senin araç konumuna isinlar. Ham okumalar
+// SIGSEGV-guvenli (few1n_rdPtr/rdI32). Ust uste binip patlamasin diye dikey kaydirma.
+- (void)massPull {
+    if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🧲 Herkesi Çek" msg:@"Odada olmalisin."]; return; }
+    Vec3 my; if (!few1n_myCarPos(&my)) { [self simpleAlert:@"🧲 Herkesi Çek" msg:@"Senin araç konumun okunamadı (araca bin)."]; return; }
+    @try {
+        void* pa = pn_getPlayerListOthers ? pn_getPlayerListOthers() : NULL;
+        BOOL useAll = NO; if (!ptrOk(pa) && pn_getPlayerList){ pa = pn_getPlayerList(); useAll = YES; }
+        if (!ptrOk(pa)) { [self simpleAlert:@"🧲 Herkesi Çek" msg:@"Liste yok."]; return; }
+        int cnt = few1n_rdI32(pa, 0x18, 0);
+        if (cnt <= 0 || cnt > 64) { [self simpleAlert:@"🧲 Herkesi Çek" msg:@"Baska oyuncu yok."]; return; }
+        void* me = (useAll && pn_getLocalPlayer) ? pn_getLocalPlayer() : NULL;
+        int done = 0;
+        for (int i = 0; i < cnt && i < 32; i++) {
+            void* p = few1n_rdPtr(pa, 0x20 + (uintptr_t)i * sizeof(void*));
+            if (!ptrOk(p) || !few1n_memOk(p)) continue;
+            if (me && p == me) continue;
+            int actor = ply_getActorNumber ? ply_getActorNumber(p) : 0; if (actor <= 0) continue;
+            Vec3 dst = my; dst.y += 2.0f + (float)(done % 6);   // ust uste binme -> hafif dikey kaydir
+            if (few1n_teleportPlayerTo(p, actor, dst)) done++;
+        }
+        [self simpleAlert:@"🧲 Herkesi Çek" msg:[NSString stringWithFormat:@"%d oyuncu senin yanına çekildi.", done]];
+    } @catch (...) { [self simpleAlert:@"🧲 Herkesi Çek" msg:@"Hata."]; }
 }
 // 📍 Konumu kaydet (senin mevcut konumun)
 - (void)griefSavePos {
