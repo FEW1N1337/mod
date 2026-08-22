@@ -10002,6 +10002,13 @@ static void few1n_loadMap(NSString *scene, int idx) {
     few1n_claimMaster();
     NSString *sceneCopy = [scene copy];
     NSString *rnCopy = (g_lastRoomName[0]) ? [NSString stringWithUTF8String:g_lastRoomName] : nil;   // v114.76: cik-gir icin
+    // v115.4: g_lastRoomName BOSSA canli oda adini oku — gir-cik'in sarti, bossa cik-gir
+    // hic tetiklenmiyordu (log: ese gitti ama sahne degismedi, gir-cik yok). Bu kritik.
+    if (rnCopy.length == 0 && pn_getCurrentRoom && rinfo_getName) {
+        @try { void* room = pn_getCurrentRoom(); if (ptrOk(room)) { NSString *live = readStr(rinfo_getName(room));
+            if (live.length > 0) { rnCopy = live; strncpy(g_lastRoomName, live.UTF8String, sizeof(g_lastRoomName)-1); g_lastRoomName[sizeof(g_lastRoomName)-1]='\0'; } } } @catch (...) {}
+    }
+    FLog([NSString stringWithFormat:@"🗺️ few1n_loadMap: scene='%@' rnCopy='%@' rejoinMode=%d", sceneCopy, rnCopy ?: @"(BOS!)", g_rejoinMode]);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         @try {
             if (pn_setAutomaticallySyncScene) {
