@@ -10008,7 +10008,11 @@ static void few1n_loadMap(NSString *scene, int idx) {
         @try { void* room = pn_getCurrentRoom(); if (ptrOk(room)) { NSString *live = readStr(rinfo_getName(room));
             if (live.length > 0) { rnCopy = live; strncpy(g_lastRoomName, live.UTF8String, sizeof(g_lastRoomName)-1); g_lastRoomName[sizeof(g_lastRoomName)-1]='\0'; } } } @catch (...) {}
     }
-    FLog([NSString stringWithFormat:@"🗺️ few1n_loadMap: scene='%@' rnCopy='%@' rejoinMode=%d", sceneCopy, rnCopy ?: @"(BOS!)", g_rejoinMode]);
+    // v115.5: MASTER durumu teshisi — harita degisimi PUN'da MASTER-only. Gercek master
+    // degilsen sunucu ese/LoadLevel'i yok sayar (gir-cik ile alakasi yok - kullanici hakli).
+    bool amMaster = few1n_amRealMaster();
+    FLog([NSString stringWithFormat:@"🗺️ few1n_loadMap: scene='%@' rnCopy='%@' rejoinMode=%d GERCEK-MASTER=%@",
+        sceneCopy, rnCopy ?: @"(BOS!)", g_rejoinMode, amMaster ? @"EVET ✅" : @"HAYIR ❌ (harita degismez!)"]);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         @try {
             if (pn_setAutomaticallySyncScene) {
