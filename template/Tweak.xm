@@ -4153,6 +4153,22 @@ static void few1n_freezeTick(void) {
     } @catch (...) {}
 }
 
+// v114.93: OTO-TAKIP — hedefi surekli SENIN yanina ceker (pesinden gelir).
+static int  g_followActor = -1;
+static int  g_followFrame = 0;
+static void few1n_followTick(void) {
+    if (g_followActor <= 0) return;
+    if (!pn_getInRoom || !pn_getInRoom()) { g_followActor = -1; return; }
+    if (++g_followFrame < 24) return;   // ~0.4sn
+    g_followFrame = 0;
+    @try {
+        Vec3 my; if (!few1n_myCarPos(&my)) return;
+        void* p = few1n_playerByActor(g_followActor);
+        if (p) { my.y += 2.0f; my.x += 3.0f; few1n_teleportPlayerTo(p, g_followActor, my); }
+        else   g_followActor = -1;   // oyuncu ciktı -> birak
+    } @catch (...) {}
+}
+
 // Zorla kazandir: hedefin PhotonView'inde enz() (NetworkPlayerWonRPC gonderici).
 static bool few1n_forceWinTarget(int targetActor) {
     if (!g_hrPhotonHandlerTypeObj || !i_runtime_invoke || !i_class_get_method_from_name || !mbp_getPhotonView) return false;
@@ -5906,6 +5922,8 @@ static void h_roomLineSetup(void* self, void* a, void* b, unsigned char c, unsig
 - (void)lockLaunchPick;          // v114.68
 - (void)freezePlayerPick;        // v114.92 (dondur/kilitle)
 - (void)massGatherSaved;         // v114.92 (herkesi kayitli konuma topla)
+- (void)followPlayerPick;        // v114.93 (oto-takip)
+- (void)swapPlayerPick;          // v114.93 (yer degistir)
 - (void)forceWinPick;            // v114.68
 - (void)copyCarPick;             // v114.69
 - (void)stealCarPick;            // v114.70
@@ -6377,6 +6395,8 @@ static UIViewController* few1n_topVC(void) {
     y = [self actionRow:@"🧲  Herkesi Bana Çek (Mass — tek tuş)" color:C_RED atY:y action:@selector(massPull)];   // v114.90
     y = [self actionRow:@"❄️  Oyuncuyu Dondur / Yerinde Kilitle" color:C_RED atY:y action:@selector(freezePlayerPick)];   // v114.92
     y = [self actionRow:@"🧲  Herkesi Kayıtlı Konuma Topla" color:C_RED atY:y action:@selector(massGatherSaved)];   // v114.92
+    y = [self actionRow:@"🎯  Oyuncuyu Oto-Takip (yanında tut)" color:C_RED atY:y action:@selector(followPlayerPick)];   // v114.93
+    y = [self actionRow:@"🔄  Oyuncuyla Yer Değiştir" color:C_RED atY:y action:@selector(swapPlayerPick)];   // v114.93
     y = [self actionRow:@"🌪️  Herkesi Fırlat (Mass — tek tuş)" color:C_RED atY:y action:@selector(massLaunch)];
     y = [self actionRow:@"📍  Konum Kaydet (buraya ışınlamak için)" color:C_GOLD atY:y action:@selector(griefSavePos)];
     y = [self actionRow:@"🎯  Oyuncuyu Kaydedilen Konuma Işınla (Seç)" color:C_RED atY:y action:@selector(teleportToSavedPick)];
@@ -7727,6 +7747,7 @@ static UIViewController* few1n_topVC(void) {
     few1n_antiKickTick();       // v114.46: Anti-Kick — kicklenirsen otomatik geri gir + master ol
     few1n_lockLaunchTick();     // v114.68: Surekli Firlat kilidi (hedefi ~0.5sn'de bir havaya at)
     few1n_freezeTick();         // v114.92: Dondur/Kilitle (hedefi yerinde tut)
+    few1n_followTick();         // v114.93: Oto-Takip (hedefi senin yanina cek)
     few1n_forceRoomRichText();  // v114.47: hooksuz renkli oda ismi (richText zorla, sideload)
     // v92: BALATA SICAK TUT + HASAR YOK frame update GERI ALINDI — dokunmatik/input bug sebep olabilir
     // Toggle'lar UI'da duruyor ama etkisiz (placeholder). Bug root cause'u bulunca gercek fix gelecek.
@@ -12556,6 +12577,28 @@ static void few1n_joinTargetRoom(NSString *nm) {
         }
         [self simpleAlert:@"🧲 Herkesi Topla" msg:[NSString stringWithFormat:@"%d oyuncu kayıtlı konuma toplandı.", done]];
     } @catch (...) { [self simpleAlert:@"🧲 Herkesi Topla" msg:@"Hata."]; }
+}
+// 🎯 v114.93: Oto-Takip — hedefi surekli senin yanina ceker. Tekrar bas -> kapat.
+- (void)followPlayerPick {
+    if (g_followActor > 0) { g_followActor = -1; [self simpleAlert:@"🎯 Oto-Takip" msg:@"Takip KAPATILDI."]; return; }
+    [self pickOtherPlayer:@"🎯 Oto-Takip (yanında tut)" emoji:@"🎯" handler:^(void* p, int actor, NSString* nick){
+        Vec3 my; if (!few1n_myCarPos(&my)) { [self simpleAlert:@"🎯 Oto-Takip" msg:@"Senin araç konumun okunamadı (araca bin)."]; return; }
+        g_followActor = actor; g_followFrame = 0;
+        [self simpleAlert:@"🎯 Oto-Takip" msg:[NSString stringWithFormat:@"%@ artık ~0.4sn'de bir senin yanına çekiliyor (peşinden gelir).\nKapatmak için butona TEKRAR bas.", nick]];
+    }];
+}
+// 🔄 v114.93: Yer Değiştir — sen ve seçtiğin oyuncu yer değiştirirsiniz.
+- (void)swapPlayerPick {
+    if (!unityAlive(g_rb)) { @try { few1n_findMyCarPhoton(); } @catch (...) {} }
+    if (!unityAlive(g_rb)) { [self simpleAlert:@"🔄 Yer Değiştir" msg:@"Senin araç bulunamadı (araca bin)."]; return; }
+    [self pickOtherPlayer:@"🔄 Yer Değiştir" emoji:@"🔄" handler:^(void* p, int actor, NSString* nick){
+        Vec3 myPos = {0,0,0}; @try { rbGetPosIl(g_rb, &myPos); } @catch (...) {}
+        Vec3 tgtPos; if (!few1n_playerCarPos(actor, &tgtPos)) { [self simpleAlert:@"🔄 Yer Değiştir" msg:@"Hedefin konumu okunamadı (görünür olmalı)."]; return; }
+        // 1) sen -> hedefin yeri, 2) hedef -> senin eski yerin
+        @try { Vec3 t = tgtPos; rbSetPosIl(g_rb, &t); Vec3 z = {0,0,0}; rbSetVelIl(g_rb, &z); } @catch (...) {}
+        bool ok = few1n_teleportPlayerTo(p, actor, myPos);
+        [self simpleAlert:(ok?@"🔄 Yer Değiştirildi":@"⚠️ Kısmi") msg:(ok?[NSString stringWithFormat:@"Sen ve %@ yer değiştirdiniz.", nick]:[NSString stringWithFormat:@"Sen %@'in yerine ışınlandın ama onu taşımak tutmadı (görünür olmalı).", nick])];
+    }];
 }
 // 🏁 Zorla kazandır (oyuncu seç)
 - (void)forceWinPick {
