@@ -1770,6 +1770,19 @@ static void w_pn_setAutomaticallySyncScene(bool on) {
     if (!m || !i_runtime_invoke) return;
     @try { bool b = on; void *args[1]={&b}; i_runtime_invoke(m, NULL, args, NULL); } @catch (...) {}
 }
+// v116.3: PhotonNetwork.IsMessageQueueRunning — LoadLevel bunu false yapip sahne yuklenene
+// kadar network mesaj kuyrugunu durdurur; sahne yuklemesi tamamlanmazsa (addressable/stall)
+// oyuncu 'Baglaniyor' ekraninda SONSUZA KADAR takilir. Zorla true = kuyrugu geri ac.
+static void w_pn_setMessageQueueRunning(bool on) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "set_IsMessageQueueRunning", 1);
+    if (!m || !i_runtime_invoke) return;
+    @try { bool b = on; void *args[1]={&b}; i_runtime_invoke(m, NULL, args, NULL); } @catch (...) {}
+}
+static bool w_pn_getMessageQueueRunning(void) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "get_IsMessageQueueRunning", 0);
+    if (!m || !i_runtime_invoke) return true;   // bilinmiyorsa engelleme
+    @try { return few1n_unboxBool(i_runtime_invoke(m, NULL, NULL, NULL)); } @catch (...) { return true; }
+}
 static void w_pn_raiseEvent(unsigned char code, void *eventContent, bool sendReliable, void *options) {
     // Legacy signature (byte, object, bool, RaiseEventOptions). Newer PUN2 uses
     // (byte, object, RaiseEventOptions, SendOptions). We prefer resolving by argc=4.
@@ -5773,6 +5786,8 @@ static int g_lastRoomLineFrame = 0;
 
 static void(*lobbySetScene)(void*, void*) = NULL;
 static void(*pn_setAutomaticallySyncScene)(bool) = NULL;
+static void(*pn_setMessageQueueRunning)(bool) = NULL;   // v116.3: LoadLevel 'Baglaniyor' takilma fix
+static bool(*pn_getMessageQueueRunning)(void) = NULL;   // v116.3: kuyruk durumu teshis
 static void(*unity_loadSceneStr)(void*) = NULL;
 static void* (*mapList_getInstance)(void) = NULL;   // MapList.ely() -> MapList instance (0x54B3630)
 static void(*photonMgrEnp)(void*, bool) = NULL;     // PhotonManager.enp(string, bool) - static sahne yukleyici (0x54B5260)
@@ -10034,6 +10049,24 @@ static int few1n_buildIndexForName(NSString* name) {
     return -1;
 }
 
+// v116.3: LoadLevel'den sonra 'Baglaniyor'da takilmayi COZ. PhotonNetwork.LoadLevel
+// IsMessageQueueRunning=false yapip sahne yuklenene kadar mesaj kuyrugunu durdurur;
+// addressable/stall durumunda kuyruk geri ACILMIYOR ve oyuncu 'Baglaniyor' ekraninda
+// sonsuza kadar takiliyor (kullanici raporu). Sahne icin makul sure taniyip, kuyruk
+// hala kapaliysa ZORLA acalim — boylece kimseyi beklemeden takilma cozulur.
+static void few1n_unstickMessageQueue(void) {
+    if (!pn_setMessageQueueRunning) return;
+    NSArray<NSNumber*> *delays = @[@2.2, @3.5, @5.0, @7.0];
+    for (NSNumber *d in delays) {
+        few1n_after(d.doubleValue, ^{
+            bool running = pn_getMessageQueueRunning ? pn_getMessageQueueRunning() : true;
+            if (!running) {
+                @try { pn_setMessageQueueRunning(true); } @catch (...) {}
+                FLog([NSString stringWithFormat:@"🔓 [MQ] mesaj kuyrugu KAPALIYDI (%.1fs) — zorla acildi ('Baglaniyor' takilmasi cozuldu)", d.doubleValue]);
+            }
+        });
+    }
+}
 // ===== v83: v77 CALISAN VERSIYON — master claim + photonMgrEnp + LoadLevel fallback =====
 static void few1n_loadMap(NSString *scene, int idx) {
     (void)idx;   // v114.84: artik SADECE isim yolu (ese) — LoadLevel(int) kaldirildi
@@ -10101,6 +10134,7 @@ static void few1n_loadMap(NSString *scene, int idx) {
             if (photonMgrEnp) { void* s = mkStr(sceneCopy); if (s) { @try { photonMgrEnp(s, true); FLog(@"🗺️ [v253] PhotonManager.ese(scene,addressable) gonderildi ✅"); } @catch (...) {} } }
             // 5) Son care: PhotonNetwork.LoadLevel(string) (build-settings adi)
             if (pn_loadLevelStr) { void* s = mkStr(sceneCopy); if (s) { @try { pn_loadLevelStr(s); FLog(@"🗺️ [v253] LoadLevel(str) son care"); } @catch (...) {} } }
+            few1n_unstickMessageQueue();   // v116.3: LoadLevel sonrasi 'Baglaniyor' takilmasini coz
             // v114.84: LoadLevel(int) KALDIRILDI — yanlis harita yukluyordu (kullanici:
             // 'Y5 kismen calisiyor, sadece isimli calissin'). Artik SADECE isim yolu (ese).
             // v114.76: OTOMATIK CIK-GIR — sahne set edildikten sonra odadan cikip ayni
@@ -10333,6 +10367,7 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
             // v116.2: sadece yerel yukle — REJOIN YOK. Master degilken cik-gir yapinca
             // 'baglaniyor'da takiliyordu; artik sadece kendi sahnen degisir, takilma yok.
             @try { pn_loadLevelInt(idx); } @catch (...) {}
+            few1n_unstickMessageQueue();   // v116.3: 'Baglaniyor' takilmasini onle
         }]];
         [self present:w];
         return;
@@ -10345,6 +10380,7 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         @try { pn_loadLevelInt(idx); } @catch (...) {}
         FLog([NSString stringWithFormat:@"🗺️ [Y5] MASTER LoadLevel(%d) '%@' — cik-gir YOK, odada kal, herkes gelir", idx, title]);
+        few1n_unstickMessageQueue();   // v116.3: sahne yuklendikten sonra 'Baglaniyor' takilmasini coz
     });
     (void)rn;
     [self simpleAlert:@"🗺️ Yüklendi" msg:[NSString stringWithFormat:@"%@ (#%d) yükleniyor. Master sensin — herkes OTOMATİK gelir, odada KAL (çık-gir yapma, bağlanmada takılma olmaz).\nYanlış harita geldiyse #numarayı söyle.", title, idx]];
@@ -13744,6 +13780,8 @@ static void InstallEverything(uintptr_t b) {
     pn_getPlayerListOthers     = w_pn_getPlayerListOthers;
     pn_getLocalPlayer          = w_pn_getLocalPlayer;           // v114.11
     pn_setAutomaticallySyncScene = w_pn_setAutomaticallySyncScene;
+    pn_setMessageQueueRunning  = w_pn_setMessageQueueRunning;    // v116.3
+    pn_getMessageQueueRunning  = w_pn_getMessageQueueRunning;    // v116.3
     pn_getActiveSceneName      = w_pn_getActiveSceneName;
     pn_getActiveSceneBuildIndex = w_pn_getActiveSceneBuildIndex;
 
