@@ -1783,6 +1783,17 @@ static bool w_pn_getMessageQueueRunning(void) {
     if (!m || !i_runtime_invoke) return true;   // bilinmiyorsa engelleme
     @try { return few1n_unboxBool(i_runtime_invoke(m, NULL, NULL, NULL)); } @catch (...) { return true; }
 }
+// v116.5: PhotonNetwork.NewSceneLoaded() — sahne yuklemesi BITTIGINDE PUN'un cagirdigi TAMAMLAMA
+// adimi: loadingLevelAndPausedNetwork=false + IsMessageQueueRunning=true yapar. Bu oyunda
+// SceneManager.sceneLoaded'e bagli tetikleme duzgun calismiyor, o yuzden LoadLevel sonrasi
+// oda 'Baglaniyor'da kaliyor ve ancak biri girince aciliyor. Bunu ELLE cagirinca, oyuncu
+// girince olan seyin AYNISI olur -> master kimseyi beklemeden odaya oturur. NewSceneLoaded
+// icinde 'if(loadingLevelAndPausedNetwork)' guard'i var -> tekrar cagirmak zararsiz (idempotent).
+static void w_pn_newSceneLoaded(void) {
+    static void *m = NULL; if (!m) m = few1n_resolveOn(few1n_photonNetworkClass(), "NewSceneLoaded", 0);
+    if (!m || !i_runtime_invoke) return;
+    @try { i_runtime_invoke(m, NULL, NULL, NULL); } @catch (...) {}
+}
 static void w_pn_raiseEvent(unsigned char code, void *eventContent, bool sendReliable, void *options) {
     // Legacy signature (byte, object, bool, RaiseEventOptions). Newer PUN2 uses
     // (byte, object, RaiseEventOptions, SendOptions). We prefer resolving by argc=4.
@@ -5788,6 +5799,7 @@ static void(*lobbySetScene)(void*, void*) = NULL;
 static void(*pn_setAutomaticallySyncScene)(bool) = NULL;
 static void(*pn_setMessageQueueRunning)(bool) = NULL;   // v116.3: LoadLevel 'Baglaniyor' takilma fix
 static bool(*pn_getMessageQueueRunning)(void) = NULL;   // v116.3: kuyruk durumu teshis
+static void(*pn_newSceneLoaded)(void) = NULL;           // v116.5: sahne-yukleme tamamlama (Baglaniyor coz)
 static void(*unity_loadSceneStr)(void*) = NULL;
 static void* (*mapList_getInstance)(void) = NULL;   // MapList.ely() -> MapList instance (0x54B3630)
 static void(*photonMgrEnp)(void*, bool) = NULL;     // PhotonManager.enp(string, bool) - static sahne yukleyici (0x54B5260)
@@ -10049,21 +10061,49 @@ static int few1n_buildIndexForName(NSString* name) {
     return -1;
 }
 
-// v116.3: LoadLevel'den sonra 'Baglaniyor'da takilmayi COZ. PhotonNetwork.LoadLevel
-// IsMessageQueueRunning=false yapip sahne yuklenene kadar mesaj kuyrugunu durdurur;
-// addressable/stall durumunda kuyruk geri ACILMIYOR ve oyuncu 'Baglaniyor' ekraninda
-// sonsuza kadar takiliyor (kullanici raporu). Sahne icin makul sure taniyip, kuyruk
-// hala kapaliysa ZORLA acalim — boylece kimseyi beklemeden takilma cozulur.
-static void few1n_unstickMessageQueue(void) {
-    if (!pn_setMessageQueueRunning) return;
-    NSArray<NSNumber*> *delays = @[@2.2, @3.5, @5.0, @7.0];
+// v116.5: HR_LoadingScreen.SetState(false) — gorunen 'Baglaniyor'/yukleme overlay'ini DOGRUDAN
+// kapat. Dump: singleton getter ejg() -> instance; SetState(bool) overlay'i gosterir/gizler.
+// NewSceneLoaded kok bayragi temizler, bu da gorunen ekrani garanti kapatir (LateUpdate gecikmesine karsi).
+static bool few1n_hideLoadingScreen(void) {
+    static void* cls = NULL; static void* mGet = NULL; static void* mSet = NULL;
+    if (!i_runtime_invoke || !i_class_get_method_from_name) return false;
+    // Cache SADECE basarida — ilk cagride sinif henuz yuklenmemis olabilir, o yuzden bulanadek tekrar dene.
+    if (!cls || !mGet || !mSet) {
+        void* c = few1n_classAnyImage(NULL, "HR_LoadingScreen");
+        if (c) {
+            void* g = i_class_get_method_from_name(c, "ejg", 0);        // static instance getter (iwe)
+            void* s = i_class_get_method_from_name(c, "SetState", 1);
+            if (g && s) { cls = c; mGet = g; mSet = s; }
+        }
+        if (!cls || !mGet || !mSet) { FLog(@"🖼️ HR_LoadingScreen henuz bulunamadi (cls/ejg/SetState)"); return false; }
+    }
+    @try {
+        void* inst = i_runtime_invoke(mGet, NULL, NULL, NULL);   // static -> HR_LoadingScreen instance
+        if (!ptrOk(inst)) return false;
+        bool no = false; void* args[1] = { &no };
+        bool cr = false; few1n_guardedInvoke(mSet, inst, args, &cr);   // SetState(false), crash-guard'li
+        if (!cr) FLog(@"🖼️ HR_LoadingScreen.SetState(false) — yukleme ekrani kapatildi");
+        return !cr;
+    } @catch (...) { return false; }
+}
+// v116.5: LoadLevel sonrasi 'Baglaniyor'da takilmayi COZ — gir-cik YERINE oyunun/PUN'un kendi
+// tamamlama adimlarini ELLE tetikle (kullanici: "gir cik bir ise yaramiyor, baska yontem").
+// LoadLevel mesaj kuyrugunu durdurup loadingLevelAndPausedNetwork=true yapar; bunlari geri
+// temizleyen PhotonNetwork.NewSceneLoaded() bu oyunda tetiklenmiyor -> ekran ancak biri girince
+// aciliyor. NewSceneLoaded'i ELLE cagirinca oyuncu girince olanin AYNISI olur; ayrica gorunen
+// HR_LoadingScreen overlay'i dogrudan kapatilir. Kademeli tekrar: sahne async yuklendigi icin.
+static void few1n_forceSceneLoadComplete(void) {
+    NSArray<NSNumber*> *delays = @[@1.5, @2.5, @4.0, @6.0];
     for (NSNumber *d in delays) {
         few1n_after(d.doubleValue, ^{
-            bool running = pn_getMessageQueueRunning ? pn_getMessageQueueRunning() : true;
-            if (!running) {
-                @try { pn_setMessageQueueRunning(true); } @catch (...) {}
-                FLog([NSString stringWithFormat:@"🔓 [MQ] mesaj kuyrugu KAPALIYDI (%.1fs) — zorla acildi ('Baglaniyor' takilmasi cozuldu)", d.doubleValue]);
-            }
+            // 1) Kuyrugu ac (destek — v116.3)
+            if (pn_setMessageQueueRunning) { @try { pn_setMessageQueueRunning(true); } @catch (...) {} }
+            // 2) ANA fix: PUN tamamlama adimi (loadingLevelAndPausedNetwork=false + kuyruk=true).
+            //    Idempotent: yukleme yoksa NewSceneLoaded icinde no-op.
+            if (pn_newSceneLoaded) { @try { pn_newSceneLoaded(); } @catch (...) {}
+                FLog([NSString stringWithFormat:@"🔓 NewSceneLoaded() cagrildi (%.1fs) — 'Baglaniyor' cozuluyor", d.doubleValue]); }
+            // 3) Gorunen overlay'i garanti kapat
+            few1n_hideLoadingScreen();
         });
     }
 }
@@ -10134,7 +10174,7 @@ static void few1n_loadMap(NSString *scene, int idx) {
             if (photonMgrEnp) { void* s = mkStr(sceneCopy); if (s) { @try { photonMgrEnp(s, true); FLog(@"🗺️ [v253] PhotonManager.ese(scene,addressable) gonderildi ✅"); } @catch (...) {} } }
             // 5) Son care: PhotonNetwork.LoadLevel(string) (build-settings adi)
             if (pn_loadLevelStr) { void* s = mkStr(sceneCopy); if (s) { @try { pn_loadLevelStr(s); FLog(@"🗺️ [v253] LoadLevel(str) son care"); } @catch (...) {} } }
-            few1n_unstickMessageQueue();   // v116.3: LoadLevel sonrasi 'Baglaniyor' takilmasini coz
+            few1n_forceSceneLoadComplete();   // v116.5: NewSceneLoaded + overlay kapat ('Baglaniyor' coz)
             // v114.84: LoadLevel(int) KALDIRILDI — yanlis harita yukluyordu (kullanici:
             // 'Y5 kismen calisiyor, sadece isimli calissin'). Artik SADECE isim yolu (ese).
             // v114.76: OTOMATIK CIK-GIR — sahne set edildikten sonra odadan cikip ayni
@@ -10373,39 +10413,24 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
             // v116.2: sadece yerel yukle — REJOIN YOK. Master degilken cik-gir yapinca
             // 'baglaniyor'da takiliyordu; artik sadece kendi sahnen degisir, takilma yok.
             @try { pn_loadLevelInt(idx); } @catch (...) {}
-            few1n_unstickMessageQueue();   // v116.3: 'Baglaniyor' takilmasini onle
+            few1n_forceSceneLoadComplete();   // v116.5: NewSceneLoaded + overlay kapat
         }]];
         [self present:w];
         return;
     }
-    // v116.4: GERCEK MASTER. LoadLevel oda 'curScn' prop'unu ayarlar (yeni gelen herkes
-    // yeni haritayi gorur) AMA master'in kendi ekrani 'Baglaniyor'da takilir; oda ancak
-    // BIRI GIRINCE aciliyor (kullanici raporu). Cozum kullanicinin kendi buldugu:
-    // OTOMATIK CIK-GIR — master kendini odaya yeniden sokar, 'biri girdi' etkisi olusur,
-    // oda kimseyi beklemeden acilir. v116.2'de yanlislikla kaldirmistim; kullanici
-    // "gir cik otomatik oyle calisir" dedi -> geri getirildi.
-    // KRITIK: eski gir-cik 'Baglaniyor'da takiliyordu cunku LoadLevel mesaj kuyrugunu
-    // durduruyor ve 'cik' komutu gidemiyordu. Once kuyrugu ZORLA ac, sonra cik-gir.
+    // v116.5: GERCEK MASTER. LoadLevel oda 'curScn' prop'unu ayarlar (herkes yeni haritaya gelir)
+    // AMA master'in ekrani 'Baglaniyor'da takilir; oda ancak biri girince aciliyordu. GIR-CIK
+    // ise yaramadi (kullanici). YENI YONTEM (dump analizi): LoadLevel'den sonra PUN'un kendi
+    // tamamlama adimini ELLE tetikle -> few1n_forceSceneLoadComplete() NewSceneLoaded()'i cagirir
+    // (loadingLevelAndPausedNetwork=false + kuyruk=true, tam oyuncu girince olan sey) ve gorunen
+    // HR_LoadingScreen overlay'ini kapatir. Kimseyi beklemeden oda acilir. Odada KALINIR (cik-gir yok).
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         @try { pn_loadLevelInt(idx); } @catch (...) {}
-        if (pn_setMessageQueueRunning) { @try { pn_setMessageQueueRunning(true); } @catch (...) {} }  // cik-gir'in 'cik'i gidebilsin
-        FLog([NSString stringWithFormat:@"🗺️ [Y5] MASTER LoadLevel(%d) '%@' — OTOMATIK cik-gir ile aciliyor (mod=%d)", idx, title, g_rejoinMode]);
-        if (g_rejoinMode != 0 && rn.length > 0) {
-            // Otomatik(1): joinTargetRoom ICINDE hazir-bekle var (donmaz). Manuel(2): sabit sure.
-            double d = (g_rejoinMode == 2 && g_mapRejoinDelaySec > 0.05) ? g_mapRejoinDelaySec : 0.6;
-            // v116.4: kullanici istegi — gir-cik 2 KEZ tekrarlansin (bir kez bazen yetmiyor,
-            // ikinci tur odayi kesin acar). Ikinci tur, ilki oturduktan sonra (~5s) tetiklenir.
-            few1n_after(d, ^{ @try { few1n_joinTargetRoom(rn); } @catch (...) {} });
-            few1n_after(d + 5.0, ^{ @try { few1n_joinTargetRoom(rn); FLog(@"🗺️ [Y5] 2. gir-cik (garanti turu)"); } @catch (...) {} });
-        } else {
-            // Gir-cik KAPALI: en azindan kuyrugu zorla ac (biri girene kadar takilmasin diye)
-            few1n_unstickMessageQueue();
-        }
+        FLog([NSString stringWithFormat:@"🗺️ [Y5] MASTER LoadLevel(%d) '%@' — NewSceneLoaded ile aciliyor (gir-cik YOK)", idx, title]);
+        few1n_forceSceneLoadComplete();   // NewSceneLoaded + overlay kapat -> 'Baglaniyor' cozulur
     });
-    NSString *modeTxt = (g_rejoinMode==0) ? @"gir-çık KAPALI — oda biri girene kadar 'Bağlanıyor'da kalabilir"
-                       : (g_rejoinMode==1) ? @"gir-çık OTOMATİK (hazır olunca) — kimseyi beklemez"
-                       : [NSString stringWithFormat:@"gir-çık MANUEL (%.1fs)", g_mapRejoinDelaySec];
-    [self simpleAlert:@"🗺️ Yüklendi" msg:[NSString stringWithFormat:@"%@ (#%d) yükleniyor. %@.\nBirkaç saniyede oda kendini yeniler, kimseyi beklemezsin. Yanlış harita geldiyse #numarayı söyle.", title, idx, modeTxt]];
+    (void)rn;
+    [self simpleAlert:@"🗺️ Yüklendi" msg:[NSString stringWithFormat:@"%@ (#%d) yükleniyor. Master sensin — oda birkaç saniyede KENDİLİĞİNDEN açılır, kimseyi beklemezsin (yeni yöntem). Yanlış harita geldiyse #numarayı söyle.", title, idx]];
 }
 - (void)mapListY5 {
     if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🗺️ Harita Seç" msg:@"Odada olmalisin (kendi odanda + master iken)."]; return; }
@@ -10413,8 +10438,8 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
     NSArray<NSString*> *realMaps = few1n_readMapNames();
     UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🗺️ Harita Seç"
         message:(realMaps.count > 0
-            ? [NSString stringWithFormat:@"Oyundaki %lu harita. MASTER iken seç — otomatik 2× gir-çık ile oda kimseyi beklemeden açılır. İsim yanlış haritaya denk gelirse #numarayı söyle.", (unsigned long)realMaps.count]
-            : @"MapList okunamadı (oyuna tam gir). Numara ile (Y5). MASTER iken otomatik gir-çık ile açılır.")
+            ? [NSString stringWithFormat:@"Oyundaki %lu harita. MASTER iken seç — oda birkaç saniyede KENDİLİĞİNDEN açılır (kimseyi beklemezsin). İsim yanlış haritaya denk gelirse #numarayı söyle.", (unsigned long)realMaps.count]
+            : @"MapList okunamadı (oyuna tam gir). Numara ile (Y5). MASTER iken oda kendiliğinden açılır.")
         preferredStyle:UIAlertControllerStyleActionSheet];
     if (realMaps.count > 0) {
         // v115.7: ANALIZ — her isim icin DOGRU build index'i SceneUtility.GetScenePath
@@ -10457,11 +10482,12 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
         [in addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
         [self present:in];
     }]];
-    // Gir-cik MOD sec (otomatik / manuel / kapali) — v116.4: harita degisince oda
-    // 'Baglaniyor'da takilir, otomatik gir-cik (2x) onu kimseyi beklemeden acar.
-    [ac addAction:[UIAlertAction actionWithTitle:@"⚙️ Gir-Çık Modu (Otomatik/Manuel/Kapalı)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
-        UIAlertController *mc = [UIAlertController alertControllerWithTitle:@"⚙️ Gir-Çık Modu"
-            message:@"Harita değişince oda 'Bağlanıyor'da kalır; otomatik gir-çık (2×) onu kimseyi beklemeden açar. Kapalı yaparsan biri girene kadar bekler." preferredStyle:UIAlertControllerStyleActionSheet];
+    // Gir-cik MOD sec — v116.5: ARTIK GEREKMEZ. Harita degisince oda otomatik NewSceneLoaded ile
+    // acilir (gir-cik yerine). Bu ayar sadece ESKI YONTEM icin opsiyonel kaldi (few1n_loadMap/ese
+    // yolu, master DEGILKEN). Yeni harita listesinde kullanilmiyor.
+    [ac addAction:[UIAlertAction actionWithTitle:@"⚙️ Gir-Çık Modu (eski yöntem — gerekmez, opsiyonel)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+        UIAlertController *mc = [UIAlertController alertControllerWithTitle:@"⚙️ Gir-Çık Modu (eski)"
+            message:@"Yeni yöntemde GEREKMEZ — harita değişince oda kendiliğinden açılır. Bu ayar sadece eski/yedek yol için." preferredStyle:UIAlertControllerStyleActionSheet];
         [mc addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@🤖 Otomatik (hazır olunca — önerilen)", g_rejoinMode==1?@"✅ ":@""] style:UIAlertActionStyleDefault handler:^(UIAlertAction*x){ g_rejoinMode=1; saveInt(@"rejoinMode",1); [self simpleAlert:@"⚙️ Gir-Çık" msg:@"Otomatik: hazır olunca çık-gir (donmaz)."]; }]];
         [mc addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@⏱️ Manuel (sabit süre)", g_rejoinMode==2?@"✅ ":@""] style:UIAlertActionStyleDefault handler:^(UIAlertAction*x){ g_rejoinMode=2; saveInt(@"rejoinMode",2); [self tapMapRejoinDelay]; }]];
         [mc addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@🚫 Kapalı (biri girince oturur)", g_rejoinMode==0?@"✅ ":@""] style:UIAlertActionStyleDefault handler:^(UIAlertAction*x){ g_rejoinMode=0; saveInt(@"rejoinMode",0); [self simpleAlert:@"⚙️ Gir-Çık" msg:@"Kapalı: harita, odaya biri girince oturur."]; }]];
@@ -13808,6 +13834,7 @@ static void InstallEverything(uintptr_t b) {
     pn_setAutomaticallySyncScene = w_pn_setAutomaticallySyncScene;
     pn_setMessageQueueRunning  = w_pn_setMessageQueueRunning;    // v116.3
     pn_getMessageQueueRunning  = w_pn_getMessageQueueRunning;    // v116.3
+    pn_newSceneLoaded          = w_pn_newSceneLoaded;            // v116.5
     pn_getActiveSceneName      = w_pn_getActiveSceneName;
     pn_getActiveSceneBuildIndex = w_pn_getActiveSceneBuildIndex;
 
