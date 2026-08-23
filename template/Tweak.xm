@@ -10318,6 +10318,21 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
     NSString *rn = (g_lastRoomName[0]) ? [NSString stringWithUTF8String:g_lastRoomName] : nil;
     few1n_claimMaster();
     if (pn_setAutomaticallySyncScene) { @try { pn_setAutomaticallySyncScene(true); } @catch (...) {} }
+    // v116.1: GERCEK MASTER kontrol. Master DEGILSEN LoadLevel sadece SENDE calisir,
+    // digerleri gelmez, sen desync olup ODA DONAR (kullanici raporu). Uyar.
+    BOOL amMaster = few1n_amRealMaster();
+    if (!amMaster) {
+        UIAlertController *w = [UIAlertController alertControllerWithTitle:@"⚠️ Master Değilsin"
+            message:[NSString stringWithFormat:@"'%@' YÜKLENİRSE sadece SENDE değişir, diğerleri gelmez ve oda DONAR (desync). Haritanın herkeste değişmesi için odanın GERÇEK master'ı olman şart — kendi kurduğun boş odada dene.\n\nYine de sadece kendinde yüklemek ister misin?", title]
+            preferredStyle:UIAlertControllerStyleAlert];
+        [w addAction:[UIAlertAction actionWithTitle:@"Vazgeç" style:UIAlertActionStyleCancel handler:nil]];
+        [w addAction:[UIAlertAction actionWithTitle:@"Yine de yükle (donabilir)" style:UIAlertActionStyleDestructive handler:^(UIAlertAction*a){
+            @try { pn_loadLevelInt(idx); } @catch (...) {}
+            if (g_rejoinMode != 0 && rn.length > 0) few1n_after(0.8, ^{ @try { few1n_joinTargetRoom(rn); } @catch (...) {} });
+        }]];
+        [self present:w];
+        return;
+    }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         @try { pn_loadLevelInt(idx); } @catch (...) {}
         FLog([NSString stringWithFormat:@"🗺️ [Y5] LoadLevel(%d) '%@' gonderildi (gir-cik mod=%d)", idx, title, g_rejoinMode]);
