@@ -10353,6 +10353,12 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
 - (void)y5LoadIdx:(int)idx label:(NSString*)title {
     if (!pn_loadLevelInt) { [self simpleAlert:@"🗺️ Harita" msg:@"LoadLevel(int) yok."]; return; }
     NSString *rn = (g_lastRoomName[0]) ? [NSString stringWithUTF8String:g_lastRoomName] : nil;
+    // v116.4: g_lastRoomName bossa CANLI oda adini oku — gir-cik'in sarti, bossa cik-gir
+    // hic tetiklenmez ve oda 'Baglaniyor'da kalir.
+    if (rn.length == 0 && pn_getCurrentRoom && rinfo_getName) {
+        @try { void* room = pn_getCurrentRoom(); if (ptrOk(room)) { NSString *live = readStr(rinfo_getName(room));
+            if (live.length > 0) { rn = live; strncpy(g_lastRoomName, live.UTF8String, sizeof(g_lastRoomName)-1); g_lastRoomName[sizeof(g_lastRoomName)-1]='\0'; } } } @catch (...) {}
+    }
     few1n_claimMaster();
     if (pn_setAutomaticallySyncScene) { @try { pn_setAutomaticallySyncScene(true); } @catch (...) {} }
     // v116.1: GERCEK MASTER kontrol. Master DEGILSEN LoadLevel sadece SENDE calisir,
@@ -10372,18 +10378,34 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
         [self present:w];
         return;
     }
-    // v116.2: GERCEK MASTER isen -> LoadLevel(int) + AutomaticallySyncScene YETER.
-    // Master'in LoadLevel'i oda 'curScn' prop'unu ayarlar, HERKES otomatik gelir.
-    // CIK-GIR YAPMA! Master cik-gir yapinca herkese takip et dedigi odayi terk edip
-    // 'baglaniyor'da takiliyor (kullanici raporu: "gir cik calismiyo baglaniyoda kaliyo").
-    // Odada KAL — senkronu sen suruyorsun.
+    // v116.4: GERCEK MASTER. LoadLevel oda 'curScn' prop'unu ayarlar (yeni gelen herkes
+    // yeni haritayi gorur) AMA master'in kendi ekrani 'Baglaniyor'da takilir; oda ancak
+    // BIRI GIRINCE aciliyor (kullanici raporu). Cozum kullanicinin kendi buldugu:
+    // OTOMATIK CIK-GIR — master kendini odaya yeniden sokar, 'biri girdi' etkisi olusur,
+    // oda kimseyi beklemeden acilir. v116.2'de yanlislikla kaldirmistim; kullanici
+    // "gir cik otomatik oyle calisir" dedi -> geri getirildi.
+    // KRITIK: eski gir-cik 'Baglaniyor'da takiliyordu cunku LoadLevel mesaj kuyrugunu
+    // durduruyor ve 'cik' komutu gidemiyordu. Once kuyrugu ZORLA ac, sonra cik-gir.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         @try { pn_loadLevelInt(idx); } @catch (...) {}
-        FLog([NSString stringWithFormat:@"🗺️ [Y5] MASTER LoadLevel(%d) '%@' — cik-gir YOK, odada kal, herkes gelir", idx, title]);
-        few1n_unstickMessageQueue();   // v116.3: sahne yuklendikten sonra 'Baglaniyor' takilmasini coz
+        if (pn_setMessageQueueRunning) { @try { pn_setMessageQueueRunning(true); } @catch (...) {} }  // cik-gir'in 'cik'i gidebilsin
+        FLog([NSString stringWithFormat:@"🗺️ [Y5] MASTER LoadLevel(%d) '%@' — OTOMATIK cik-gir ile aciliyor (mod=%d)", idx, title, g_rejoinMode]);
+        if (g_rejoinMode != 0 && rn.length > 0) {
+            // Otomatik(1): joinTargetRoom ICINDE hazir-bekle var (donmaz). Manuel(2): sabit sure.
+            double d = (g_rejoinMode == 2 && g_mapRejoinDelaySec > 0.05) ? g_mapRejoinDelaySec : 0.6;
+            // v116.4: kullanici istegi — gir-cik 2 KEZ tekrarlansin (bir kez bazen yetmiyor,
+            // ikinci tur odayi kesin acar). Ikinci tur, ilki oturduktan sonra (~5s) tetiklenir.
+            few1n_after(d, ^{ @try { few1n_joinTargetRoom(rn); } @catch (...) {} });
+            few1n_after(d + 5.0, ^{ @try { few1n_joinTargetRoom(rn); FLog(@"🗺️ [Y5] 2. gir-cik (garanti turu)"); } @catch (...) {} });
+        } else {
+            // Gir-cik KAPALI: en azindan kuyrugu zorla ac (biri girene kadar takilmasin diye)
+            few1n_unstickMessageQueue();
+        }
     });
-    (void)rn;
-    [self simpleAlert:@"🗺️ Yüklendi" msg:[NSString stringWithFormat:@"%@ (#%d) yükleniyor. Master sensin — herkes OTOMATİK gelir, odada KAL (çık-gir yapma, bağlanmada takılma olmaz).\nYanlış harita geldiyse #numarayı söyle.", title, idx]];
+    NSString *modeTxt = (g_rejoinMode==0) ? @"gir-çık KAPALI — oda biri girene kadar 'Bağlanıyor'da kalabilir"
+                       : (g_rejoinMode==1) ? @"gir-çık OTOMATİK (hazır olunca) — kimseyi beklemez"
+                       : [NSString stringWithFormat:@"gir-çık MANUEL (%.1fs)", g_mapRejoinDelaySec];
+    [self simpleAlert:@"🗺️ Yüklendi" msg:[NSString stringWithFormat:@"%@ (#%d) yükleniyor. %@.\nBirkaç saniyede oda kendini yeniler, kimseyi beklemezsin. Yanlış harita geldiyse #numarayı söyle.", title, idx, modeTxt]];
 }
 - (void)mapListY5 {
     if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🗺️ Harita Seç" msg:@"Odada olmalisin (kendi odanda + master iken)."]; return; }
@@ -10391,8 +10413,8 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
     NSArray<NSString*> *realMaps = few1n_readMapNames();
     UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🗺️ Harita Seç"
         message:(realMaps.count > 0
-            ? [NSString stringWithFormat:@"Oyundaki %lu harita. NUMARA (LoadLevel int) ile yüklenir. MASTER isen herkes OTOMATİK gelir — çık-gir GEREKMEZ, odada KAL. İsim yanlış haritaya denk gelirse #numarayı söyle.", (unsigned long)realMaps.count]
-            : @"MapList okunamadı (oyuna tam gir). Numara ile (Y5). MASTER isen herkes otomatik gelir.")
+            ? [NSString stringWithFormat:@"Oyundaki %lu harita. MASTER iken seç — otomatik 2× gir-çık ile oda kimseyi beklemeden açılır. İsim yanlış haritaya denk gelirse #numarayı söyle.", (unsigned long)realMaps.count]
+            : @"MapList okunamadı (oyuna tam gir). Numara ile (Y5). MASTER iken otomatik gir-çık ile açılır.")
         preferredStyle:UIAlertControllerStyleActionSheet];
     if (realMaps.count > 0) {
         // v115.7: ANALIZ — her isim icin DOGRU build index'i SceneUtility.GetScenePath
@@ -10435,12 +10457,11 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
         [in addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
         [self present:in];
     }]];
-    // Gir-cik MOD sec (otomatik / manuel / kapali) — v116.2: ARTIK SADECE master OLMAYAN
-    // icin gecerli (kendini odanin guncel sahnesine cekmek). Master isen bu ayar YOK SAYILIR,
-    // harita LoadLevel ile herkese senkronlanir, odada kalirsin.
-    [ac addAction:[UIAlertAction actionWithTitle:@"⚙️ Gir-Çık Modu (sadece master DEĞİLKEN)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+    // Gir-cik MOD sec (otomatik / manuel / kapali) — v116.4: harita degisince oda
+    // 'Baglaniyor'da takilir, otomatik gir-cik (2x) onu kimseyi beklemeden acar.
+    [ac addAction:[UIAlertAction actionWithTitle:@"⚙️ Gir-Çık Modu (Otomatik/Manuel/Kapalı)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
         UIAlertController *mc = [UIAlertController alertControllerWithTitle:@"⚙️ Gir-Çık Modu"
-            message:@"Sadece master DEĞİLKEN çalışır (kendini güncel haritaya çekmek için). Master isen çık-gir yapılmaz, odada kalırsın." preferredStyle:UIAlertControllerStyleActionSheet];
+            message:@"Harita değişince oda 'Bağlanıyor'da kalır; otomatik gir-çık (2×) onu kimseyi beklemeden açar. Kapalı yaparsan biri girene kadar bekler." preferredStyle:UIAlertControllerStyleActionSheet];
         [mc addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@🤖 Otomatik (hazır olunca — önerilen)", g_rejoinMode==1?@"✅ ":@""] style:UIAlertActionStyleDefault handler:^(UIAlertAction*x){ g_rejoinMode=1; saveInt(@"rejoinMode",1); [self simpleAlert:@"⚙️ Gir-Çık" msg:@"Otomatik: hazır olunca çık-gir (donmaz)."]; }]];
         [mc addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@⏱️ Manuel (sabit süre)", g_rejoinMode==2?@"✅ ":@""] style:UIAlertActionStyleDefault handler:^(UIAlertAction*x){ g_rejoinMode=2; saveInt(@"rejoinMode",2); [self tapMapRejoinDelay]; }]];
         [mc addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@🚫 Kapalı (biri girince oturur)", g_rejoinMode==0?@"✅ ":@""] style:UIAlertActionStyleDefault handler:^(UIAlertAction*x){ g_rejoinMode=0; saveInt(@"rejoinMode",0); [self simpleAlert:@"⚙️ Gir-Çık" msg:@"Kapalı: harita, odaya biri girince oturur."]; }]];
@@ -12042,6 +12063,11 @@ static bool (*pn_joinOrCreateRoom)(void*, void*, void*, void*) = NULL;
 static void few1n_joinTargetRoom(NSString *nm) {
     if (!nm || nm.length == 0) return;
     @try {
+        // v116.4: KRITIK — LoadLevel'den sonra PhotonNetwork.IsMessageQueueRunning=false
+        // olabilir; oyleyse LeaveRoom RPC'si sunucuya GIDEMEZ ve gir-cik 'Baglaniyor'da
+        // takilir (kullanicinin eski 'gir cik calismiyo' sorununun kok nedeni). Cikmadan
+        // ONCE kuyrugu zorla ac ki 'cik' komutu gitsin.
+        if (pn_setMessageQueueRunning) { @try { pn_setMessageQueueRunning(true); } @catch (...) {} }
         bool wasInRoom = (pn_getInRoom && pn_getInRoom());
         if (wasInRoom) {
             if (pn_leaveRoom) pn_leaveRoom(false);
