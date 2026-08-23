@@ -3937,6 +3937,16 @@ static bool few1n_hijackPlateToTarget(int targetActor, NSString* text) {
     if (mbp_getPhotonView) { @try { tgtPV = mbp_getPhotonView(tgtTM); } @catch (...) {} }
     int myAN = 0; void* myLP = pn_getLocalPlayer ? pn_getLocalPlayer() : NULL;
     if (myLP && ply_getActorNumber) { @try { myAN = ply_getActorNumber(myLP); } @catch (...) {} }
+    // v116.0: OWNERSHIP TRANSFER — sahiplik devri. Aracin PV OwnershipTransfer'i (@0x50 =
+    // g_isMineOff-0x18) Takeover(1)/Request(2) ise RequestOwnership() ile GERCEKTEN sahip
+    // olurum -> LoadTuners RPC mesru gider -> HERKESTE degisir. Fixed(0) ise imkansiz.
+    int owTrans = (ptrOk(tgtPV) && g_isMineOff > 0) ? few1n_rdI32(tgtPV, (uintptr_t)(g_isMineOff - 0x18), -1) : -1;
+    if (ptrOk(tgtPV) && owTrans != 0) {   // Fixed degilse sahiplik iste
+        void* pvcls = few1n_classAnyImage("Photon.Pun", "PhotonView");
+        if (!pvcls) pvcls = few1n_classAnyImage("", "PhotonView");
+        void* mReqOwn = pvcls ? i_class_get_method_from_name(pvcls, "RequestOwnership", 0) : NULL;
+        if (mReqOwn) { bool cr=false; few1n_guardedInvoke(mReqOwn, tgtPV, NULL, &cr); }
+    }
     bool spoofed = false;
     unsigned char sMine=0, sAmOwner=0; void *sCtrl=NULL, *sOwner=NULL; int sOwnerAN=0, sCtrlAN=0;
     uintptr_t b = (uintptr_t)tgtPV; int oM = g_isMineOff;   // 0x68
@@ -3973,8 +3983,9 @@ static bool few1n_hijackPlateToTarget(int targetActor, NSString* text) {
         *(int*)(b + oM + 0x20)           = sOwnerAN;
         *(int*)(b + oM + 0x24)           = sCtrlAN;
     } @catch (...) {} }
-    snprintf(g_plateDiag, sizeof(g_plateDiag), "TAM-SPOOF: Apply OK, eah=%s, spoof=%s(myAN=%d)",
-        eahSent?"gonderildi":"YOK", spoofed?"evet":"HAYIR", myAN);
+    const char* owTxt = (owTrans==0)?"Fixed(devir YOK)":(owTrans==1)?"Takeover(alinabilir!)":(owTrans==2)?"Request(istenebilir)":"?";
+    snprintf(g_plateDiag, sizeof(g_plateDiag), "SPOOF+OWN: eah=%s spoof=%s OwnershipTransfer=%s myAN=%d",
+        eahSent?"gonderildi":"YOK", spoofed?"evet":"HAYIR", owTxt, myAN);
     FLog([NSString stringWithFormat:@"🎭 HedefPlaka: actor=%d '%@' uygulandi (spoof=%d eah=%d)", targetActor, text, spoofed, eahSent]);
     return true;
 }
