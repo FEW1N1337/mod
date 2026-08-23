@@ -2735,148 +2735,103 @@ static void* few1n_findLobbyMgr(void) {
         return fallback;   // photonView'li yoksa eldeki en iyi instance
     } @catch (...) { return NULL; }
 }
+// v116.6: KOOPERATIF KICK — Dummy'nin PhotonView'inde dogrudan RPC("KickPlayerRPC", All, {nick}).
+// KickPlayer()'in ic mantigina (jdz okuma) GUVENMEZ; ham RPC yollar. Alici kendi KickPlayerRPC'sinde
+// ismi kontrol edip LeaveRoom() yapar. SADECE bekleme odasinda calisir (Dummy sahne PhotonView'i her
+// iki tarafta canli olmali). Satir 4064'teki kanitlanmis LoadTuners RPC deseninin aynisi.
+static bool few1n_sendKickRPC(NSString* nick) {
+    if (!nick || nick.length == 0) return false;
+    if (!i_runtime_invoke || !i_array_new || !mbp_getPhotonView) return false;
+    void* mgr = few1n_findLobbyMgr();
+    if (!unityAlive(mgr)) { FLog(@"  → RPC-kick: LobbyDummy bulunamadi (bekleme odasinda dene)"); return false; }
+    void* pv = NULL; @try { pv = mbp_getPhotonView(mgr); } @catch (...) {}
+    if (!ptrOk(pv)) { FLog(@"  → RPC-kick: Dummy PhotonView yok (yaris/pasif — bekleme odasinda dene)"); return false; }
+    void* objcls = few1n_classAnyImage("System", "Object");
+    void* pvcls  = few1n_classAnyImage("Photon.Pun", "PhotonView");
+    if (!pvcls) pvcls = few1n_classAnyImage("", "PhotonView");
+    if (!objcls || !pvcls) { FLog(@"  → RPC-kick: Object/PhotonView sinifi yok"); return false; }
+    const char* prm[3] = { "String", "RpcTarget", "Object[]" };
+    void* mRPC = few1n_methodBySig(pvcls, "Void", prm, 3, 0);
+    if (!mRPC) { FLog(@"  → RPC-kick: PhotonView.RPC(String,RpcTarget,Object[]) yok"); return false; }
+    @try {
+        void* arr = i_array_new(objcls, 1);
+        if (!ptrOk(arr)) return false;
+        void* nickStr = mkStr(nick);
+        if (!nickStr) return false;
+        *(void**)((uintptr_t)arr + 0x20) = nickStr;   // object[0] = hedef isim (string referans, box yok)
+        void* rpcName = mkStr(@"KickPlayerRPC");
+        int all = 0;   // RpcTarget.All
+        void* args[3] = { rpcName, &all, arr };
+        bool crashed = false;
+        few1n_guardedInvoke(mRPC, pv, args, &crashed);
+        if (crashed) { FLog(@"  → RPC-kick: RPC segfault yakalandi -> iptal"); return false; }
+        FLog([NSString stringWithFormat:@"  → KickPlayerRPC('%@', All) gonderildi ✓ (bekleme odasi kooperatif kick)", nick]);
+        return true;
+    } @catch (...) { FLog(@"  → RPC-kick: exception"); return false; }
+}
+// v116.6: DUMP GERCEGINE gore yeniden yazildi (3 ajan analizi). Oyunda kick icin SADECE 2
+// gercek yol var:
+//   A) CloseConnection(Player) — SUNUCU-ZORLAMALI, kesin atar (yarista bile). SART: GERCEK
+//      master + EnableCloseConnection=true. Kurban reddedemez.
+//   B) KickPlayerRPC(nick) — KOOPERATIF, master gerekmez ama SADECE bekleme odasinda (Dummy
+//      sahne PhotonView'i her iki tarafta canli olmali). Kurban kendi LeaveRoom'unu cagirir.
+// Yarista + master degilken oyunun kick'i YOKTUR (dump: hicbir canli networked bilesen eject
+// RPC'si tasimiyor). Bunu durustce soyleriz. ESKI olu yollar (PlayerListLine bos-stub, teleport
+// crash) KALDIRILDI.
 static void few1n_kickPlayer(void* playerObj) {
     if (!playerObj) return;
     @try {
-        few1n_forceEnableKick();
+        few1n_forceEnableKick();   // PhotonNetwork.EnableCloseConnection = true (field @0x28)
 
-        // Hedef ActorNumber'ı al (pointer karşılaştırması yerine ActorNumber kullan)
         int targetActor = ply_getActorNumber ? ply_getActorNumber(playerObj) : -1;
         void* nmeStr = ply_getNickName ? ply_getNickName(playerObj) : NULL;
         NSString *targetNick = ptrOk(nmeStr) ? readStr(nmeStr) : nil;
-        FLog([NSString stringWithFormat:@"🎯 Hedef: '%@' (Actor=%d, ptr=%p)", targetNick ?: @"?", targetActor, playerObj]);
+        bool amMaster = few1n_amRealMaster();
+        FLog([NSString stringWithFormat:@"🎯 Kick hedef: '%@' (Actor=%d) — GERCEK-MASTER=%@", targetNick ?: @"?", targetActor, amMaster ? @"EVET ✅" : @"HAYIR ❌"]);
 
-        // 1. OTOMATIK MASTER CLIENT YETKISI AL (Sunucunun kick reddetmesini engeller)
-        if (pn_getLocalPlayer && pn_setMasterClient) {
-            void* me = pn_getLocalPlayer();
-            if (me) {
-                pn_setMasterClient(me);
-                FLog(@"  → Master client yetkisi istendi");
-            }
-        }
-
-        // 2. EnableCloseConnection'ı TEKRAR zorla (oyun resetlemiş olabilir)
-        few1n_forceEnableKick();
-
-        // 3. PUN2 CloseConnection (Doğrudan Photon Kick)
-        // Hook varsa o_closeConnection orijinali çağırır; yoksa pn_closeConnection direkt çağırır
-        bool kicked = false;
-        if (o_closeConnection) {
-            g_isManualKick = true;
-            @try { kicked = o_closeConnection(playerObj); } @catch (...) {}
-            g_isManualKick = false;
-            FLog([NSString stringWithFormat:@"  → CloseConnection (orig): %@", kicked ? @"BAŞARILI ✓" : @"BAŞARISIZ (master değilsin?)"]);
-        } else if (pn_closeConnection) {
-            g_isManualKick = true;
-            @try { kicked = pn_closeConnection(playerObj); } @catch (...) {}
-            g_isManualKick = false;
-            FLog([NSString stringWithFormat:@"  → CloseConnection (direkt): %@", kicked ? @"BAŞARILI ✓" : @"BAŞARISIZ"]);
-        } else {
-            FLog(@"  → CloseConnection: POINTER YOK (hook+fn ikisi de NULL)");
-        }
-
-        // 4. Oyunun kendi Lobi RPC Kick mekanizması (LobbyManagerDummy.KickPlayer)
-        if (g_lobbyDummyType && i_runtime_invoke && g_mDummyKick && ptrOk(nmeStr)) {
-            void* mgr = few1n_findLobbyMgr();
-            if (unityAlive(mgr) && few1n_memOk((void*)((uintptr_t)mgr + OFFR_DUMMY_KICKNAME))) {
-                *(void**)((uintptr_t)mgr + OFFR_DUMMY_KICKNAME) = nmeStr;   // jdz = hedef isim
-                bool cr=false; few1n_guardedInvoke(g_mDummyKick, mgr, NULL, &cr);   // v115.2: guard'li (inactive instance)
-                FLog(cr ? @"  → Lobby RPC kick HATA (segfault yakalandi)" : @"  → Lobby RPC KickPlayer gönderildi ✓ (KickPlayerRPC — non-master calisabilir)");
+        // ===== YOL A: CloseConnection — SADECE gercek master (sunucu-zorlamali, kesin) =====
+        bool masterKicked = false;
+        if (amMaster) {
+            few1n_forceEnableKick();   // oda girisinde resetlenmis olabilir -> tekrar zorla
+            if (pn_closeConnection) {
+                g_isManualKick = true;
+                @try { masterKicked = pn_closeConnection(playerObj); } @catch (...) {}
+                g_isManualKick = false;
+                FLog([NSString stringWithFormat:@"  → CloseConnection (master): %@", masterKicked ? @"BAŞARILI ✓ (sunucu düşürdü)" : @"reddedildi (EnableCloseConnection?)"]);
+            } else if (o_closeConnection) {
+                g_isManualKick = true;
+                @try { masterKicked = o_closeConnection(playerObj); } @catch (...) {}
+                g_isManualKick = false;
+                FLog([NSString stringWithFormat:@"  → CloseConnection (hook): %@", masterKicked ? @"BAŞARILI ✓" : @"reddedildi"]);
             } else {
-                FLog(@"  → Lobby RPC: Manager bulunamadı (pasif-dahil arama da bos)");
+                FLog(@"  → CloseConnection: pointer YOK");
             }
         } else {
-            FLog(@"  → Lobby RPC kick: Gerekli pointer(lar) hazır değil");
+            FLog(@"  → CloseConnection ATLANDI (master degilsin — sunucu reddeder)");
         }
 
-        // 4.5 OYUNUN KENDI SATIR-KICK BUTONU (HR_UI_PlayerListLine.KickPlayer)
-        // Oyuncu listesindeki her satirin kendi kick butonu var; Register(nick) ile
-        // isme bagli. Hedef ismin satirini bulup KickPlayer() cagirmak, oyunda o
-        // butona basmakla birebir ayni RPC'yi yollar. Dummy manager bulunamasa bile
-        // bu yol calisabilir (oyuncu listesi UI'i sahnedeyse).
-        bool lineKicked = false;
-        if (targetNick && g_mFindObjectsPlural && i_runtime_invoke) {
-            void* llCls = few1n_classAnyImage("", "HR_UI_PlayerListLine");
-            if (llCls) {
-                void* llType = few1n_typeObjOf(llCls);
-                void* mLineKick = i_class_get_method_from_name(llCls, "KickPlayer", 0);
-                int offNick = few1n_fieldOffOn(llCls, "jfg", 0x38);   // Register'da yazilan nick
-                if (llType && mLineKick) {
-                    @try {
-                        void* a[1] = { llType };
-                        void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, a, NULL);
-                        if (ptrOk(arr)) {
-                            int cnt = (int)(*(uintptr_t*)((uintptr_t)arr + 0x18));
-                            void** lines = (void**)((uintptr_t)arr + 0x20);
-                            for (int i = 0; i < cnt && i < 64; i++) {
-                                void* ln = lines[i]; if (!unityAlive(ln)) continue;
-                                NSString *lnNick = readStr(*(void**)((uintptr_t)ln + offNick));
-                                if (lnNick && [lnNick isEqualToString:targetNick]) {
-                                    i_runtime_invoke(mLineKick, ln, NULL, NULL);
-                                    lineKicked = true;
-                                    FLog(@"  → PlayerListLine.KickPlayer() (oyunun kendi butonu) ✓");
-                                    break;
-                                }
-                            }
-                        }
-                        if (!lineKicked) FLog(@"  → PlayerListLine: hedef satir bulunamadi (oyuncu listesi kapali olabilir)");
-                    } @catch (...) { FLog(@"  → PlayerListLine kick HATA"); }
-                }
-            }
-        }
-
-        // 5. Hedef oyuncunun PhotonView/CPS nesnesine özel Teleport RPC Düşürme paketi
-        //    DÜZELTME: Pointer karşılaştırması yerine ActorNumber karşılaştırması kullan
-        bool rpcSent = false;
-        if (g_photonViewType && g_pvOwnerOff > 0 && g_mFindObjectsPlural && i_runtime_invoke && targetActor > 0) {
-            void* b2[1]; b2[0] = g_photonViewType;
-            void* arr = i_runtime_invoke(g_mFindObjectsPlural, NULL, b2, NULL);
-            if (ptrOk(arr)) {
-                int c = (int)(*(uintptr_t*)((uintptr_t)arr + 0x18));
-                void** pvs = (void**)((uintptr_t)arr + 0x20);
-                for (int i = 0; i < c && i < 128; i++) {
-                    void* pv = pvs[i]; if (!unityAlive(pv)) continue;
-                    void* owner = *(void**)((uintptr_t)pv + g_pvOwnerOff);
-                    if (!ptrOk(owner)) continue;
-                    // ActorNumber karşılaştırması (güvenilir, pointer değişse bile çalışır)
-                    int ownerActor = ply_getActorNumber ? ply_getActorNumber(owner) : -2;
-                    if (ownerActor == targetActor) {
-                        Vec3 crashV = {9999999.0f, 9999999.0f, 9999999.0f};
-                        Quaternion crashQ = {99999.0f, 99999.0f, 99999.0f, 99999.0f};
-                        if (g_carPhotonSyncTypeObj && g_mGetCompInParent && cps_TeleportCar_RPC) {
-                            void* args2[2]; args2[0] = g_carPhotonSyncTypeObj; bool inc = true; args2[1] = &inc;
-                            void* cps = i_runtime_invoke(g_mGetCompInParent, pv, args2, NULL);
-                            if (ptrOk(cps)) {
-                                cps_TeleportCar_RPC(cps, crashV, crashQ, NULL);
-                                rpcSent = true;
-                            }
-                        }
-                        // Ek: HR_PhotonHandler TeleportPlayerRPC (ikinci crash vektörü)
-                        if (g_hrPhotonHandlerTypeObj && g_mGetCompInParent && hrph_TeleportPlayerRPC) {
-                            void* args3[2]; args3[0] = g_hrPhotonHandlerTypeObj; bool inc2 = true; args3[1] = &inc2;
-                            void* hrph = i_runtime_invoke(g_mGetCompInParent, pv, args3, NULL);
-                            if (ptrOk(hrph)) {
-                                hrph_TeleportPlayerRPC(hrph, crashV, NULL);
-                                rpcSent = true;
-                            }
-                        }
-                    }
-                }
-            }
-            FLog(rpcSent ? @"  → Teleport RPC crash paketi gönderildi ✓" : @"  → Teleport RPC: Hedefin PhotonView'i bulunamadı");
+        // ===== YOL B: KickPlayerRPC — bekleme odasi kooperatif kick (master olsan da dene) =====
+        // Master isek de gonderiyoruz: bekleme odasinda kurban hizli/temiz ayrilir (CloseConnection
+        // zaten garanti). Master degilsek TEK sansimiz bu (ve sadece bekleme odasinda).
+        bool rpcKicked = false;
+        if (targetNick.length > 0) {
+            rpcKicked = few1n_sendKickRPC(targetNick);
         } else {
-            if (g_pvOwnerOff <= 0) FLog(@"  → Teleport RPC: OwnerOffset=0 (PhotonView field bulunamadı)");
-            else if (targetActor <= 0) FLog(@"  → Teleport RPC: ActorNumber alınamadı");
-            else FLog(@"  → Teleport RPC: Gerekli pointer(lar) hazır değil");
+            FLog(@"  → RPC-kick: hedef ismi bos");
         }
 
-        FLog([NSString stringWithFormat:@"💥 '%@' (Actor=%d) atma: master-kick=%@ satir-kick=%@ rpc-crash=%@",
-              targetNick ?: @"?", targetActor,
-              kicked ? @"✓" : @"✗", lineKicked ? @"✓" : @"✗", rpcSent ? @"✓" : @"✗"]);
-        if (!kicked && !lineKicked && !rpcSent)
-            FLog(@"⚠️ Hiçbir kick yolu tutmadi. En garanti yol: SEN oda master'iysan atarsin. "
-                  "'👑 Oda Master Ol' dene, sonra tekrar at. Master degilsen oyun kick'i sadece "
-                  "oyuncu listesi ekraninda RPC ile calisir.");
+        // ===== SONUC + DURUST TESHIS =====
+        FLog([NSString stringWithFormat:@"💥 '%@' atma sonucu: master-kick=%@ | rpc-kick=%@",
+              targetNick ?: @"?", masterKicked ? @"✓" : @"✗", rpcKicked ? @"✓" : @"✗"]);
+        if (!masterKicked && !rpcKicked) {
+            if (amMaster)
+                FLog(@"⚠️ Master'sin ama düşmedi — EnableCloseConnection resetlenmiş olabilir; tekrar dene.");
+            else
+                FLog(@"⚠️ Kick tutmadı. KESİN atmak icin: KENDİ odanda (master sensin) at — yarışta bile "
+                      "çalışır. Başkasının odasında master değilsen sunucu kick'i reddeder. Bekleme "
+                      "odasında (yarış başlamadan) normal oyuncular RPC ile atılır; yarış sırasında "
+                      "oyunun kendi kick'i yoktur.");
+        }
     } @catch (...) { g_isManualKick = false; FLog(@"Kick hatası (exception)"); }
 }
 
