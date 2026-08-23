@@ -10105,7 +10105,10 @@ static void few1n_loadMap(NSString *scene, int idx) {
             // 'Y5 kismen calisiyor, sadece isimli calissin'). Artik SADECE isim yolu (ese).
             // v114.76: OTOMATIK CIK-GIR — sahne set edildikten sonra odadan cikip ayni
             // odaya geri gir -> yeni harita yuklenir, "baglaniyor"da takilmaz (kullanici cozumu).
-            if (rnCopy.length > 0 && g_rejoinMode != 0) {   // v114.96: gir-cik modu Kapali degilse
+            // v116.2: MASTER isen gir-cik YAPMA — master odayi terk edip 'baglaniyor'da
+            // takiliyordu. Master'in sahne senkronu odada kalarak yayilir. Sadece
+            // master OLMAYAN icin gir-cik (kendini odanin guncel sahnesine cekmek icin).
+            if (rnCopy.length > 0 && g_rejoinMode != 0 && !amMaster) {   // v114.96: gir-cik modu Kapali degilse
                 double _rjDelay = (g_rejoinMode == 2 && g_mapRejoinDelaySec > 0.05) ? g_mapRejoinDelaySec : 0.9;
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(_rjDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     @try { few1n_joinTargetRoom(rnCopy); FLog([NSString stringWithFormat:@"🗺️ [v253] otomatik cik-gir (%.1fs): '%@'", _rjDelay, rnCopy]); } @catch (...) {}
@@ -10326,42 +10329,34 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
             message:[NSString stringWithFormat:@"'%@' YÜKLENİRSE sadece SENDE değişir, diğerleri gelmez ve oda DONAR (desync). Haritanın herkeste değişmesi için odanın GERÇEK master'ı olman şart — kendi kurduğun boş odada dene.\n\nYine de sadece kendinde yüklemek ister misin?", title]
             preferredStyle:UIAlertControllerStyleAlert];
         [w addAction:[UIAlertAction actionWithTitle:@"Vazgeç" style:UIAlertActionStyleCancel handler:nil]];
-        [w addAction:[UIAlertAction actionWithTitle:@"Yine de yükle (donabilir)" style:UIAlertActionStyleDestructive handler:^(UIAlertAction*a){
+        [w addAction:[UIAlertAction actionWithTitle:@"Yine de yükle (sadece bende)" style:UIAlertActionStyleDestructive handler:^(UIAlertAction*a){
+            // v116.2: sadece yerel yukle — REJOIN YOK. Master degilken cik-gir yapinca
+            // 'baglaniyor'da takiliyordu; artik sadece kendi sahnen degisir, takilma yok.
             @try { pn_loadLevelInt(idx); } @catch (...) {}
-            if (g_rejoinMode != 0 && rn.length > 0) few1n_after(0.8, ^{ @try { few1n_joinTargetRoom(rn); } @catch (...) {} });
         }]];
         [self present:w];
         return;
     }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    // v116.2: GERCEK MASTER isen -> LoadLevel(int) + AutomaticallySyncScene YETER.
+    // Master'in LoadLevel'i oda 'curScn' prop'unu ayarlar, HERKES otomatik gelir.
+    // CIK-GIR YAPMA! Master cik-gir yapinca herkese takip et dedigi odayi terk edip
+    // 'baglaniyor'da takiliyor (kullanici raporu: "gir cik calismiyo baglaniyoda kaliyo").
+    // Odada KAL — senkronu sen suruyorsun.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         @try { pn_loadLevelInt(idx); } @catch (...) {}
-        FLog([NSString stringWithFormat:@"🗺️ [Y5] LoadLevel(%d) '%@' gonderildi (gir-cik mod=%d)", idx, title, g_rejoinMode]);
-        // GIR-CIK
-        if (g_rejoinMode != 0 && rn.length > 0) {
-            if (g_rejoinMode == 1) {
-                // Otomatik: few1n_joinTargetRoom ICINDE 'hazir olana kadar bekle' var (v114.86) -> donmaz
-                few1n_after(0.7, ^{ @try { few1n_joinTargetRoom(rn); } @catch (...) {} });
-            } else {
-                // Manuel: kullanicinin ayarladigi sabit sure sonra gir-cik
-                double d = (g_mapRejoinDelaySec > 0.05) ? g_mapRejoinDelaySec : 1.3;
-                few1n_after(0.6 + d, ^{ @try { few1n_joinTargetRoom(rn); } @catch (...) {} });
-            }
-        }
+        FLog([NSString stringWithFormat:@"🗺️ [Y5] MASTER LoadLevel(%d) '%@' — cik-gir YOK, odada kal, herkes gelir", idx, title]);
     });
-    NSString *modeTxt = (g_rejoinMode==0) ? @"gir-çık KAPALI (biri girince oturur)"
-                       : (g_rejoinMode==1) ? @"gir-çık OTOMATİK (hazır olunca)"
-                       : [NSString stringWithFormat:@"gir-çık MANUEL (%.1fs)", g_mapRejoinDelaySec];
-    [self simpleAlert:@"🗺️ Gönderildi" msg:[NSString stringWithFormat:@"%@ (#%d) yükleniyor — %@.\nYanlış harita geldiyse söyle, numarayı düzeltirim.", title, idx, modeTxt]];
+    (void)rn;
+    [self simpleAlert:@"🗺️ Yüklendi" msg:[NSString stringWithFormat:@"%@ (#%d) yükleniyor. Master sensin — herkes OTOMATİK gelir, odada KAL (çık-gir yapma, bağlanmada takılma olmaz).\nYanlış harita geldiyse #numarayı söyle.", title, idx]];
 }
 - (void)mapListY5 {
     if (!pn_getInRoom || !pn_getInRoom()) { [self simpleAlert:@"🗺️ Harita Seç" msg:@"Odada olmalisin (kendi odanda + master iken)."]; return; }
     // v114.96: oyunun KENDI MapList'inden GERCEK harita adlari (canli okuma — dogru isimler).
     NSArray<NSString*> *realMaps = few1n_readMapNames();
-    NSString *modeNow = (g_rejoinMode==0) ? @"KAPALI" : (g_rejoinMode==1) ? @"OTOMATİK" : @"MANUEL";
     UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"🗺️ Harita Seç"
         message:(realMaps.count > 0
-            ? [NSString stringWithFormat:@"Oyundaki %lu harita. NUMARA (LoadLevel int) ile yüklenir — sende ÇALIŞAN yol. İsim yanlış haritaya denk gelirse #numarayı söyle. Gir-Çık: %@.", (unsigned long)realMaps.count, modeNow]
-            : [NSString stringWithFormat:@"MapList okunamadı (oyuna tam gir). Numara ile (Y5). Gir-Çık: %@.", modeNow])
+            ? [NSString stringWithFormat:@"Oyundaki %lu harita. NUMARA (LoadLevel int) ile yüklenir. MASTER isen herkes OTOMATİK gelir — çık-gir GEREKMEZ, odada KAL. İsim yanlış haritaya denk gelirse #numarayı söyle.", (unsigned long)realMaps.count]
+            : @"MapList okunamadı (oyuna tam gir). Numara ile (Y5). MASTER isen herkes otomatik gelir.")
         preferredStyle:UIAlertControllerStyleActionSheet];
     if (realMaps.count > 0) {
         // v115.7: ANALIZ — her isim icin DOGRU build index'i SceneUtility.GetScenePath
@@ -10404,10 +10399,12 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
         [in addAction:[UIAlertAction actionWithTitle:@"İptal" style:UIAlertActionStyleCancel handler:nil]];
         [self present:in];
     }]];
-    // Gir-cik MOD sec (otomatik / manuel / kapali)
-    [ac addAction:[UIAlertAction actionWithTitle:@"⚙️ Gir-Çık Modu (Otomatik/Manuel/Kapalı)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
+    // Gir-cik MOD sec (otomatik / manuel / kapali) — v116.2: ARTIK SADECE master OLMAYAN
+    // icin gecerli (kendini odanin guncel sahnesine cekmek). Master isen bu ayar YOK SAYILIR,
+    // harita LoadLevel ile herkese senkronlanir, odada kalirsin.
+    [ac addAction:[UIAlertAction actionWithTitle:@"⚙️ Gir-Çık Modu (sadece master DEĞİLKEN)" style:UIAlertActionStyleDefault handler:^(UIAlertAction*a){
         UIAlertController *mc = [UIAlertController alertControllerWithTitle:@"⚙️ Gir-Çık Modu"
-            message:@"Harita değişince odaya otomatik çık-gir." preferredStyle:UIAlertControllerStyleActionSheet];
+            message:@"Sadece master DEĞİLKEN çalışır (kendini güncel haritaya çekmek için). Master isen çık-gir yapılmaz, odada kalırsın." preferredStyle:UIAlertControllerStyleActionSheet];
         [mc addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@🤖 Otomatik (hazır olunca — önerilen)", g_rejoinMode==1?@"✅ ":@""] style:UIAlertActionStyleDefault handler:^(UIAlertAction*x){ g_rejoinMode=1; saveInt(@"rejoinMode",1); [self simpleAlert:@"⚙️ Gir-Çık" msg:@"Otomatik: hazır olunca çık-gir (donmaz)."]; }]];
         [mc addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@⏱️ Manuel (sabit süre)", g_rejoinMode==2?@"✅ ":@""] style:UIAlertActionStyleDefault handler:^(UIAlertAction*x){ g_rejoinMode=2; saveInt(@"rejoinMode",2); [self tapMapRejoinDelay]; }]];
         [mc addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@🚫 Kapalı (biri girince oturur)", g_rejoinMode==0?@"✅ ":@""] style:UIAlertActionStyleDefault handler:^(UIAlertAction*x){ g_rejoinMode=0; saveInt(@"rejoinMode",0); [self simpleAlert:@"⚙️ Gir-Çık" msg:@"Kapalı: harita, odaya biri girince oturur."]; }]];
