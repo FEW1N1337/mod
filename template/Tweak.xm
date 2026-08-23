@@ -6541,7 +6541,7 @@ static UIViewController* few1n_topVC(void) {
     [self.plateBtn addTarget:self action:@selector(editPlate) forControlEvents:UIControlEventTouchUpInside];
     y = [self actionRow:@"Sunucudan Rastgele Plaka Al" color:C_ON atY:y action:@selector(spinServerPlate)];
     y = [self actionRow:@"🔰  Özel Plaka — HERKESTE Göster (yaz + yayınla)" color:C_GOLD atY:y action:@selector(setServerPlate)];
-    y = [self actionRow:@"🎭  Başkasının Plakasını Değiştir (Seç — deneysel)" color:C_RED atY:y action:@selector(hijackPlatePick)];
+    y = [self actionRow:@"🎭  Başkasının Plakası (SADECE SENDE — herkeste olmaz)" color:C_ON atY:y action:@selector(hijackPlatePick)];
     y = [self actionRow:@"🏷️  Başkasının İsmini Değiştir (Seç — deneysel)" color:C_RED atY:y action:@selector(changeNamePick)];   // v114.95
     y = [self actionRow:@"🚀  Oyuncuyu Zıplat/Fırlat (Seç — zıpla/fırlat/uzaya)" color:C_RED atY:y action:@selector(launchPlayerPick)];
     y = [self actionRow:@"🧲  Oyuncuyu Sana Çek (yanına ışınla)" color:C_RED atY:y action:@selector(pullPlayerPick)];
@@ -12531,8 +12531,8 @@ static void few1n_joinTargetRoom(NSString *nm) {
                 // v114.97: iki yontem de test edilebilsin. A=eah (oyun yayini), B=manuel RPC.
                 void (^showRes)(bool) = ^(bool ok){
                     NSString *diag = [NSString stringWithUTF8String:g_plateDiag];
-                    UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"✅ Denendi (TAM SPOOF)" : @"⚠️ Olmadı")
-                        message:(ok ? [NSString stringWithFormat:@"YENİ: tüm sahiplik alanları spoof edilip eah çağrıldı — artık yayın gitmiş OLABİLİR.\n\n🔎 BAŞKA bir oyuncunun ekranından plakanın değişip değişmediğine bak (kendi ekranın yanıltır).\n\nTeşhis: %@\n\nSonucu + bu satırı bana yaz.", diag]
+                    UIAlertController *r = [UIAlertController alertControllerWithTitle:(ok ? @"ℹ️ Sadece Sende" : @"⚠️ Olmadı")
+                        message:(ok ? [NSString stringWithFormat:@"Plaka SENİN ekranında değişti (lokal). Test edildi: 3 yöntem (manuel RPC / IsMine-flip / tam sahiplik spoof) de HERKESE yaymadı — Photon sunucusu, sahibi olmadığın aracın tuning RPC'sini reddediyor. Çık-gir yapınca eskiye döner.\n\nGERÇEKTEN herkeste değişen kimlik için '🏷️ İsmini Değiştir' kullan (isim = Photon property, sunucu relay eder).\n\nTeşhis: %@", diag]
                                     : [NSString stringWithFormat:@"Başarısız.\nTeşhis: %@", diag])
                         preferredStyle:UIAlertControllerStyleAlert];
                     [r addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
