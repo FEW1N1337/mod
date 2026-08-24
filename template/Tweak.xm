@@ -2698,6 +2698,36 @@ static bool few1n_amRealMaster(void) {
         return myActor > 0 && myActor == masterId;
     } @catch (...) { return false; }
 }
+// v116.7: STRICT master kontrol — optimistic yalani yakalar. SetMasterClient(me) bu PUN
+// surumunde room.masterClientId'yi YEREL (iyimser) yaziyor; sunucu reddedince deger geri
+// donmuyor -> few1n_amRealMaster "EVET" yalani uretiyor. Gercek Photon master'i (neredeyse
+// her zaman) EN DUSUK aktif actor'dur. Bu yuzden: masterId==myActor OLSA BILE, odada benden
+// DAHA DUSUK actor'lu biri varsa GERCEK master o degil ben degilim -> false. Yanlis-pozitifi
+// (master saniyorum ama degilim) yakalar; kick/harita bosuna "BASARILI" demez.
+static bool few1n_amRealMasterStrict(void) {
+    if (!pn_getLocalPlayer || !pn_getCurrentRoom || !ply_getActorNumber) return false;
+    @try {
+        void* me = pn_getLocalPlayer(); void* room = pn_getCurrentRoom();
+        if (!me || !room) return false;
+        int myActor  = *(int*)((uintptr_t)me   + OFFR_PLAYER_ACTORNUM);
+        int masterId = *(int*)((uintptr_t)room + OFFR_ROOM_MASTERID);
+        if (myActor <= 0 || myActor != masterId) return false;   // temel kontrol
+        // HEURISTIK: benden dusuk actor'lu baska oyuncu varsa, gercek master muhtemelen o.
+        if (pn_getPlayerListOthers) {
+            void* pa = pn_getPlayerListOthers();
+            if (ptrOk(pa)) {
+                int c = (int)(*(uintptr_t*)((uintptr_t)pa + 0x18));
+                void** ps = (void**)((uintptr_t)pa + 0x20);
+                for (int k = 0; k < c && k < 64; k++) {
+                    void* pp = ps[k]; if (!ptrOk(pp)) continue;
+                    int a = ply_getActorNumber(pp);
+                    if (a > 0 && a < myActor) return false;   // benden dusuk aktif actor var -> master DEGILIM
+                }
+            }
+        }
+        return true;
+    } @catch (...) { return false; }
+}
 // Forward declarations (tanimlari asagida; burada erken kullanimlar icin)
 static inline bool ptrOk(void* p);
 static inline bool unityAlive(void* obj);
@@ -2786,7 +2816,7 @@ static void few1n_kickPlayer(void* playerObj) {
         int targetActor = ply_getActorNumber ? ply_getActorNumber(playerObj) : -1;
         void* nmeStr = ply_getNickName ? ply_getNickName(playerObj) : NULL;
         NSString *targetNick = ptrOk(nmeStr) ? readStr(nmeStr) : nil;
-        bool amMaster = few1n_amRealMaster();
+        bool amMaster = few1n_amRealMasterStrict();
         FLog([NSString stringWithFormat:@"🎯 Kick hedef: '%@' (Actor=%d) — GERCEK-MASTER=%@", targetNick ?: @"?", targetActor, amMaster ? @"EVET ✅" : @"HAYIR ❌"]);
 
         // ===== YOL A: CloseConnection — SADECE gercek master (sunucu-zorlamali, kesin) =====
@@ -7605,30 +7635,13 @@ static UIViewController* few1n_topVC(void) {
                     masterAttempts++;
                     FLog([NSString stringWithFormat:@"👑 Master claim denemesi #%d", masterAttempts]);
                 };
-                tryClaimMaster();
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    BOOL amMaster = NO;
-                    if (pn_getLocalPlayer && ply_getIsMaster) {
-                        void* me = pn_getLocalPlayer();
-                        if (me) amMaster = ply_getIsMaster(me);
-                    }
-                    if (!amMaster) { FLog(@"👑 Hala master degilim - 2. deneme"); tryClaimMaster(); }
-                });
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    BOOL amMaster = NO;
-                    if (pn_getLocalPlayer && ply_getIsMaster) {
-                        void* me = pn_getLocalPlayer();
-                        if (me) amMaster = ply_getIsMaster(me);
-                    }
-                    if (!amMaster) { FLog(@"👑 Hala master degilim - 3. deneme"); tryClaimMaster(); }
-                });
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    BOOL amMaster = NO;
-                    if (pn_getLocalPlayer && ply_getIsMaster) {
-                        void* me = pn_getLocalPlayer();
-                        if (me) amMaster = ply_getIsMaster(me);
-                    }
-                    FLog([NSString stringWithFormat:@"🎯 Kick baslamadan durum: master=%@ (denemeler=%d)", amMaster ? @"EVET" : @"HAYIR", masterAttempts]);
+                // v116.7: optimistic 3x claim spam KALDIRILDI (yanlis "master=EVET" uretiyordu).
+                // Master DEGILSEN bir kez steal dene (baskasinin odasinda genelde reddedilir),
+                // 2.5sn bekle, sonra STRICT oku. Sonuc yine de gercek re-check ile dogrulanir.
+                if (!few1n_amRealMasterStrict()) tryClaimMaster();
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    bool amMaster = few1n_amRealMasterStrict();
+                    FLog([NSString stringWithFormat:@"🎯 Kick oncesi STRICT master=%@ (steal denemesi=%d)", amMaster ? @"EVET" : @"HAYIR", masterAttempts]);
                     int successCount = 0;
 
                     // Metod A: Oyunun kendi KickPlayerRPC'si (LobbyDummy.KickPlayer)
@@ -10077,7 +10090,7 @@ static void few1n_loadMap(NSString *scene, int idx) {
     }
     // v115.5: MASTER durumu teshisi — harita degisimi PUN'da MASTER-only. Gercek master
     // degilsen sunucu ese/LoadLevel'i yok sayar (gir-cik ile alakasi yok - kullanici hakli).
-    bool amMaster = few1n_amRealMaster();
+    bool amMaster = few1n_amRealMasterStrict();
     FLog([NSString stringWithFormat:@"🗺️ few1n_loadMap: scene='%@' rnCopy='%@' rejoinMode=%d GERCEK-MASTER=%@",
         sceneCopy, rnCopy ?: @"(BOS!)", g_rejoinMode, amMaster ? @"EVET ✅" : @"HAYIR ❌ (harita degismez!)"]);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -10358,7 +10371,7 @@ static void few1n_startCarCloneAttempt(NSString *scene) {
     if (pn_setAutomaticallySyncScene) { @try { pn_setAutomaticallySyncScene(true); } @catch (...) {} }
     // v116.1: GERCEK MASTER kontrol. Master DEGILSEN LoadLevel sadece SENDE calisir,
     // digerleri gelmez, sen desync olup ODA DONAR (kullanici raporu). Uyar.
-    BOOL amMaster = few1n_amRealMaster();
+    BOOL amMaster = few1n_amRealMasterStrict();
     if (!amMaster) {
         UIAlertController *w = [UIAlertController alertControllerWithTitle:@"⚠️ Master Değilsin"
             message:[NSString stringWithFormat:@"'%@' YÜKLENİRSE sadece SENDE değişir, diğerleri gelmez ve oda DONAR (desync). Haritanın herkeste değişmesi için odanın GERÇEK master'ı olman şart — kendi kurduğun boş odada dene.\n\nYine de sadece kendinde yüklemek ister misin?", title]
@@ -13010,7 +13023,7 @@ static void few1n_joinTargetRoom(NSString *nm) {
     if (isAutoMasterEnabled) { [self simpleAlert:@"👑 Gerçek Master" msg:@"Önce 'Otomatik Master' toggle'ını KAPAT — o lokal yama testi yanıltıyor. Sonra tekrar bas."]; return; }
     few1n_sendRealSetMaster();
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0*NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (few1n_amRealMaster())
+        if (few1n_amRealMasterStrict())
             [self simpleAlert:@"👑 Master oldun ✅" msg:@"Sunucu seni MASTER yaptı! Şimdi '🗺️ Odadayken Harita Değiştir'e bas — sahne senkronu master'a açık olduğu için artık çalışmalı."];
         else
             [self simpleAlert:@"👑 Master OLAMADIN ❌" msg:@"Sunucu master isteğini onaylamadı. Bu oda/oyun master almaya izin vermiyorsa harita DEĞİŞTİRİLEMEZ (client'tan aşılamaz — dürüst gerçek). Kendi kurduğun boş odada tekrar dene."];
