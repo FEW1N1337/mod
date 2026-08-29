@@ -1,0 +1,51 @@
+name: Android Build (libfew1nmod.so)
+
+on:
+  push:
+    branches: [ "claude/**", "main", "master" ]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android NDK
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r26d
+
+      - name: Configure (CMake + NDK, arm64-v8a)
+        run: |
+          cmake -B android/build -S android \
+            -DCMAKE_TOOLCHAIN_FILE=${{ steps.ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build android/build -j4
+
+      - name: Show output
+        run: |
+          echo "== libfew1nmod.so =="
+          ls -la android/build/libfew1nmod.so || (echo "BUILD CIKTI YOK" && exit 1)
+          file android/build/libfew1nmod.so
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libfew1nmod-arm64-v8a
+          path: android/build/libfew1nmod.so
+          if-no-files-found: error
