@@ -6,7 +6,8 @@
 #include <EGL/egl.h>
 #include <android/input.h>
 #include <android/log.h>
-#include <dobby.h>
+#include <dlfcn.h>
+#include "And64InlineHook.hpp"
 #include "imgui.h"
 #include "backends/imgui_impl_opengl3.h"
 #include "backends/imgui_impl_android.h"
@@ -96,16 +97,23 @@ static int32_t hook_AInputQueue_getEvent(AInputQueue* queue, AInputEvent** outEv
     return r;
 }
 
+// Export edilmiş sembolü çöz (eglSwapBuffers/AInputQueue_getEvent ikisi de export -> dlsym yeter)
+static void* ResolveSym(const char* lib, const char* sym) {
+    void* h = dlopen(lib, RTLD_NOLOAD | RTLD_NOW);
+    if (!h) h = dlopen(lib, RTLD_NOW);
+    return h ? dlsym(h, sym) : nullptr;
+}
+
 void Overlay_InstallHooks() {
-    void* egl = (void*)DobbySymbolResolver("libEGL.so", "eglSwapBuffers");
+    void* egl = ResolveSym("libEGL.so", "eglSwapBuffers");
     if (egl) {
-        DobbyHook(egl, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
+        A64HookFunction(egl, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
         LOGI("eglSwapBuffers hooked @ %p", egl);
     } else LOGI("eglSwapBuffers bulunamadi");
 
-    void* ge = (void*)DobbySymbolResolver("libandroid.so", "AInputQueue_getEvent");
+    void* ge = ResolveSym("libandroid.so", "AInputQueue_getEvent");
     if (ge) {
-        DobbyHook(ge, (void*)hook_AInputQueue_getEvent, (void**)&orig_AInputQueue_getEvent);
+        A64HookFunction(ge, (void*)hook_AInputQueue_getEvent, (void**)&orig_AInputQueue_getEvent);
         LOGI("AInputQueue_getEvent hooked @ %p", ge);
     } else LOGI("AInputQueue_getEvent bulunamadi");
 }

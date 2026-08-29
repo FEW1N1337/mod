@@ -28,25 +28,27 @@ target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/
 target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_ES3)
 # ImGui exception'sız derlensin diye rtti/exceptions kapalı bırakıyoruz (backend'ler uyumlu)
 
-# ---- Dobby (inline hook) ----
-set(DOBBY_GENERATE_SHARED OFF CACHE BOOL "" FORCE)
-set(DOBBY_DEBUG OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(dobby
-  GIT_REPOSITORY https://github.com/jmpews/Dobby.git
+# ---- And64InlineHook (tek dosya inline hook; Dobby'nin arm64 asm build sorunu yok) ----
+FetchContent_Declare(a64hook
+  GIT_REPOSITORY https://github.com/Rprop/And64InlineHook.git
   GIT_TAG        master)
-FetchContent_MakeAvailable(dobby)
+FetchContent_GetProperties(a64hook)
+if(NOT a64hook_POPULATED)
+  FetchContent_Populate(a64hook)
+endif()
 
 # ---- Mod kütüphanesi ----
 add_library(few1nmod SHARED
   jni/main.cpp
   jni/il2cpp.cpp
   jni/features.cpp
-  jni/overlay.cpp)
+  jni/overlay.cpp
+  ${a64hook_SOURCE_DIR}/And64InlineHook.cpp)
 
 target_include_directories(few1nmod PRIVATE
   ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends
-  ${dobby_SOURCE_DIR}/include)
+  ${a64hook_SOURCE_DIR})
 
 target_link_libraries(few1nmod
-  imgui dobby
+  imgui
   EGL GLESv3 android log dl)
