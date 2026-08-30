@@ -7,6 +7,7 @@
 #include <android/input.h>
 #include <android/log.h>
 #include <dlfcn.h>
+#include <time.h>
 #include "And64InlineHook.hpp"
 #include "imgui.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -108,11 +109,18 @@ static EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
         }
     }
     if (g_imguiInit) {
-        feat::Tick();   // aktif özellikleri uygula (render thread'te, il2cpp'ye bağlı)
+        feat::Tick();   // aktif özellikleri uygula (il2cpp GuardedInvoke ile korumalı)
         ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplAndroid_NewFrame();
-        // DisplaySize'ı Android backend'ten SONRA zorla (null-window'dan bozulmasın)
-        ImGui::GetIO().DisplaySize = ImVec2((float)g_scrW, (float)g_scrH);
+        // ImGui_ImplAndroid_NewFrame() ÇAĞRILMIYOR: null-window'da ANativeWindow_getWidth(NULL)
+        // -> SIGSEGV. Onun yaptıklarını elle yapıyoruz (DisplaySize + DeltaTime). Girdi zaten
+        // ImGui_ImplAndroid_HandleInputEvent ile besleniyor (pencere gerektirmez).
+        ImGuiIO& io = ImGui::GetIO();
+        io.DisplaySize = ImVec2((float)g_scrW, (float)g_scrH);
+        struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+        double now = ts.tv_sec + ts.tv_nsec / 1e9;
+        static double s_last = 0;
+        io.DeltaTime = (s_last > 0 && now > s_last) ? (float)(now - s_last) : (1.0f/60.0f);
+        s_last = now;
         ImGui::NewFrame();
         feat::DrawESP();                 // ESP (foreground draw list — menü kapalı olsa da çizer)
         if (g_menuOpen) DrawMenu();
@@ -136,12 +144,8 @@ static int32_t hook_AInputQueue_getEvent(AInputQueue* queue, AInputEvent** outEv
             if (pc < 3) g_threeFingerLatch = 0;
         }
         ImGui_ImplAndroid_HandleInputEvent(ev);
-        // Menü açık ve ImGui dokunuşu istiyorsa oyuna GEÇİRME (event'i tüketilmiş say)
-        if (g_menuOpen && ImGui::GetIO().WantCaptureMouse) {
-            AInputQueue_finishEvent(queue, ev, 1);
-            *outEvent = nullptr;
-            return -1;   // oyun bu event'i almasın
-        }
+        // ZARARSIZ: event'i finish etmiyor / null yapmıyoruz — oyunun input kuyruğunu BOZMA
+        // (bozarsak çökme). Menü ImGui ile çalışır; dokunma oyuna da gider (kabul edilebilir).
     }
     return r;
 }
@@ -154,6 +158,9 @@ static void* ResolveSym(const char* lib, const char* sym) {
 }
 
 void Overlay_InstallHooks() {
+    static bool s_installed = false;   // çift-kurulum guard (yedek — main.cpp zaten tek thread)
+    if (s_installed) { LOGI("hook'lar zaten kurulu, atlandi"); return; }
+    s_installed = true;
     void* egl = ResolveSym("libEGL.so", "eglSwapBuffers");
     if (egl) {
         A64HookFunction(egl, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
