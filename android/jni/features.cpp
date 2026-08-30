@@ -15,15 +15,23 @@ bool  g_actSavePos = false; bool g_actLoadPos = false;
 bool  g_infNitro = false;
 bool  g_maxEngine = false;
 bool  g_noDamage = false;
+char  g_chatMsg[160] = "few1n mod";
+bool  g_actSendChat = false;
+bool  g_spamChat = false;
+int   g_spamDelayFrames = 90;
+bool  g_chatColorOn = false;
+float g_chatColor[3] = {1.0f, 0.2f, 0.2f};
 
-// Modül tick'leri (feat_vehicle.cpp / feat_tuning.cpp)
+// Modül tick'leri (feat_vehicle.cpp / feat_tuning.cpp / feat_chat.cpp)
 void VehicleTick();
 void TuningTick();
+void ChatTick();
 
 void Tick() {
     if (!il2::Ready()) return;
     VehicleTick();
     TuningTick();
+    ChatTick();
 }
 
 } // namespace feat

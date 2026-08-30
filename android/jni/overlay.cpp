@@ -50,6 +50,25 @@ static void DrawMenu() {
             ImGui::TextDisabled("RCCP bilesenleri lokal — sadece sende gecerli");
             ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("Chat")) {
+            ImGui::InputText("Mesaj", feat::g_chatMsg, sizeof(feat::g_chatMsg));
+            if (ImGui::Button("Gonder")) feat::g_actSendChat = true;
+            ImGui::SameLine(); ImGui::Checkbox("Spam", &feat::g_spamChat);
+            ImGui::SliderInt("Spam arasi (kare)", &feat::g_spamDelayFrames, 10, 300);
+            ImGui::Checkbox("Renkli", &feat::g_chatColorOn);
+            if (feat::g_chatColorOn) ImGui::ColorEdit3("Renk", feat::g_chatColor);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Sunucu-Limitli")) {
+            ImGui::TextWrapped("Asagidaki ozellikler bu oyunun SUNUCUSU tarafindan engelli — "
+                "client'tan (mod'dan) ZORLANAMAZ. iOS'ta da kanitlandi:");
+            ImGui::BulletText("Oyuncu ATMA (kick) — sadece gercek master + kooperatif, oda ici yok");
+            ImGui::BulletText("Harita HERKESTE degistir — master authority");
+            ImGui::BulletText("GERCEK master ol / oda kur-kilitle-sifre — sunucu reddeder");
+            ImGui::Separator();
+            ImGui::TextDisabled("Sahte 'calisiyor' gostermiyoruz. DoS/paket saldirisi da yok.");
+            ImGui::EndTabItem();
+        }
         ImGui::EndTabBar();
     }
 

@@ -21,6 +21,14 @@ extern bool  g_infNitro;     // RCCP_Nos amount=max + regenerateTime=0
 extern bool  g_maxEngine;    // RCCP_Engine override + maxEngineRPM yuksek
 extern bool  g_noDamage;     // RCCP_Damage maximumDamage=0
 
+// ---- Chat ----
+extern char  g_chatMsg[160]; // menü InputText -> mesaj
+extern bool  g_actSendChat;  // tek gönder
+extern bool  g_spamChat;     // sürekli gönder
+extern int   g_spamDelayFrames; // spam aralığı (kare)
+extern bool  g_chatColorOn;  // <color=#hex> sar
+extern float g_chatColor[3]; // RGB 0..1
+
 // Her karede (eglSwapBuffers hook'tan) çağrılır.
 void Tick();
 

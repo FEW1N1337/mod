@@ -44,6 +44,7 @@ add_library(few1nmod SHARED
   jni/features.cpp
   jni/feat_vehicle.cpp
   jni/feat_tuning.cpp
+  jni/feat_chat.cpp
   jni/overlay.cpp
   ${a64hook_SOURCE_DIR}/And64InlineHook.cpp)
 
