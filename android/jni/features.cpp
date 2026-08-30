@@ -1,59 +1,29 @@
-// FEW1N Mod — Android port · özellik implementasyonu (ilk parti)
+// FEW1N Mod — Android port · ortak state + Tick dispatcher
 #include "features.h"
 #include "il2cpp.h"
-#include <android/log.h>
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "FEW1N", __VA_ARGS__)
 
 namespace feat {
 
-bool  g_speedOn   = false;
-float g_speedMult = 1.0f;
-bool  g_godMode   = false;
+// ---- Global state tanımları ----
+bool  g_speedOn = false;   float g_speedMult = 1.0f;
+bool  g_godMode = false;
+bool  g_actJump = false;   float g_jumpForce = 12.0f;
+bool  g_actBoost = false;  float g_boostForce = 2.5f;
+bool  g_actFreeze = false;
+bool  g_actTpUp = false;   float g_tpUpDist = 15.0f;
+bool  g_actSavePos = false; bool g_actLoadPos = false;
+bool  g_infNitro = false;
+bool  g_maxEngine = false;
+bool  g_noDamage = false;
 
-// ---- Oyun Hızı: UnityEngine.Time.set_timeScale(float) (statik) ----
-void ApplySpeed() {
-    static void* mSet = nullptr;
-    if (!mSet) mSet = il2::StaticMethod("UnityEngine", "Time", "set_timeScale", 1);
-    if (!mSet) return;
-    float v = g_speedOn ? g_speedMult : 1.0f;
-    void* args[1] = { &v };
-    bool cr = false;
-    il2::GuardedInvoke(mSet, nullptr, args, &cr);
-}
+// Modül tick'leri (feat_vehicle.cpp / feat_tuning.cpp)
+void VehicleTick();
+void TuningTick();
 
-// ---- GodMode: HR_PlayerHandler.canCrash=false + damage=0 ----
-// Alan offset'leri İSİMLE çözülür (canCrash, damage). Instance her respawn'da değişir → her tick bul.
-static void* g_phType = nullptr;
-static int   g_offCanCrash = -1;
-static int   g_offDamage   = -1;
-
-void ApplyGodModeOnce() {
-    void* phClass = il2::ClassByName("", "HR_PlayerHandler");
-    if (!phClass) return;
-    if (!g_phType)   g_phType = il2::TypeOf(phClass);
-    if (g_offCanCrash < 0) g_offCanCrash = il2::FieldOffset(phClass, "canCrash", 0x38);
-    if (g_offDamage   < 0) g_offDamage   = il2::FieldOffset(phClass, "damage",   0x3C);
-    if (!g_phType) return;
-
-    void* inst = il2::FindByTypeIncludingInactive(g_phType);
-    if (!il2::MemOk(inst)) return;
-    // canCrash = false
-    if (g_offCanCrash > 0 && il2::MemOk((void*)((uintptr_t)inst + g_offCanCrash)))
-        *(unsigned char*)((uintptr_t)inst + g_offCanCrash) = 0;
-    // damage = 0
-    if (g_offDamage > 0 && il2::MemOk((void*)((uintptr_t)inst + g_offDamage)))
-        *(float*)((uintptr_t)inst + g_offDamage) = 0.0f;
-}
-
-// ---- Her kare (render thread) ----
 void Tick() {
     if (!il2::Ready()) return;
-    static bool prevSpeedState = false; static float prevMult = -1;
-    if (g_speedOn != prevSpeedState || g_speedMult != prevMult) {
-        ApplySpeed();
-        prevSpeedState = g_speedOn; prevMult = g_speedMult;
-    }
-    if (g_godMode) ApplyGodModeOnce();   // her kare yeniden uygula (oyun resetleyebilir)
+    VehicleTick();
+    TuningTick();
 }
 
 } // namespace feat

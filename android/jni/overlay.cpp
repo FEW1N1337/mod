@@ -21,20 +21,40 @@ static int  g_scrW = 0, g_scrH = 0;
 // ---- Menü çizimi ----
 static void DrawMenu() {
     ImGui::SetNextWindowPos(ImVec2(40, 120), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(340, 300), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(430, 440), ImGuiCond_FirstUseEver);
     ImGui::Begin("FEW1N Mod (Android)", &g_menuOpen, ImGuiWindowFlags_NoCollapse);
 
     ImGui::TextColored(ImVec4(0.3f, 0.9f, 1.0f, 1.0f), "il2cpp: %s", il2::Ready() ? "HAZIR" : "bekleniyor...");
-    ImGui::Separator();
 
-    if (ImGui::CollapsingHeader("Arac / Genel", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Checkbox("Oyun Hizi", &feat::g_speedOn);
-        ImGui::SliderFloat("Hiz x", &feat::g_speedMult, 0.1f, 5.0f, "%.2f");
-        ImGui::Checkbox("GodMode (canCrash=0)", &feat::g_godMode);
+    if (ImGui::BeginTabBar("few1n_tabs")) {
+        if (ImGui::BeginTabItem("Arac")) {
+            ImGui::Checkbox("Oyun Hizi", &feat::g_speedOn);
+            ImGui::SliderFloat("Hiz x", &feat::g_speedMult, 0.1f, 5.0f, "%.2f");
+            ImGui::Checkbox("GodMode (canCrash=0)", &feat::g_godMode);
+            ImGui::Separator();
+            if (ImGui::Button("Zipla"))  feat::g_actJump = true;
+            ImGui::SameLine(); if (ImGui::Button("Boost")) feat::g_actBoost = true;
+            ImGui::SameLine(); if (ImGui::Button("Dondur")) feat::g_actFreeze = true;
+            if (ImGui::Button("Yukari Isinlan")) feat::g_actTpUp = true;
+            ImGui::Separator();
+            if (ImGui::Button("Konum Kaydet")) feat::g_actSavePos = true;
+            ImGui::SameLine(); if (ImGui::Button("Kayitli Konuma Isinlan")) feat::g_actLoadPos = true;
+            ImGui::SliderFloat("Zipla gucu", &feat::g_jumpForce, 5.0f, 40.0f, "%.0f");
+            ImGui::SliderFloat("Isinla mesafe", &feat::g_tpUpDist, 5.0f, 60.0f, "%.0f");
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Tuning")) {
+            ImGui::Checkbox("Sonsuz Nitro", &feat::g_infNitro);
+            ImGui::Checkbox("Max Motor (deneysel)", &feat::g_maxEngine);
+            ImGui::Checkbox("Hasar Yok", &feat::g_noDamage);
+            ImGui::TextDisabled("RCCP bilesenleri lokal — sadece sende gecerli");
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
     }
 
     ImGui::Separator();
-    ImGui::TextDisabled("Menu: 3 parmak dokun ile ac/kapa");
+    ImGui::TextDisabled("3 parmak dokun = menu ac/kapa");
     ImGui::End();
 }
 

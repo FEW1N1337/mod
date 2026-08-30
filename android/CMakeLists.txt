@@ -42,6 +42,8 @@ add_library(few1nmod SHARED
   jni/main.cpp
   jni/il2cpp.cpp
   jni/features.cpp
+  jni/feat_vehicle.cpp
+  jni/feat_tuning.cpp
   jni/overlay.cpp
   ${a64hook_SOURCE_DIR}/And64InlineHook.cpp)
 
