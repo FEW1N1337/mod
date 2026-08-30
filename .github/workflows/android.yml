@@ -8,6 +8,9 @@ on:
       - '.github/workflows/android.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write   # Release olusturmak icin (telefonda dogrudan indirme linki)
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -49,3 +52,18 @@ jobs:
           name: libfew1nmod-arm64-v8a
           path: android/build/libfew1nmod.so
           if-no-files-found: error
+
+      # Telefonda artifact indirilmiyor -> Release'e ekle (dogrudan indirme linki)
+      - name: Release (.so dogrudan indirme)
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/build/libfew1nmod.so
+          tag_name: android-latest
+          name: FEW1N Android — libfew1nmod.so (arm64-v8a)
+          body: |
+            Android mod native kutuphanesi (arm64-v8a, DreamRoad Unity 6 il2cpp v39).
+            Telefondan indir: asagidaki **libfew1nmod.so**'ya dokun.
+            Sonra: android/repack.sh ile PairIP'siz APK'ya gom + imzala.
+            Her yeni build bu release'i gunceller (android-latest).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
