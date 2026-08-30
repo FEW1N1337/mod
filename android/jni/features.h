@@ -15,6 +15,12 @@ extern bool  g_actBoost;     extern float g_boostForce;  // mevcut hiz yonunde i
 extern bool  g_actFreeze;                                // araci durdur (hiz=0)
 extern bool  g_actTpUp;      extern float g_tpUpDist;    // yukari isinlan
 extern bool  g_actSavePos;   extern bool  g_actLoadPos;  // konum kaydet/yukle
+extern bool  g_fly;          // anti-gravity hover (Rigidbody.useGravity=false)
+extern bool  g_noClip;       // Rigidbody.detectCollisions=false
+
+// ---- ESP (overlay render thread'te çizilir) ----
+extern bool  g_espOn;        extern bool g_espNames;  extern bool g_espDist;
+void DrawESP();              // overlay.cpp render döngüsünden çağrılır (ImGui frame içinde)
 
 // ---- Tuning (RCCP) ----
 extern bool  g_infNitro;     // RCCP_Nos amount=max + regenerateTime=0

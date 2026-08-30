@@ -34,6 +34,7 @@ static void ApplyGodMode() {
 
 // ---------- Yerel araç Rigidbody'si (CarDriveSystem._rigidbody) ----------
 static void* g_rbGetPos = nullptr, *g_rbSetPos = nullptr, *g_rbGetVel = nullptr, *g_rbSetVel = nullptr;
+static void* g_rbSetGravity = nullptr, *g_rbSetDetect = nullptr;
 static void EnsureRbMethods() {
     if (g_rbSetPos) return;
     void* rbc = il2::ClassByName("UnityEngine", "Rigidbody");
@@ -45,6 +46,13 @@ static void EnsureRbMethods() {
     if (!g_rbGetVel) g_rbGetVel = il2::MethodByName(rbc, "get_velocity", 0);
     g_rbSetVel = il2::MethodByName(rbc, "set_linearVelocity", 1);
     if (!g_rbSetVel) g_rbSetVel = il2::MethodByName(rbc, "set_velocity", 1);
+    g_rbSetGravity = il2::MethodByName(rbc, "set_useGravity", 1);
+    g_rbSetDetect  = il2::MethodByName(rbc, "set_detectCollisions", 1);
+}
+static void RbSetBool(void* rb, void* m, bool val) {
+    if (!rb || !m) return;
+    bool b = val; void* a[1] = { &b }; bool cr = false;
+    il2::GuardedInvoke(m, rb, a, &cr);
 }
 
 static void* GetLocalRigidbody() {
@@ -96,8 +104,10 @@ void VehicleTick() {
     if (g_speedOn != sp || g_speedMult != sm) { ApplySpeed(); sp = g_speedOn; sm = g_speedMult; }
     if (g_godMode) ApplyGodMode();
 
-    // anlık aksiyonlar (rigidbody gerektirenler)
-    bool needRb = g_actJump || g_actBoost || g_actFreeze || g_actTpUp || g_actSavePos || g_actLoadPos;
+    // sürekli rigidbody toggle'ları + anlık aksiyonlar
+    static bool prevFly = false, prevNoClip = false;
+    bool needRb = g_actJump || g_actBoost || g_actFreeze || g_actTpUp || g_actSavePos || g_actLoadPos
+                  || g_fly || g_noClip || prevFly || prevNoClip;
     if (!needRb) return;
     EnsureRbMethods();
     void* rb = GetLocalRigidbody();
@@ -105,6 +115,15 @@ void VehicleTick() {
         g_actJump = g_actBoost = g_actFreeze = g_actTpUp = g_actSavePos = g_actLoadPos = false;
         return;
     }
+    // Fly = anti-gravity hover: useGravity=false + düşüşü sıfırla. Kapatınca gravity geri.
+    if (g_fly) { RbSetBool(rb, g_rbSetGravity, false);
+        Vec3 v; if (RbGetVel(rb,&v)) { if (v.y < 0) v.y = 0; RbSetVel(rb,&v); } }
+    else if (prevFly) { RbSetBool(rb, g_rbSetGravity, true); }
+    prevFly = g_fly;
+    // NoClip = detectCollisions=false. Kapatınca geri.
+    if (g_noClip) RbSetBool(rb, g_rbSetDetect, false);
+    else if (prevNoClip) RbSetBool(rb, g_rbSetDetect, true);
+    prevNoClip = g_noClip;
     if (g_actJump) { Vec3 v; RbGetVel(rb,&v); v.y = g_jumpForce; RbSetVel(rb,&v); g_actJump = false; }
     if (g_actBoost){ Vec3 v; RbGetVel(rb,&v);
         float m = std::sqrt(v.x*v.x+v.z*v.z);

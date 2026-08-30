@@ -31,6 +31,8 @@ static void DrawMenu() {
             ImGui::Checkbox("Oyun Hizi", &feat::g_speedOn);
             ImGui::SliderFloat("Hiz x", &feat::g_speedMult, 0.1f, 5.0f, "%.2f");
             ImGui::Checkbox("GodMode (canCrash=0)", &feat::g_godMode);
+            ImGui::SameLine(); ImGui::Checkbox("Fly (hover)", &feat::g_fly);
+            ImGui::SameLine(); ImGui::Checkbox("NoClip", &feat::g_noClip);
             ImGui::Separator();
             if (ImGui::Button("Zipla"))  feat::g_actJump = true;
             ImGui::SameLine(); if (ImGui::Button("Boost")) feat::g_actBoost = true;
@@ -48,6 +50,13 @@ static void DrawMenu() {
             ImGui::Checkbox("Max Motor (deneysel)", &feat::g_maxEngine);
             ImGui::Checkbox("Hasar Yok", &feat::g_noDamage);
             ImGui::TextDisabled("RCCP bilesenleri lokal — sadece sende gecerli");
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("ESP")) {
+            ImGui::Checkbox("ESP Ac", &feat::g_espOn);
+            ImGui::Checkbox("Isimler", &feat::g_espNames);
+            ImGui::Checkbox("Mesafe", &feat::g_espDist);
+            ImGui::TextDisabled("Araclara kutu cizer (Camera.WorldToScreen)");
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Chat")) {
@@ -105,6 +114,7 @@ static EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
         // DisplaySize'ı Android backend'ten SONRA zorla (null-window'dan bozulmasın)
         ImGui::GetIO().DisplaySize = ImVec2((float)g_scrW, (float)g_scrH);
         ImGui::NewFrame();
+        feat::DrawESP();                 // ESP (foreground draw list — menü kapalı olsa da çizer)
         if (g_menuOpen) DrawMenu();
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
