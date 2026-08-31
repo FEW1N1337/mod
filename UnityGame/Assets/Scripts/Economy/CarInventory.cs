@@ -27,6 +27,9 @@ namespace DreamCar.Economy
             Load();
         }
 
+        // Awake sırasında PlayerStats singleton'ı henüz hazır olmayabilir; ilk senkron burada.
+        void Start() => SyncCarsOwnedStat();
+
         public bool Owns(string carId) => _owned.Contains(carId);
         public string ActiveCarId => _activeId;
         public CarDefinition ActiveCar => catalog ? catalog.Find(_activeId) : null;
@@ -39,6 +42,10 @@ namespace DreamCar.Economy
 
             _owned.Add(def.id);
             Save();
+            // "carsBought" başarımını besleyen tek nokta burasıydı ama OnCarPurchased()
+            // hiçbir yerden çağrılmıyordu; araç satın alma başarımı hiç açılmıyordu.
+            var ach = Backend.PlayFabAchievements.Instance;
+            if (ach) ach.OnCarPurchased();
             OnChanged?.Invoke();
             return true;
         }
@@ -96,6 +103,15 @@ namespace DreamCar.Economy
             PlayerPrefs.SetString(OwnedKey, string.Join(",", _owned));
             PlayerPrefs.SetString(ActiveKey, _activeId);
             PlayerPrefs.Save();
+            SyncCarsOwnedStat();
+        }
+
+        // PlayerStats.SetCarsOwned hiçbir yerden çağrılmıyordu: istatistik ekranındaki
+        // "Araç" satırı bu yüzden hep 0 kalıyordu. Sahiplik listesi her değiştiğinde
+        // (ve açılışta) sayacı güncelliyoruz.
+        void SyncCarsOwnedStat()
+        {
+            if (Core.PlayerStats.Instance) Core.PlayerStats.Instance.SetCarsOwned(_owned.Count);
         }
     }
 }

@@ -25,9 +25,15 @@ namespace DreamCar.Backend
         const string StatsKey = "stats.v1";
 
         public float debounceSeconds = 5f;
+        // Debounce üst sınırı: değişiklikler debounce'tan daha sık geliyorsa
+        // (StatsTracker 5 sn'de bir flush ediyor, debounce da 5 sn) _dirtyTimer
+        // her seferinde sıfırlanıp Push hiç çalışmıyordu. Bu süre dolunca
+        // beklemeden yazılır.
+        public float maxDeferSeconds = 30f;
         public bool verboseLogging;
 
         float _dirtyTimer;
+        float _dirtyAge;
         bool _dirty;
         bool _pulled;
 
@@ -40,7 +46,13 @@ namespace DreamCar.Backend
 
         void Start()
         {
-            if (PlayFabAuth.Instance != null) PlayFabAuth.Instance.OnLoggedIn += Pull;
+            if (PlayFabAuth.Instance != null)
+            {
+                PlayFabAuth.Instance.OnLoggedIn += Pull;
+                // Login bu obje sahneye gelmeden tamamlandıysa event bir daha gelmez;
+                // Pull hiç çalışmaz, _pulled false kalır ve bulut verisi hiç okunmazdı.
+                if (PlayFabAuth.Instance.IsLoggedIn) Pull();
+            }
             HookChangeSources();
         }
 
@@ -59,6 +71,7 @@ namespace DreamCar.Backend
 
         public void MarkDirty()
         {
+            if (!_dirty) _dirtyAge = 0f; // yeni bekleme periyodu başlıyor
             _dirty = true;
             _dirtyTimer = 0f;
         }
@@ -67,14 +80,22 @@ namespace DreamCar.Backend
         {
             if (!_dirty) return;
             _dirtyTimer += Time.unscaledDeltaTime;
-            if (_dirtyTimer < debounceSeconds) return;
+            _dirtyAge += Time.unscaledDeltaTime;
+            if (_dirtyTimer < debounceSeconds && _dirtyAge < maxDeferSeconds) return;
+            if (!CanPush()) return; // bayrak korunur, koşul sağlanınca tekrar denenir
             _dirty = false;
             _dirtyTimer = 0f;
+            _dirtyAge = 0f;
             Push();
         }
 
-        void OnApplicationPause(bool paused) { if (paused && _dirty) { _dirty = false; Push(); } }
-        void OnApplicationQuit() { if (_dirty) { _dirty = false; Push(); } }
+        // Pull tamamlanmadan Push edilirse buluttaki profil, yeni kurulumun boş
+        // yerel değerleriyle ezilir (sessiz veri kaybı). Login yoksa istek zaten
+        // hata döner; bu yüzden değişikliği kaybetmeden beklemek gerekiyor.
+        bool CanPush() => _pulled && (PlayFabAuth.Instance == null || PlayFabAuth.Instance.IsLoggedIn);
+
+        void OnApplicationPause(bool paused) { if (paused && _dirty && CanPush()) { _dirty = false; Push(); } }
+        void OnApplicationQuit() { if (_dirty && CanPush()) { _dirty = false; Push(); } }
 
         // ---------------------------------------------------------- Push
         public void Push()
@@ -178,7 +199,7 @@ namespace DreamCar.Backend
             PlayerPrefs.SetFloat("car.smoothness", p.paintSmoothness);
             SetIfPresent("referral.myCode", p.referralCode);
             PlayerPrefs.SetInt("referral.redeemed", p.referralRedeemed ? 1 : 0);
-            SetIfPresent("ach.unlocked", p.unlockedAchievements);
+            MergeUnlockedAchievements(p.unlockedAchievements);
             SetIfPresent("lang", p.language);
 
             if (GameSettings.Instance != null && p.targetFps > 0)
@@ -194,6 +215,21 @@ namespace DreamCar.Backend
 
             PlayerPrefs.Save();
             ToastNotification.Show("Profil buluttan yüklendi");
+        }
+
+        // Başarım listesini düz üzerine yazmak offline açılan başarımları siliyordu;
+        // ayrıca PlayFabAchievements cache'i Awake'te okuduğu için ilk SaveLocalCache
+        // çağrısı buluttan geleni geri eziyordu. Union + bellek içi cache tazeleme.
+        static void MergeUnlockedAchievements(string cloudList)
+        {
+            if (string.IsNullOrEmpty(cloudList)) return;
+            var set = new HashSet<string>();
+            foreach (var s in PlayerPrefs.GetString("ach.unlocked", "").Split(','))
+                if (!string.IsNullOrWhiteSpace(s)) set.Add(s.Trim());
+            foreach (var s in cloudList.Split(','))
+                if (!string.IsNullOrWhiteSpace(s)) set.Add(s.Trim());
+            PlayerPrefs.SetString("ach.unlocked", string.Join(",", set));
+            if (PlayFabAchievements.Instance != null) PlayFabAchievements.Instance.ReloadLocalCache();
         }
 
         static void SetIfPresent(string key, string value)

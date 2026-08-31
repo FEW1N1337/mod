@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using DreamCar.UI;
 using Photon.Pun;
 using Photon.Realtime;
 using UnityEngine;
@@ -61,11 +62,42 @@ namespace DreamCar.Network
                 PhotonNetwork.LoadLevel(gameSceneName);
         }
 
-        public override void OnCreateRoomFailed(short returnCode, string message) => OnJoinFailed?.Invoke(returnCode, message);
-        public override void OnJoinRoomFailed(short returnCode, string message) => OnJoinFailed?.Invoke(returnCode, message);
+        // OnJoinFailed event'ine projede hiçbir yerde abone olunmuyor (LobbyUI sadece
+        // OnRoomListChanged'e bağlanıyor). Yani oda kurulamadığında / girilemediğinde
+        // oyuncuya hiçbir şey görünmüyor, konsola log bile düşmüyordu: buton basılıyor
+        // ve hiçbir şey olmuyor. Event'i koruyup hatayı burada da görünür kılıyoruz.
+        public override void OnCreateRoomFailed(short returnCode, string message)
+        {
+            Debug.LogWarning($"[Lobby] Oda oluşturulamadı ({returnCode}): {message}");
+            ToastNotification.Show($"Oda oluşturulamadı: {message}");
+            OnJoinFailed?.Invoke(returnCode, message);
+        }
+
+        public override void OnJoinRoomFailed(short returnCode, string message)
+        {
+            Debug.LogWarning($"[Lobby] Odaya girilemedi ({returnCode}): {message}");
+            ToastNotification.Show($"Odaya girilemedi: {message}");
+            OnJoinFailed?.Invoke(returnCode, message);
+        }
+
         public override void OnJoinRandomFailed(short returnCode, string message)
         {
             CreateRoom(null);
+        }
+
+        // Photon oda listesini yalnızca lobideyken ve artımlı (sadece değişenler)
+        // gönderir. Lobiden çıkınca / bağlantı kopunca elimizdeki sözlük bayatlıyordu;
+        // temizlenmediği için kapanmış odalar listede kalıyor, tıklanınca da yukarıdaki
+        // hata yolundan sessizce dönülüyordu.
+        public override void OnLeftLobby() => ClearRooms();
+
+        public override void OnDisconnected(DisconnectCause cause) => ClearRooms();
+
+        void ClearRooms()
+        {
+            if (Rooms.Count == 0) return;
+            Rooms.Clear();
+            OnRoomListChanged?.Invoke();
         }
     }
 }
