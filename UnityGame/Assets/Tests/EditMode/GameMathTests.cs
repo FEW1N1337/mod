@@ -237,11 +237,15 @@ namespace DreamCar.Tests
         }
 
         [Test]
-        public void QualityTier_HighResolutionPenalisesScore()
+        public void QualityTier_HighResolutionCanDropATier()
         {
-            int normal = GameMath.QualityTier(4096, 1024, 6, 1_000_000);
-            int highRes = GameMath.QualityTier(4096, 1024, 6, 3_000_000);
-            Assert.Less(highRes, normal);
+            // Bu donanım tam sınırda 4 puan alır (RAM +1, GPU +2, çekirdek +1) → High.
+            // Yüksek piksel cezası 3'e düşürür → Mid. Ceza kademe değiştirebilmeli.
+            int normal = GameMath.QualityTier(4096, 2048, 6, 1_000_000);
+            int highRes = GameMath.QualityTier(4096, 2048, 6, 3_000_000);
+
+            Assert.AreEqual(2, normal, "sınırdaki cihaz High olmalı");
+            Assert.AreEqual(1, highRes, "yüksek çözünürlük bir kademe düşürmeli");
         }
 
         // ---------------------------------------------------------- Geometri
