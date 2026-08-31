@@ -239,7 +239,14 @@ Bir tane Editor'de Play, bir tane File → Build → macOS/Windows standalone �
 
 - [ ] 🟡 GameSettings: Kalite dropdown → hemen QualitySettings.SetQualityLevel çağrılır.
 - [ ] 🟡 FPS input 30/60/120 → Application.targetFrameRate güncellenir.
-- [ ] 🟡 Master/Music/SFX slider → AudioMixer parametreleri değişir.
+- [ ] 🔴 Master sürgüsü → **mixer kurmadan** tüm sesler kısılır (motor, müzik, korna hepsi).
+- [ ] 🔴 Music sürgüsü → sadece müzik kısılır, motor sesi aynı kalır.
+- [ ] 🔴 SFX sürgüsü → motor/lastik/korna/çarpma kısılır, müzik aynı kalır.
+- [ ] 🟡 Sürgüyü çalan müziğin ortasında oynat → seviye anında uyar, parça değişimini beklemez.
+- [ ] 🟡 Sürgüyü sıfırla, oyunu kapat/aç → seviye korunur (PlayerPrefs).
+- [ ] 🟡 Araç spawn/despawn'ı 10 kez tekrarla → ses seviyesi kaymaz (AudioBus kayıtları sızmıyor).
+- [ ] ⚪ Opsiyonel: AudioMixer atayıp parametreleri expose ET → mixer yolu devreye girer, ses **iki kez** kısılmaz.
+- [ ] ⚪ Opsiyonel: AudioMixer atayıp parametreleri expose ETME → Console'da uyarı + sürgüler yine çalışır.
 - [ ] 🟡 Sensitivity slider → PlayerPrefs kaydolur.
 - [ ] 🟡 LocalizationManager: dil = TR → tüm LocalizedText komponentleri Türkçe.
 - [ ] 🟡 Dil değiştir → EN → hepsi anında değişir.

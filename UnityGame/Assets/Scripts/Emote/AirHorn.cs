@@ -14,6 +14,11 @@ namespace DreamCar.Emote
         public float noteSpacingSeconds = 0.18f;
         [Range(0f, 1f)] public float volume = 1f;
 
+        // PlayOneShot, kaynağın volume'unu çarpan olarak kullanır — kaynağı
+        // kaydetmek korna notalarını da SFX sürgüsüne bağlar.
+        void Awake() => DreamCar.Audio.AudioBus.RegisterSfx(source);
+        void OnDestroy() => DreamCar.Audio.AudioBus.Unregister(source);
+
         public void Play(int patternIndex = 0)
         {
             if (photonView.IsMine) photonView.RPC(nameof(RPC_Play), RpcTarget.All, patternIndex);

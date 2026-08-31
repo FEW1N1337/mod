@@ -4,7 +4,23 @@ Dream Road Online tarzı online çok oyunculu araba oyunu için Unity 6 iskeleti
 
 Bu klasör commit edilmiş iskelettir — Unity Editor'de açıp aşağıdaki adımları izleyerek çalışır bir prototipe getireceksin. Sonra iOS için `.ipa` build alıp cihaza yükleyebilirsin (App Store, TestFlight, AltStore, veya jailbreak).
 
-> **iOS için Mac + Xcode gerekli.** Unity `.ipa` doğrudan üretmez — Unity Xcode projesi çıkarır, Xcode `.ipa`'ya derler. Windows/Linux'ta iOS build alamazsın.
+> **iOS için Mac + Xcode gerekli.** Unity `.ipa` doğrudan üretmez — Unity Xcode projesi çıkarır, Xcode `.ipa`'ya derler. Windows/Linux'ta iOS build alamazsın. Android için böyle bir kısıt yok.
+
+---
+
+## 0) Hızlı başlangıç — üç adım
+
+Aşağıdaki uzun bölümler *referans*. Sıfırdan oynanabilir hale getirmek için tek yol yeterli:
+
+1. **Projeyi aç** (bölüm 1)
+2. **Photon PUN 2'yi import et + App Id gir** (bölüm 2) — çok oyunculu için tek zorunlu dış paket
+3. Menüden **`DreamCar → BUILD EVERYTHING`**
+
+Üçüncü adım şunları kodla üretir: texture ve materyaller, 5 araç prefab'ı, araç kataloğu, UI sprite'ları, uygulama ikonları ve açılış ekranı, post-processing profilleri, MainMenu + Game sahneleri, prosedürel şehir, **8 harita sahnesi** ve harita kataloğu, Build Settings. Birkaç dakika sürer.
+
+Bitince `Assets/Scenes/MainMenu.unity` aç → **Play**.
+
+> **Dış asset satın almana gerek yok.** Modeller, texture'lar, sesler, ikonlar — hepsi kodla üretiliyor (bölüm 14). Bölüm 3 ve 4 elle kurulum anlatıyor; bunlar `BUILD EVERYTHING` öncesinden kalma, kendi asset'ini getirmek istersen diye duruyor. Normal akışta ikisini de atla.
 
 ---
 
@@ -29,9 +45,11 @@ Bu klasör commit edilmiş iskelettir — Unity Editor'de açıp aşağıdaki ad
 
 ---
 
-## 3) Ücretsiz asset'leri import et
+## 3) Ücretsiz asset'leri import et *(opsiyonel — atlayabilirsin)*
 
-Zorunlu: bir araba modeli + bir harita/zemin.
+> `BUILD EVERYTHING` araç ve harita üretiyor. Bu bölüm yalnızca **kendi** modelini getirmek istersen geçerli.
+
+Kendi asset'ini kullanacaksan: bir araba modeli + bir harita/zemin.
 
 **Araba modeli (birini seç, ücretsiz):**
 - Asset Store — "ARCADE: FREE Racing Car" (Mena)
@@ -47,9 +65,11 @@ Zorunlu: bir araba modeli + bir harita/zemin.
 
 ---
 
-## 4) Sahneleri ve prefab'ı kur
+## 4) Sahneleri ve prefab'ı kur *(opsiyonel — `BUILD EVERYTHING` bunu yapıyor)*
 
-### 4a) Car prefab (ZORUNLU — network spawn için)
+> Bu bölüm elle kurulumu anlatır. `DreamCar → BUILD EVERYTHING` aynı sonucu tek tıkla üretir. Buraya yalnızca ne üretildiğini anlamak ya da elle müdahale etmek istersen bak.
+
+### 4a) Car prefab (network spawn için)
 
 1. Araba modelini sahneye sürükle.
 2. GameObject'e **Rigidbody** ekle (Mass ~1200).
@@ -515,9 +535,26 @@ Oyunda hiç müzik yoktu. İki `AudioSource` ile crossfade yapan playlist:
 
 - `Playlist.Menu` / `Playlist.Gameplay` iki ayrı liste
 - Shuffle, parça bitince otomatik sıradaki, `crossfadeSeconds` ile yumuşak geçiş
-- `AudioMixerGroup` alanına müzik grubunu ata → `GameSettings.MusicVolume` slider'ı etkiler
+- `AudioMixerGroup` alanı opsiyonel — mixer kurarsan müzik grubunu buraya ata
 
-> **AudioMixer asset repoda yok** — Unity'de script ile `.mixer` oluşturulamıyor. Editor'de: **Assets → Create → Audio Mixer** → içine `Master`, `Music`, `SFX` grupları ekle → her grubun Volume parametresini expose et ve **tam olarak** `Master` / `Music` / `SFX` adlarını ver → `GameSettings.mixer` alanına sürükle. Bu yapılmazsa ses slider'ları sessizce hiçbir şey yapmaz.
+#### Ses seviyeleri — `Audio/AudioBus.cs`
+
+**AudioMixer kurmak zorunda değilsin.** Ses sürgüleri kutudan çalışır.
+
+`.mixer` varlığı script ile üretilemiyor (Unity'nin public API'si yok), bu yüzden sistem mixer olmadan da tam çalışacak şekilde yazıldı. İki mod var ve **yalnızca biri** aynı anda devrede olur — ses asla iki kez kısılmaz:
+
+| Durum | Ne olur |
+|---|---|
+| `GameSettings.mixer` boş (varsayılan) | **Master** → `AudioListener.volume` (motor tarafında global çarpan). **Music** ve **SFX** → `AudioBus` çarpanları; sesi üreten script'ler kendi taban seviyelerine uygular |
+| Mixer atanmış **ve** `Master`/`Music`/`SFX` expose edilmiş | Klasik mixer yolu — `AudioBus` çarpanları 1 döner, devre dışı kalır |
+| Mixer atanmış ama parametreler expose **edilmemiş** | Konsola uyarı düşer, otomatik `AudioBus` yoluna dönülür (sessizce ölmez) |
+
+Yeni bir ses kaynağı eklerken:
+
+- Seviyesini **her karede kendin yazıyorsan** (motor, lastik gibi) → `* AudioBus.SfxScale` ile çarp
+- Seviyesini **bir kez ayarlayıp `Play()` ediyorsan** → `Awake()`'te `AudioBus.RegisterSfx(kaynak)`, `OnDestroy()`'da `AudioBus.Unregister(kaynak)`
+
+Mixer'ı yine de kullanmak istersen: **Assets → Create → Audio Mixer** → `Master`, `Music`, `SFX` grupları → her grubun Volume parametresini sağ tık → **Expose** ve **tam olarak** bu adları ver → `GameSettings.mixer` alanına sürükle. Sistem otomatik mixer yoluna geçer.
 
 ### 11e) Loading screen — `UI/LoadingScreen.cs`
 
@@ -890,18 +927,52 @@ sadece platform değiştirip build almak olacak.
 
 ---
 
-## 16) Kalan iterasyonlar (v0.9+)
+## 16) v0.9 — Prosedürel haritalar + grafik kademeleri
 
-- Bomb modu (bomba pas mini oyunu)
-- Sürücü avatarı (TurnTheGameOn IKAvatarDriver eşdeğeri)
-- Ek haritalar (asset geldikçe: 9 harita × 6 varyant = 54)
-- RCCP Tuner ($52 indirim) — visual customization (body kit, decal, spoiler)
-- Refuel station UI (fuel meter + ücret onay panel)
-- Push notification (Firebase Messaging / OneSignal — günlük ödül hatırlatma)
+### 16a) 8 harita, kodla üretiliyor
+
+`DreamCar → Maps → Generate ALL Maps` (veya `BUILD EVERYTHING` içinde otomatik) sekiz ayrı sahne üretir: **Pist, Otoyol, Çöl, Orman, Kar, Liman, Arazi, Köy.**
+
+Her harita şu zincirden geçer:
+
+1. **Yol hattı** — Catmull-Rom spline. `Circuit` (kapalı pist), `Highway` (uzun düz), `Winding` (dolambaçlı) düzenlerinden biri. Spline ham parametreleştirmede virajlarda nokta yığar, bu yüzden yoğun bölünüp **eşit aralıkla yeniden örneklenir**.
+2. **Yol yüzeyi** — kesit lofting ile asfalt + banket + bariyer + orta çizgi. Viraj eğriliğinden **kamber** türetilir, sınırlanır ve 3 geçiş yumuşatılır.
+3. **Arazi** — fraktal Perlin (+ opsiyonel ridge noise). **Yol çevresinde düzleştirilir** ve dışa doğru harmanlanır — yoksa yol havada asılı kalır. Her arazi köşesi yalnızca yakınındaki yol örneklerini test eder (uzamsal hash).
+4. **Proplar** — ağaç, çam, kaya, kaktüs, bina, konteyner, vinç, ev, ambar, bariyer, lamba. Arketipe göre kural tabanlı serpiştirilir.
+5. **Oynanış** — checkpoint zinciri, trafik yolu, spawn noktaları, ışıklandırma/sis, GraphicsTuner.
+
+Harita kataloğu her arketip için **gündüz / gece / yağmur** varyantı üretir → 8 × 3 = **24 seçilebilir harita**.
+
+### 16b) Kasmadan iyi görüntü
+
+Ormanda ~1200 prop var. Prop başına GameObject mobilde ölümcül olurdu, bu yüzden:
+
+- **GPU instancing** (`InstancedPropRenderer`) — ~1200 nesne → ~8 draw call. Mesafeye göre eleme + LOD, çizim tamponları önceden ayrılmış.
+- **Collider'lar ayrı** — yalnızca çarpılabilecek büyük proplar collider taşır, MeshRenderer'sız.
+- **Kendi shader'ımız** (`DreamCarVertexLit`) — URP/Lit vertex renklerini yok sayıyor, ama arazi bantlarımız ve prop tonlarımız orada. Ayrıca `_BaseColor` instancing buffer'ında olmadan instance başına renk verilemiyor. Yarım-lambert + SH ambient + sis + gölge dökümü; specular ve normal map yok.
+- **Kalite kademeleri** (`GraphicsTuner`) — cihaz puanına göre Low/Mid/High. Çizim mesafesi, gölge, uzak kırpma, piksel ışık sayısı ve post-processing profili değişir. Düşük kademede sis **bilerek** yoğunlaştırılır: agresif elemenin kesme çizgisini gizler.
+
+### 16c) Post-processing
+
+`Assets/Generated/PostProcessing` altında üç URP Volume Profile üretilir; `GraphicsTuner` cihaza göre seçer:
+
+| Profil | İçerik |
+|---|---|
+| `PostFX_Low` | Yalnızca Color Adjustments — ek render geçişi yok. En zayıf cihazlarda post-processing kameradan **tamamen** kapatılır |
+| `PostFX_Mid` | + Bloom (yarım çözünürlük, HQ filtre kapalı), Vignette |
+| `PostFX_High` | + ACES Tonemapping, Motion Blur (CameraOnly/Low), Chromatic Aberration |
+
+---
+
+## 17) Kalan iterasyonlar (v1.0+)
+
+- Bomb modu (bomba pas mini oyunu) — *kalıcı kapsam dışı*
+- Sürücü avatarı — *kalıcı kapsam dışı*
+- RCCP Tuner ($52) — visual customization (body kit, decal, spoiler)
 - Photon Server Plugin (self-host) — fizik doğrulama
-- CAS ad mediation (multi-network)
 - Voice chat aktifleştirme (Photon Voice import + Recorder + Speaker prefab kurulumu)
-- Marka-özgür gerçek 3D asset entegrasyonu (senin işin)
+- Push notification için Firebase console kurulumu (kod hazır, `#if FIREBASE_MESSAGING`)
+- Marka-özgür gerçek 3D asset entegrasyonu (istersen — prosedürel varlıklar yayına yeterli)
 
 ---
 

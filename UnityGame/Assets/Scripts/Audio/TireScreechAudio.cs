@@ -30,7 +30,9 @@ namespace DreamCar.Audio
             if (maxSlip > slipThreshold)
             {
                 if (!loop.isPlaying) loop.Play();
-                loop.volume = Mathf.Lerp(0f, maxVolume, Mathf.InverseLerp(slipThreshold, 1.5f, maxSlip));
+                // Seviyeyi her karede kendisi yazıyor — SFX çarpanı burada uygulanır.
+                loop.volume = Mathf.Lerp(0f, maxVolume, Mathf.InverseLerp(slipThreshold, 1.5f, maxSlip))
+                              * AudioBus.SfxScale;
                 loop.pitch = 1f + (maxSlip - slipThreshold) * 0.3f;
             }
             else if (loop.isPlaying)

@@ -15,6 +15,10 @@ namespace DreamCar.Environment
         static readonly int WetnessId = Shader.PropertyToID("_GlobalWetness");
         float _wetness;
 
+        // Yağmur döngüsü bir kez ayarlanıp Play() ediliyor — SFX sürgüsüne AudioBus bağlar.
+        void Awake() => DreamCar.Audio.AudioBus.RegisterSfx(rainLoop);
+        void OnDestroy() => DreamCar.Audio.AudioBus.Unregister(rainLoop);
+
         void Update()
         {
             bool rain = type == Type.Rain;

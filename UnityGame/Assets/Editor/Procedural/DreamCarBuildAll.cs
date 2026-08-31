@@ -96,9 +96,10 @@ namespace DreamCar.EditorTools.Procedural
                 "2) PhotonServerSettings'e App Id gir\n" +
                 "3) Assets/Scenes/MainMenu.unity'i aç ve Play'e bas\n" +
                 "   (şu an açık olan sahne son üretilen haritadır)\n\n" +
-                "Ses ayarlarının çalışması için bir AudioMixer\n" +
-                "oluşturup Master/Music/SFX parametrelerini\n" +
-                "expose etmen gerekiyor (README §11d).",
+                "Ses sürgüleri kutudan çalışır — AudioMixer kurmak\n" +
+                "zorunda değilsin. İstersen kurabilirsin: Master/Music/\n" +
+                "SFX parametrelerini expose edip GameSettings.mixer\n" +
+                "alanına ata, sistem otomatik ona geçer (README §11d).",
                 "Tamam");
         }
 

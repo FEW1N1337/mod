@@ -31,6 +31,9 @@ namespace DreamCar.Audio
         int _orderIndex;
         Coroutine _fadeRoutine;
 
+        // Mixer yoksa müzik seviyesi buradan gelir; mixer varsa 1 döner.
+        float TargetVolume => baseVolume * AudioBus.MusicScale;
+
         void Awake()
         {
             if (Instance && Instance != this) { Destroy(gameObject); return; }
@@ -40,6 +43,17 @@ namespace DreamCar.Audio
             _a = CreateSource("MusicA");
             _b = CreateSource("MusicB");
             _active = _a;
+        }
+
+        void OnEnable() => AudioBus.OnChanged += OnVolumeChanged;
+        void OnDisable() => AudioBus.OnChanged -= OnVolumeChanged;
+
+        // Sürgü oynatıldığında çalan parça anında uysun — bir sonraki geçişi bekleme.
+        // Crossfade sürerken dokunma, yoksa geçişin ara değerini ezeriz.
+        void OnVolumeChanged()
+        {
+            if (_fadeRoutine != null) return;
+            if (_active != null && _active.isPlaying) _active.volume = TargetVolume;
         }
 
         AudioSource CreateSource(string name)
@@ -131,11 +145,13 @@ namespace DreamCar.Audio
                 t += Time.unscaledDeltaTime;
                 float k = Mathf.Clamp01(t / duration);
                 if (from != null) from.volume = Mathf.Lerp(fromStart, 0f, k);
-                if (to != null) to.volume = Mathf.Lerp(0f, baseVolume, k);
+                // Hedef seviye her karede okunur — geçiş sırasında sürgü oynatılsa
+                // bile doğru seviyede biter.
+                if (to != null) to.volume = Mathf.Lerp(0f, TargetVolume, k);
                 yield return null;
             }
             if (from != null) { from.Stop(); from.volume = 0f; }
-            if (to != null) to.volume = baseVolume;
+            if (to != null) to.volume = TargetVolume;
             _fadeRoutine = null;
         }
 
