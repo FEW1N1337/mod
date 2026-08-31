@@ -6,7 +6,8 @@ using UnityEngine.Audio;
 namespace DreamCar.Audio
 {
     // Oyunda hiç müzik sistemi yoktu. İki AudioSource ile crossfade yapan playlist:
-    // menü listesi + oyun içi listesi. GameSettings.MusicVolume mixer üstünden etkiler.
+    // menü listesi + oyun içi listesi. Seviye AudioBus.MusicScale üzerinden gelir
+    // (mixer varsa mixer, yoksa çarpan — bkz. Audio/AudioBus.cs).
     public class MusicManager : MonoBehaviour
     {
         public static MusicManager Instance { get; private set; }
