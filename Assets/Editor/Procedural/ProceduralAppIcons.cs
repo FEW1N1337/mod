@@ -21,7 +21,10 @@ namespace DreamCar.EditorTools.Procedural
         static readonly Color BrandLight  = new(0.35f, 0.72f, 1.00f);
 
         [MenuItem("DreamCar/Procedural/Generate App Icons & Splash")]
-        public static void GenerateAll()
+        public static void GenerateAllInteractive() => GenerateAll(confirm: true);
+
+        // confirm=false → BUILD EVERYTHING zincirinden çağrılırken diyalog açmaz.
+        public static void GenerateAll(bool confirm)
         {
             EnsureFolder();
 
@@ -49,16 +52,17 @@ namespace DreamCar.EditorTools.Procedural
             ApplyToPlayerSettings();
 
             Debug.Log("[Branding] İkonlar üretildi ve Player Settings'e uygulandı: " + Folder);
-            EditorUtility.DisplayDialog("DreamCar",
-                "İkonlar hazır.\n\n" +
-                "• icon_1024 → App Store (opak, alfa yok)\n" +
-                "• icon_adaptive_* → Android adaptive icon\n" +
-                "• splash_portrait → açılış ekranı\n" +
-                "• notif_icon_small → Android durum çubuğu\n\n" +
-                "Player Settings'e otomatik uygulandı.\n" +
-                "Android bildirim ikonlarını Player Settings →\n" +
-                "Android → Notification Icons altından kontrol et.",
-                "Tamam");
+            if (confirm)
+                EditorUtility.DisplayDialog("DreamCar",
+                    "İkonlar hazır.\n\n" +
+                    "• icon_1024 → App Store (opak, alfa yok)\n" +
+                    "• icon_adaptive_* → Android adaptive icon\n" +
+                    "• splash_portrait → açılış ekranı\n" +
+                    "• notif_icon_small → Android durum çubuğu\n\n" +
+                    "Player Settings'e otomatik uygulandı.\n" +
+                    "Android bildirim ikonlarını Player Settings →\n" +
+                    "Android → Notification Icons altından kontrol et.",
+                    "Tamam");
         }
 
         // ---------------------------------------------------------- İkon

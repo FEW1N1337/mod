@@ -24,10 +24,13 @@ namespace DreamCar.EditorTools.Procedural.Maps
         const string SceneFolder = "Assets/Scenes/Maps";
 
         [MenuItem("DreamCar/Maps/Generate ALL Maps")]
-        public static void GenerateAll()
+        public static void GenerateAllInteractive() => GenerateAll(confirm: true);
+
+        // confirm=false → BUILD EVERYTHING zincirinden çağrılırken soru sormaz.
+        public static void GenerateAll(bool confirm)
         {
             var archetypes = MapArchetype.All();
-            if (!EditorUtility.DisplayDialog("DreamCar — Haritalar",
+            if (confirm && !EditorUtility.DisplayDialog("DreamCar — Haritalar",
                     $"{archetypes.Length} harita üretilecek:\n\n" +
                     string.Join("\n", System.Array.ConvertAll(archetypes, a => "• " + a.displayName)) +
                     "\n\nHer biri ayrı sahne olarak kaydedilecek.\nBirkaç dakika sürebilir.",
@@ -48,11 +51,12 @@ namespace DreamCar.EditorTools.Procedural.Maps
             AddMapsToBuildSettings();
             BuildMapCatalog();
 
-            EditorUtility.DisplayDialog("DreamCar",
-                $"{archetypes.Length} harita hazır.\n\n" +
-                $"Sahneler: {SceneFolder}\n" +
-                "Build Settings güncellendi.\n" +
-                "MapCatalog oluşturuldu.", "Tamam");
+            if (confirm)
+                EditorUtility.DisplayDialog("DreamCar",
+                    $"{archetypes.Length} harita hazır.\n\n" +
+                    $"Sahneler: {SceneFolder}\n" +
+                    "Build Settings güncellendi.\n" +
+                    "MapCatalog oluşturuldu.", "Tamam");
         }
 
         [MenuItem("DreamCar/Maps/Generate Single Map (aktif sahneye)")]
@@ -516,6 +520,12 @@ namespace DreamCar.EditorTools.Procedural.Maps
             camGo.AddComponent<AudioListener>();
             camGo.AddComponent<Car.CarCameraFollow>();
 
+            // URP'de post-processing kamera başına açılır; profil yüklense bile
+            // bu kutu işaretli değilse hiçbir efekt görünmez.
+            var cameraData = camGo.GetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>()
+                          ?? camGo.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+            cameraData.renderPostProcessing = true;
+
             var boot = new GameObject("~Bootstrap");
             boot.AddComponent<GameBootstrap>();
             boot.AddComponent<PhotonConnector>();
@@ -533,10 +543,32 @@ namespace DreamCar.EditorTools.Procedural.Maps
             boot.AddComponent<NetworkInterestManager>();
             boot.AddComponent<DreamCar.Maps.MapSelector>();
 
-            // Cihaz gücüne göre çizim mesafesi / gölge / sis ayarı
+            // Cihaz gücüne göre çizim mesafesi / gölge / sis / post-processing ayarı
             boot.AddComponent<DreamCar.Settings.QualityAutoDetect>();
-            boot.AddComponent<DreamCar.Core.GraphicsTuner>();
+            var tuner = boot.AddComponent<DreamCar.Core.GraphicsTuner>();
+            AttachPostProcessingProfiles(tuner);
         }
+
+        // Kademe profillerini bağlar. Profiller yoksa önce onları üretir —
+        // kullanıcı ayrı bir menü komutu çalıştırmak zorunda kalmasın.
+        static void AttachPostProcessingProfiles(DreamCar.Core.GraphicsTuner tuner)
+        {
+            const string folder = "Assets/Generated/PostProcessing";
+
+            if (!Directory.Exists(folder) ||
+                AssetDatabase.LoadAssetAtPath<UnityEngine.Rendering.VolumeProfile>($"{folder}/PostFX_High.asset") == null)
+            {
+                // Sessiz üretim: 8 haritanın ortasında diyalog açılmasın.
+                ProceduralPostProcessing.GenerateAll(confirm: false);
+            }
+
+            tuner.low.postProfile  = LoadProfile($"{folder}/PostFX_Low.asset");
+            tuner.mid.postProfile  = LoadProfile($"{folder}/PostFX_Mid.asset");
+            tuner.high.postProfile = LoadProfile($"{folder}/PostFX_High.asset");
+        }
+
+        static UnityEngine.Rendering.VolumeProfile LoadProfile(string path) =>
+            AssetDatabase.LoadAssetAtPath<UnityEngine.Rendering.VolumeProfile>(path);
 
         // ---------------------------------------------------------- Katalog
         [MenuItem("DreamCar/Maps/Build Map Catalog")]

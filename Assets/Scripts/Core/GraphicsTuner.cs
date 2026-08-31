@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 using DreamCar.Settings;
 
 namespace DreamCar.Core
@@ -25,6 +26,10 @@ namespace DreamCar.Core
             [Tooltip("Sis yoğunluğu çarpanı — düşük cihazda sis artar, uzak eleme gizlenir.")]
             public float fogDensityScale = 1f;
             public int pixelLightCount = 4;
+            [Tooltip("Bu kademede kullanılacak post-processing profili.")]
+            public VolumeProfile postProfile;
+            [Tooltip("Post-processing tamamen kapatılsın mı (en düşük cihazlar).")]
+            public bool disablePostProcessing;
         }
 
         public Tier low = new()
@@ -36,6 +41,7 @@ namespace DreamCar.Core
             farClip = 550f,
             fogDensityScale = 1.9f,
             pixelLightCount = 1,
+            disablePostProcessing = true,   // en zayıf cihazlarda tek geçiş bile pahalı
         };
 
         public Tier mid = new()
@@ -93,9 +99,13 @@ namespace DreamCar.Core
             var sun = RenderSettings.sun;
             if (sun != null) sun.shadows = t.sunShadows;
 
-            // Kamera uzak kırpma
+            // Kamera uzak kırpma + post-processing
             var cam = Camera.main;
-            if (cam != null) cam.farClipPlane = t.farClip;
+            if (cam != null)
+            {
+                cam.farClipPlane = t.farClip;
+                ApplyPostProcessing(cam, t);
+            }
 
             // Sis: düşük cihazda yoğunlaştır — uzaktakiler elenirken kesme görünmesin
             if (!_capturedFog) { _baseFogDensity = RenderSettings.fogDensity; _capturedFog = true; }
@@ -103,6 +113,30 @@ namespace DreamCar.Core
 
             Debug.Log($"[GraphicsTuner] Kademe={ActiveTier} propMesafe={t.propDistanceScale:0.00} " +
                       $"gölge={t.shadowDistance:0}m farClip={t.farClip:0}");
+        }
+
+        // Sahnedeki global Volume'un profilini kademeye göre değiştirir.
+        // Volume yoksa oluşturur — harita üreticisi ayrıca eklemek zorunda kalmasın.
+        void ApplyPostProcessing(Camera cam, Tier t)
+        {
+            // URP kamerasında post-processing anahtarı ayrı; kapalıysa profil boşuna
+            var cameraData = cam.GetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+            if (cameraData != null) cameraData.renderPostProcessing = !t.disablePostProcessing;
+
+            if (t.disablePostProcessing) return;
+            if (t.postProfile == null) return;
+
+            var volume = FindFirstObjectByType<Volume>();
+            if (volume == null)
+            {
+                var go = new GameObject("~PostProcessVolume");
+                go.transform.SetParent(transform, false);
+                volume = go.AddComponent<Volume>();
+                volume.isGlobal = true;
+                volume.priority = 0f;
+            }
+
+            volume.sharedProfile = t.postProfile;
         }
 
         QualityAutoDetect.Tier ResolveTier()
