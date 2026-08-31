@@ -198,6 +198,11 @@ namespace DreamCar.EditorTools
             boot.AddComponent<Notifications.LocalNotificationScheduler>();
             boot.AddComponent<Monetization.CASAdsManager>();
             boot.AddComponent<Voice.PlayerVoiceMute>();
+            boot.AddComponent<RemoteConfig>();
+            boot.AddComponent<Core.DeepLinkManager>();
+            boot.AddComponent<Core.Haptics>();
+            boot.AddComponent<ChatRateLimiter>();
+            boot.AddComponent<DreamCar.Settings.QualityAutoDetect>();
             boot.AddComponent<PlayFabAuth>();
             boot.AddComponent<PlayFabMoneySync>();
             boot.AddComponent<PlayFabInventoryBridge>();
@@ -332,6 +337,11 @@ namespace DreamCar.EditorTools
             boot.AddComponent<Notifications.LocalNotificationScheduler>();
             boot.AddComponent<Monetization.CASAdsManager>();
             boot.AddComponent<Voice.PlayerVoiceMute>();
+            boot.AddComponent<RemoteConfig>();
+            boot.AddComponent<Core.DeepLinkManager>();
+            boot.AddComponent<Core.Haptics>();
+            boot.AddComponent<ChatRateLimiter>();
+            boot.AddComponent<DreamCar.Settings.QualityAutoDetect>();
             boot.AddComponent<PlayFabAuth>();
             boot.AddComponent<PlayFabAchievements>();
             boot.AddComponent<RateAppPopup>();
@@ -342,6 +352,10 @@ namespace DreamCar.EditorTools
             boot.AddComponent<Weather>();
             boot.AddComponent<DayNightCycle>().sun = sun;
             boot.AddComponent<MapSelector>();
+
+            // Oda içi bileşenler — sadece Game sahnesinde anlamlı.
+            boot.AddComponent<NetworkInterestManager>();
+            boot.AddComponent<CheatDetector>();
 
             // Canvas (HUD)
             var canvasGo = new GameObject("HUDCanvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));

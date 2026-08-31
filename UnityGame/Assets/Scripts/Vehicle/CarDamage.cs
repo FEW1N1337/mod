@@ -27,6 +27,7 @@ namespace DreamCar.Vehicle
             OnDamaged?.Invoke(health);
 
             if (crashSfx) crashSfx.Play();
+            Core.Haptics.PlayImpact(impulse);
 
             if (smoke)
             {

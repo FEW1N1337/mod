@@ -88,8 +88,19 @@ namespace DreamCar.UI
 
         void Hook()
         {
-            if (qualityDropdown) qualityDropdown.onValueChanged.AddListener(v => { if (!_applying && GameSettings.Instance) GameSettings.Instance.QualityLevel = v; });
-            if (fpsDropdown) fpsDropdown.onValueChanged.AddListener(v => { if (!_applying && GameSettings.Instance) GameSettings.Instance.TargetFps = FpsOptions[Mathf.Clamp(v, 0, FpsOptions.Length - 1)]; });
+            // Kullanıcı grafiği elle ayarladıysa QualityAutoDetect bir daha karışmasın.
+            if (qualityDropdown) qualityDropdown.onValueChanged.AddListener(v =>
+            {
+                if (_applying || !GameSettings.Instance) return;
+                GameSettings.Instance.QualityLevel = v;
+                QualityAutoDetect.MarkUserOverride();
+            });
+            if (fpsDropdown) fpsDropdown.onValueChanged.AddListener(v =>
+            {
+                if (_applying || !GameSettings.Instance) return;
+                GameSettings.Instance.TargetFps = FpsOptions[Mathf.Clamp(v, 0, FpsOptions.Length - 1)];
+                QualityAutoDetect.MarkUserOverride();
+            });
             if (masterSlider) masterSlider.onValueChanged.AddListener(v => { if (!_applying && GameSettings.Instance) GameSettings.Instance.MasterVolume = v; });
             if (musicSlider) musicSlider.onValueChanged.AddListener(v => { if (!_applying && GameSettings.Instance) GameSettings.Instance.MusicVolume = v; });
             if (sfxSlider) sfxSlider.onValueChanged.AddListener(v => { if (!_applying && GameSettings.Instance) GameSettings.Instance.SfxVolume = v; });
