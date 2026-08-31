@@ -10,9 +10,12 @@ namespace DreamCar.Util
         // --- Süre / mesafe biçimleme ---
 
         // Milisaniyeyi tur süresi formatına çevirir: 83450 → "1:23.45"
+        // Liderlik tablosu süreleri sunucuda NEGATİF saklanır (PlayFab istatistikleri
+        // büyük değeri iyi sayar, süre ise küçükken iyidir). O yüzden burada işaret
+        // yok sayılır; yalnızca sıfır "kayıt yok" demektir.
         public static string FormatLapTime(int milliseconds)
         {
-            if (milliseconds <= 0) return "-";
+            if (milliseconds == 0) return "-";
             float seconds = Math.Abs(milliseconds) / 1000f;
             int minutes = (int)(seconds / 60f);
             float rest = seconds - minutes * 60f;
