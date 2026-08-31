@@ -4,7 +4,8 @@
 // Kurulum:
 //   1) Package Manager → Add package from git URL:
 //      https://github.com/cleveradssolutions/CAS-Unity.git
-//   2) Assets → CleverAdsSolutions → Settings → iOS Manager ID gir
+//   2) Assets → CleverAdsSolutions → Settings → iOS ve Android Manager ID'lerini gir
+//      (CAS panelinde her platform için ayrı ID verilir)
 //   3) Player Settings → Scripting Define Symbols → CAS_INSTALLED
 using System;
 using UnityEngine;
@@ -20,9 +21,18 @@ namespace DreamCar.Monetization
     {
         public static CASAdsManager Instance { get; private set; }
 
+        [Header("CAS — platform başına ayrı Manager ID")]
         public string iosManagerId = "demo";
+        public string androidManagerId = "demo";
         public bool testMode = true;
         public long rewardAmount = 5000;
+
+        string ManagerId =>
+#if UNITY_ANDROID
+            androidManagerId;
+#else
+            iosManagerId;
+#endif
 
         public bool IsReady { get; private set; }
 
@@ -43,7 +53,7 @@ namespace DreamCar.Monetization
         {
 #if CAS_INSTALLED
             _manager = MobileAds.BuildManager()
-                .WithManagerIdAtIndex(0)
+                .WithManagerId(ManagerId)
                 .WithTestAdMode(testMode)
                 .WithCompletedListener(OnInitialized)
                 .Build();

@@ -805,7 +805,92 @@ sadece görsel katman değişir.
 
 ---
 
-## 15) Kalan iterasyonlar (v0.8+)
+## 15) v0.8 — Android desteği (artık iki platform)
+
+Proje başta iOS'a hedeflenmişti. Oyun kodunun %95'i zaten platform bağımsızdı;
+eksik olan entegrasyon noktaları tamamlandı.
+
+### 15a) Neler değişti
+
+| Alan | Önce | Şimdi |
+|---|---|---|
+| Yerel bildirim | Sadece iOS | Android kanal kaydı, POST_NOTIFICATIONS izni (API 33+), zamanlı bildirim |
+| Haptik | Android'de kaba `Handheld.Vibrate()` | Vibrator servisi üstünden gerçek desenler, genlik kontrolü, API 26/31 yolları |
+| Unity Ads | Tek `iosGameId` | `iosGameId` + `androidGameId`, platforma göre otomatik seçim |
+| CAS mediation | Tek `iosManagerId` | İki platform ID'si |
+| CI | Sadece iOS (Mac gerekli) | **Ayrıca ücretsiz Linux'ta Android APK** |
+
+### 15b) Android haptik
+
+`Core/Haptics.cs` artık ayrı bir Java plugin dosyası olmadan çalışıyor — JNI köprüsü
+C# içinden `AndroidJavaObject` ile kuruluyor:
+
+- **API 31+**: `VibratorManager` → `getDefaultVibrator` (Android 12 bu yolu zorunlu kılıyor)
+- **API 26+**: `VibrationEffect.createOneShot` / `createWaveform`, genlik kontrolü
+  destekleniyorsa kullanılır, yoksa `DEFAULT_AMPLITUDE`'a düşer
+- **API 25 ve altı**: düz süre tabanlı `vibrate()`
+
+iOS'un ayrık haptic tipleri (success/warning/failure) Android'de kısa titreşim
+desenleriyle taklit ediliyor.
+
+### 15c) Android bildirimleri
+
+`Notifications/LocalNotificationScheduler.cs` iki platformu da kapsıyor:
+
+- Android bildirim **kanalı** otomatik kaydediliyor (`dreamcar_reminders`)
+- Android 13+ için `POST_NOTIFICATIONS` izni isteniyor
+- Günlük ödül hatırlatması iki platformda da aynı mantıkla planlanıyor
+- `GetLaunchNotificationId()` — uygulama bildirime tıklanarak açıldıysa hangisi olduğunu döner
+
+> Bildirim ikonları: Player Settings → Android → **Notification Icons** altında
+> `icon_0` (small) ve `icon_1` (large) tanımlanmalı. Tanımlanmazsa bildirim
+> görünür ama ikonsuz olur.
+
+### 15d) Android build — iOS'tan çok daha kolay
+
+`.github/workflows/unity-android-build.yml` **ücretsiz Linux runner'da** tamamen çalışır.
+Mac, Xcode veya Apple Developer üyeliği gerekmez.
+
+**Kurulum:** Sadece `UNITY_LICENSE` secret'ı + `UNITY_CI_ENABLED=true` variable'ı.
+Detay: `.github/workflows/CI_SETUP.md` §1.
+
+**Her push'ta:** APK üretilir, Actions sekmesinden artifact olarak inilir.
+Telefona at, "bilinmeyen kaynaklara izin ver", kur. Bitti.
+
+**Play Store için:** Keystore oluşturup 4 secret ekle, sonra Actions →
+Run workflow → ".aab üret" kutusunu işaretle. Adımlar CI_SETUP.md §1e'de.
+
+### 15e) Editor'de Android'e geçmek
+
+```
+File → Build Settings → Android → Switch Platform
+```
+
+Player Settings'te ayarlanacaklar:
+- **Package Name**: `com.few1n.dreamcar` (iOS bundle ID'siyle aynı olabilir)
+- **Minimum API Level**: Android 7.0 (API 24)
+- **Target API Level**: 34 veya üzeri (Play Store zorunlu)
+- **Scripting Backend**: IL2CPP
+- **Target Architectures**: ARM64 (Play Store zorunlu, ARMv7 opsiyonel)
+- **Internet Access**: Require
+
+### 15f) Hangi platformdan başlamalısın
+
+**Android'den.** Sebep:
+
+| | Android | iOS |
+|---|---|---|
+| Test cihazına kurma | APK'yı at, kur | Mac + Xcode + sertifika |
+| Geliştirici ücreti | $25 (tek seferlik) | $99/yıl |
+| CI maliyeti | Ücretsiz | Kendi Mac'in |
+| İnceleme süresi | Saatler | Günler |
+
+iOS kodu hazır ve duruyor — Android'de oyunu oturttuktan sonra iOS'a geçmek
+sadece platform değiştirip build almak olacak.
+
+---
+
+## 16) Kalan iterasyonlar (v0.9+)
 
 - Bomb modu (bomba pas mini oyunu)
 - Sürücü avatarı (TurnTheGameOn IKAvatarDriver eşdeğeri)
