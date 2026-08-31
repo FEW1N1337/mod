@@ -76,6 +76,43 @@ jobs:
           fi
           echo "Temiz: mod menüsüne ait dosya yok."
 
+      # game-standalone saf bir `git subtree split` çıktısıdır: oyun kök dizinde,
+      # .github klasörü yok. CI dosyalarını burada üretiyoruz ki dal her yeniden
+      # bölündüğünde elle bakım gerekmesin. Yollar kök dizine göre düzeltilir
+      # (UnityGame/ öneki yeni depoda yok).
+      - name: CI workflow'larını hazırla
+        env:
+          SOURCE_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          git fetch origin "$SOURCE_BRANCH" --depth=1
+          mkdir -p .github/workflows
+
+          for f in unity-android-build.yml unity-ios-build.yml CI_SETUP.md; do
+            git show "origin/${SOURCE_BRANCH}:.github/workflows/${f}" > ".github/workflows/${f}"
+          done
+          git show "origin/${SOURCE_BRANCH}:.github/exportOptions.plist" \
+            > .github/exportOptions.plist
+
+          # 'UnityGame' → '.' : proje artık kökte
+          sed -i \
+            -e "s|UNITY_PROJECT_PATH: UnityGame|UNITY_PROJECT_PATH: .|" \
+            -e "s|'UnityGame/\*\*'|'Assets/**'|" \
+            .github/workflows/unity-android-build.yml \
+            .github/workflows/unity-ios-build.yml
+
+          if grep -rn "UnityGame" .github/workflows/*.yml; then
+            echo "::error::CI dosyalarında düzeltilmemiş UnityGame yolu kaldı."
+            exit 1
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github
+          git commit -m "CI: workflow yolları kök dizine göre ayarlandı" \
+            || echo "Değişiklik yok, commit atlandı."
+
       - name: Hedef depoya gönder
         env:
           TOKEN: ${{ secrets.GAME_REPO_TOKEN }}
