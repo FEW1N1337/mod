@@ -14,6 +14,11 @@ namespace DreamCar.Emote
         public GameObject emotePopupPrefab;
         public AudioSource audioSource;
 
+        // PlayOneShot, kaynağın volume'unu çarpan olarak kullanır — kaynağı
+        // kaydetmek emote seslerini de SFX sürgüsüne bağlar.
+        void Awake() => DreamCar.Audio.AudioBus.RegisterSfx(audioSource);
+        void OnDestroy() => DreamCar.Audio.AudioBus.Unregister(audioSource);
+
         public void Play(string id)
         {
             if (photonView.IsMine) photonView.RPC(nameof(RPC_Play), RpcTarget.All, id);

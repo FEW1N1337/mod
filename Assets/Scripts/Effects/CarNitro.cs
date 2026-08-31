@@ -29,7 +29,12 @@ namespace DreamCar.Effects
             _rb = GetComponent<Rigidbody>();
             _car = GetComponent<CarController>();
             _originalTopSpeed = _car.topSpeedKmh;
+
+            // Seviyesi bir kez ayarlanıp Play() ediliyor — SFX sürgüsüne AudioBus bağlar.
+            DreamCar.Audio.AudioBus.RegisterSfx(nitroLoop);
         }
+
+        void OnDestroy() => DreamCar.Audio.AudioBus.Unregister(nitroLoop);
 
         public void SetInput(bool held)
         {

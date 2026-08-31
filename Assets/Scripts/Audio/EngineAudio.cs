@@ -29,15 +29,19 @@ namespace DreamCar.Audio
             float throttle = Mathf.Clamp01(Mathf.Abs(_car.throttleInput));
             float pitch = Mathf.Lerp(idlePitch, maxPitch, Mathf.Max(speedT, throttle));
 
+            // Sesini her karede kendisi yazıyor — SFX çarpanını burada uygular.
+            // (AudioBus'a kaydolsaydı taban seviyesi yanlış anda yakalanırdı.)
+            float sfx = AudioBus.SfxScale;
+
             if (idleLoop)
             {
                 idleLoop.pitch = Mathf.Lerp(0.9f, 1.1f, throttle);
-                idleLoop.volume = idleVolumeVsSpeed.Evaluate(_car.SpeedKmh);
+                idleLoop.volume = idleVolumeVsSpeed.Evaluate(_car.SpeedKmh) * sfx;
             }
             if (revLoop)
             {
                 revLoop.pitch = pitch;
-                revLoop.volume = throttleVolume.Evaluate(throttle);
+                revLoop.volume = throttleVolume.Evaluate(throttle) * sfx;
             }
         }
     }

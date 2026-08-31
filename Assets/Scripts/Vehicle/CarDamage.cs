@@ -15,7 +15,14 @@ namespace DreamCar.Vehicle
 
         public System.Action<float> OnDamaged;
 
-        void Awake() => health = maxHealth;
+        void Awake()
+        {
+            health = maxHealth;
+            // Çarpma sesi bir kez ayarlanıp Play() ediliyor — SFX sürgüsüne AudioBus bağlar.
+            DreamCar.Audio.AudioBus.RegisterSfx(crashSfx);
+        }
+
+        void OnDestroy() => DreamCar.Audio.AudioBus.Unregister(crashSfx);
 
         void OnCollisionEnter(Collision col)
         {

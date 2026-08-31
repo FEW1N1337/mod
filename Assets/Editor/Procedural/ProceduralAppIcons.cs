@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System.IO;
+using System.Reflection;   // bildirim ikonu API'sine sürümden bağımsız erişim
 using UnityEditor;
 using UnityEditor.Build;   // NamedBuildTarget
 using UnityEngine;
@@ -344,8 +345,16 @@ namespace DreamCar.EditorTools.Procedural
             // iOS: tüm boyutlar tek kaynaktan ölçeklenir.
             ApplyIconsFor(NamedBuildTarget.iOS, icon1024);
 
-            // Android: legacy ikon seti (adaptive icon Editor'de ayrıca ayarlanır).
+            // Android: önce legacy/round setleri tek kaynaktan.
             ApplyIconsFor(NamedBuildTarget.Android, icon1024);
+
+            // Adaptive icon iki KATMANDIR (ön plan + arka plan) ve launcher onu
+            // daire/squircle'a kırpar. Kare ikonu tek katman olarak koyarsak
+            // köşeler kesilir — bu yüzden üretilmiş katmanları ayrıca bağlıyoruz.
+            ApplyAdaptiveIcon();
+
+            // Bildirim ikonları (Mobile Notifications paketi varsa).
+            ApplyAndroidNotificationIcons();
 
             // Splash
             var splash = Load("splash_portrait");
@@ -363,6 +372,155 @@ namespace DreamCar.EditorTools.Procedural
             AssetDatabase.SaveAssets();
         }
 
+        // Adaptive icon: her ikon iki katman taşır — 0 = arka plan, 1 = ön plan.
+        // SetIcons(...) yalnızca 0. katmanı yazar, o yüzden PlatformIcon üzerinden
+        // katman katman set ediyoruz.
+        static void ApplyAdaptiveIcon()
+        {
+            var foreground = Load("icon_adaptive_foreground");
+            var background = Load("icon_adaptive_background");
+            if (foreground == null || background == null) return;
+
+            // Kind'ı adından buluyoruz: AndroidPlatformIconKind farklı Unity
+            // sürümlerinde farklı namespace'te durabiliyor, bu yol sürümden bağımsız.
+            PlatformIconKind adaptive = null;
+            foreach (var kind in PlayerSettings.GetSupportedIconKinds(NamedBuildTarget.Android))
+                if (kind.ToString() == "Adaptive") { adaptive = kind; break; }
+
+            if (adaptive == null) return;
+
+            try
+            {
+                var icons = PlayerSettings.GetPlatformIcons(NamedBuildTarget.Android, adaptive);
+                if (icons == null || icons.Length == 0) return;
+
+                foreach (var icon in icons)
+                {
+                    icon.SetTexture(background, 0);
+                    icon.SetTexture(foreground, 1);
+                }
+
+                PlayerSettings.SetPlatformIcons(NamedBuildTarget.Android, adaptive, icons);
+                Debug.Log("[Branding] Android adaptive icon katmanları uygulandı.");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[Branding] Adaptive icon uygulanamadı: {e.Message}");
+            }
+        }
+
+        // Bildirim ikonları Player Settings'te değil, Mobile Notifications paketinin
+        // kendi ayar varlığında tutulur.
+        //
+        // Bu editör API'si paket sürümleri arasında namespace değiştiriyor
+        // (Unity.Notifications / UnityEditor.Notifications), o yüzden doğrudan
+        // tipe bağlanmıyoruz — yanlış tahmin, paket kurulduğu anda derleme hatası
+        // olurdu. Reflection ile bağlanıp başarısız olursa elle yapılacak adımı
+        // yazdırıyoruz. Paket kurulu değilse sessizce atlanır.
+        static void ApplyAndroidNotificationIcons()
+        {
+            var small = Load("notif_icon_small");
+            if (small == null) return;
+
+            var managerType = FindType("NotificationSettingsManager");
+            if (managerType == null) return;   // paket kurulu değil — normal durum
+
+            try
+            {
+                var settings = managerType
+                    .GetMethod("Initialize", BindingFlags.Public | BindingFlags.Static)
+                    ?.Invoke(null, null);
+                if (settings == null) throw new System.Exception("Initialize() null döndü.");
+
+                var list = GetMember(settings, "DrawableResources") as System.Collections.IList;
+                if (list == null) throw new System.Exception("DrawableResources okunamadı.");
+
+                var entryType = FindType("DrawableResourceData");
+                var iconTypeEnum = FindType("NotificationIconType");
+                if (entryType == null || iconTypeEnum == null)
+                    throw new System.Exception("Bildirim ikonu tipleri bulunamadı.");
+
+                // icon_0 = küçük (durum çubuğu; TEK RENK beyaz siluet olmalı,
+                // yoksa Android gri kare gösterir)
+                // icon_1 = büyük (bildirim gövdesi, renkli)
+                // Adlar LocalNotificationScheduler'daki SmallIcon/LargeIcon ile eşleşmeli.
+                SetNotificationIcon(list, entryType, iconTypeEnum, 0, "Small", small);
+
+                var large = Load("notif_icon_large");
+                if (large != null)
+                    SetNotificationIcon(list, entryType, iconTypeEnum, 1, "Large", large);
+
+                if (settings is Object asset) EditorUtility.SetDirty(asset);
+                Debug.Log("[Branding] Android bildirim ikonları uygulandı (icon_0, icon_1).");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning(
+                    "[Branding] Bildirim ikonları otomatik uygulanamadı: " + e.Message +
+                    "\nElle: Project Settings → Mobile Notifications → Android → " +
+                    "Notification Icons → iki giriş ekle:\n" +
+                    "  icon_0 (Small) = Assets/Generated/Branding/notif_icon_small.png\n" +
+                    "  icon_1 (Large) = Assets/Generated/Branding/notif_icon_large.png");
+            }
+        }
+
+        static void SetNotificationIcon(System.Collections.IList list, System.Type entryType,
+                                        System.Type iconTypeEnum, int index,
+                                        string enumValue, Texture2D texture)
+        {
+            while (list.Count <= index)
+                list.Add(System.Activator.CreateInstance(entryType));
+
+            var entry = list[index];
+            SetMember(entry, "Id", $"icon_{index}");
+            SetMember(entry, "Type", System.Enum.Parse(iconTypeEnum, enumValue));
+            SetMember(entry, "Asset", texture);
+        }
+
+        // --- Reflection yardımcıları ---
+
+        static System.Type FindType(string simpleName)
+        {
+            foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
+            {
+                // Yalnızca bildirim paketinin assembly'lerine bak — 200 assembly
+                // taramak yerine adla filtrele.
+                if (asm.GetName().Name.IndexOf("Notification", System.StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
+                // Bağımlılığı eksik bir assembly GetTypes()'ta patlayabilir — atla.
+                System.Type[] types;
+                try { types = asm.GetTypes(); }
+                catch { continue; }
+
+                foreach (var type in types)
+                    if (type != null && type.Name == simpleName) return type;
+            }
+            return null;
+        }
+
+        const BindingFlags MemberFlags =
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy;
+
+        static object GetMember(object target, string name)
+        {
+            var type = target.GetType();
+            var prop = type.GetProperty(name, MemberFlags);
+            if (prop != null) return prop.GetValue(target);
+            return type.GetField(name, MemberFlags)?.GetValue(target);
+        }
+
+        static void SetMember(object target, string name, object value)
+        {
+            var type = target.GetType();
+            var prop = type.GetProperty(name, MemberFlags);
+            if (prop != null && prop.CanWrite) { prop.SetValue(target, value); return; }
+
+            var field = type.GetField(name, MemberFlags);
+            if (field == null) throw new System.Exception($"'{name}' üyesi bulunamadı.");
+            field.SetValue(target, value);
+        }
+
         static void ApplyIconsFor(NamedBuildTarget target, Texture2D source)
         {
             try
@@ -370,6 +528,9 @@ namespace DreamCar.EditorTools.Procedural
                 var kinds = PlayerSettings.GetSupportedIconKinds(target);
                 foreach (var kind in kinds)
                 {
+                    // Adaptive iki katmanlı — ApplyAdaptiveIcon ayrıca ele alıyor.
+                    if (kind.ToString() == "Adaptive") continue;
+
                     int count = PlayerSettings.GetIconSizes(target, kind).Length;
                     if (count == 0) continue;
 
