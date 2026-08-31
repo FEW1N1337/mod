@@ -14,6 +14,8 @@ namespace DreamCar.Audio
         public AudioSource revSource;
         public AudioSource screechSource;
         public AudioSource hornSource;
+        public AudioSource nitroSource;
+        public AudioSource crashSource;
 
         [Header("Motor karakteri")]
         [Tooltip("Silindir sayısı — patlama sıklığını belirler, sesin karakterini değiştirir.")]
@@ -48,6 +50,12 @@ namespace DreamCar.Audio
 
             if (hornSource && hornSource.clip == null)
                 hornSource.clip = BuildHornClip("horn");
+
+            if (nitroSource && nitroSource.clip == null)
+                nitroSource.clip = BuildNitroClip("nitro");
+
+            if (crashSource && crashSource.clip == null)
+                crashSource.clip = BuildCrashClip("crash");
         }
 
         // --- Motor ---
@@ -174,6 +182,95 @@ namespace DreamCar.Audio
             return clip;
         }
 
+        // --- Nitro ---
+        // Basınçlı gaz kaçağı: geniş bantlı, boğuk bir "psssh". Lastik çığlığından
+        // farkı, keskin tonal bileşenin (1150 Hz) hiç olmaması; onun yerine iki
+        // kademeli alçak geçirgen ile yumuşatılmış gürültü ve yavaş türbülans var.
+        AudioClip BuildNitroClip(string name)
+        {
+            int samples = sampleRate; // 1 sn döngü
+            var data = new float[samples];
+            var rng = new System.Random(name.GetHashCode());
+
+            float lp1 = 0f, lp2 = 0f, prev = 0f, rumble = 0f;
+
+            for (int i = 0; i < samples; i++)
+            {
+                float t = (float)i / sampleRate;
+                float white = (float)rng.NextDouble() * 2f - 1f;
+
+                // İki kademeli alçak geçirgen — çığlığa göre belirgin şekilde boğuk.
+                lp1 = Mathf.Lerp(lp1, white, 0.18f);
+                lp2 = Mathf.Lerp(lp2, lp1, 0.30f);
+
+                // Zayıf yüksek geçirgen: DC kaymasını atar ama bandı geniş bırakır.
+                float hp = lp2 - prev * 0.85f;
+                prev = lp2;
+
+                // Çok yavaş ikinci katman — tüpün alt gövde uğultusu.
+                rumble = Mathf.Lerp(rumble, white, 0.02f);
+
+                // Türbülans dalgalanması. 2 ve 5 Hz, 1 sn'lik döngüde tam sayıda
+                // çevrim yapar; böylece dikişte genlik atlaması olmaz.
+                float turbulence = 1f
+                                 + Mathf.Sin(TwoPi * 2f * t) * 0.18f
+                                 + Mathf.Sin(TwoPi * 5f * t) * 0.10f;
+
+                float sample = hp * 3.4f + rumble * 0.9f;
+                data[i] = SoftClip(sample * turbulence) * 0.5f;
+            }
+
+            NormalizeAndFadeLoopSeam(data);
+
+            var clip = AudioClip.Create(name, samples, 1, sampleRate, false);
+            clip.SetData(data, 0);
+            return clip;
+        }
+
+        // --- Çarpma ---
+        // Tek atış (DÖNGÜ DEĞİL): keskin attack + üstel decay. İki katman —
+        // (a) geniş bantlı gürültü patlaması: sac/cam,
+        // (b) ~70 Hz sinüs "thud": gövdenin ağırlığı, hızlı sönümlü.
+        AudioClip BuildCrashClip(string name)
+        {
+            float duration = 0.45f;
+            int samples = Mathf.RoundToInt(sampleRate * duration);
+            var data = new float[samples];
+            var rng = new System.Random(name.GetHashCode());
+
+            float lp = 0f, prev = 0f;
+
+            for (int i = 0; i < samples; i++)
+            {
+                float t = (float)i / sampleRate;
+
+                // ~4 ms attack, ardından iki ayrı hızda üstel sönüm.
+                float attack = Mathf.Clamp01(t / 0.004f);
+                float noiseDecay = Mathf.Exp(-t * 11f);
+                float thudDecay = Mathf.Exp(-t * 26f);
+
+                // (a) Metal katman: alçak geçirgen gövde + türevinden tiz çıtırtı.
+                float white = (float)rng.NextDouble() * 2f - 1f;
+                lp = Mathf.Lerp(lp, white, 0.55f);
+                float bright = lp - prev;
+                prev = lp;
+                float metal = (lp * 0.55f + bright * 1.6f) * noiseDecay;
+
+                // (b) Thud: hafif düşen perde (70 Hz'den aşağı) darbe hissini artırır.
+                float thud = Mathf.Sin(TwoPi * 70f * t - TwoPi * 18f * t * t) * thudDecay * 0.9f;
+
+                data[i] = SoftClip((metal * 1.8f + thud) * attack);
+            }
+
+            // Tek atış olduğu için döngü dikişi harmanlanmaz — o işlem baş ile sonu
+            // karıştırır ve patlamanın attack'ini kirletirdi. Sadece tepe normalizasyonu.
+            NormalizePeak(data, 0.92f);
+
+            var clip = AudioClip.Create(name, samples, 1, sampleRate, false);
+            clip.SetData(data, 0);
+            return clip;
+        }
+
         // --- Yardımcılar ---
 
         static float SquareWave(float frequency, float t)
@@ -187,16 +284,22 @@ namespace DreamCar.Audio
 
         static float SoftClip(float x) => x / (1f + Mathf.Abs(x));
 
-        // Tepe değerini normalize eder ve döngü dikişini kısa çapraz geçişle gizler.
-        static void NormalizeAndFadeLoopSeam(float[] data)
+        // Tepe değerini hedefe çeker. Tek atış klipler için tek başına yeterlidir —
+        // döngü dikişi harmanlaması istenmediğinde bu çağrılır.
+        static void NormalizePeak(float[] data, float target)
         {
             float peak = 0f;
             foreach (var s in data) peak = Mathf.Max(peak, Mathf.Abs(s));
-            if (peak > 0.0001f)
-            {
-                float gain = 0.9f / peak;
-                for (int i = 0; i < data.Length; i++) data[i] *= gain;
-            }
+            if (peak <= 0.0001f) return;
+
+            float gain = target / peak;
+            for (int i = 0; i < data.Length; i++) data[i] *= gain;
+        }
+
+        // Tepe değerini normalize eder ve döngü dikişini kısa çapraz geçişle gizler.
+        static void NormalizeAndFadeLoopSeam(float[] data)
+        {
+            NormalizePeak(data, 0.9f);
 
             int fade = Mathf.Min(256, data.Length / 8);
             for (int i = 0; i < fade; i++)

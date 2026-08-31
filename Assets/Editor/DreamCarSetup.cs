@@ -129,14 +129,15 @@ namespace DreamCar.EditorTools
             pv.ObservedComponents = new System.Collections.Generic.List<Component> { sync };
             pv.Synchronization = Photon.Pun.ViewSynchronization.UnreliableOnChange;
 
-            // Gameplay components
-            car.AddComponent<CarNitro>();
-            car.AddComponent<CarDamage>();
+            // Gameplay components — CarNitro ve CarDamage'ın ses alanları aşağıdaki
+            // Audio bloğunda doldurulur, o yüzden referansları burada saklıyoruz.
+            var nitro = car.AddComponent<CarNitro>();
+            var damage = car.AddComponent<CarDamage>();
             car.AddComponent<CarPaint>();
             car.AddComponent<CruiseControl>();
             car.AddComponent<GearBox>();
             car.AddComponent<FuelSystem>();
-            car.AddComponent<Emote.HornController>();
+            var horn = car.AddComponent<Emote.HornController>();
             car.AddComponent<Core.StatsTracker>();
 
             // Audio
@@ -153,6 +154,38 @@ namespace DreamCar.EditorTools
             var screech = car.AddComponent<TireScreechAudio>();
             screech.wheels = new[] { front[0].col, front[1].col, rear[0].col, rear[1].col };
             screech.loop = screechSrc;
+
+            // Korna kaynağı — HornController'ın horn alanı boş kalırsa korna sessizdir.
+            var hornSrc = car.AddComponent<AudioSource>();
+            hornSrc.spatialBlend = 1f; hornSrc.playOnAwake = false;
+            horn.horn = hornSrc;
+
+            // Nitro döngüsü ve çarpma sesi. Taban volume sıfır bırakılamaz: CarNitro ve
+            // CarDamage bu kaynakları Awake'te AudioBus.RegisterSfx ile kaydeder ve o
+            // andaki volume'u "taban seviye" kabul eder — 0 olursa hep kısık kalır.
+            var nitroSrc = car.AddComponent<AudioSource>();
+            nitroSrc.loop = true; nitroSrc.spatialBlend = 1f; nitroSrc.playOnAwake = false;
+            nitroSrc.volume = 0.5f;
+            nitroSrc.rolloffMode = AudioRolloffMode.Linear; nitroSrc.maxDistance = 50f;
+            nitro.nitroLoop = nitroSrc;
+
+            var crashSrc = car.AddComponent<AudioSource>();
+            crashSrc.spatialBlend = 1f; crashSrc.playOnAwake = false;
+            crashSrc.volume = 0.8f;
+            crashSrc.rolloffMode = AudioRolloffMode.Linear; crashSrc.maxDistance = 70f;
+            damage.crashSfx = crashSrc;
+
+            // Prosedürel sentezleyici — klip dosyası gerektirmez. Prosedürel araç
+            // üretecindekiyle aynı kurulum: bağlanmayan kaynak için klip üretilmez,
+            // yani o ses tamamen sessiz kalır.
+            var synth = car.GetComponent<ProceduralEngineAudio>();
+            if (!synth) synth = car.AddComponent<ProceduralEngineAudio>();
+            synth.idleSource = engineSrcIdle;
+            synth.revSource = engineSrcRev;
+            synth.screechSource = screechSrc;
+            synth.hornSource = hornSrc;
+            synth.nitroSource = nitroSrc;
+            synth.crashSource = crashSrc;
 
             // Save prefab
             var prefab = PrefabUtility.SaveAsPrefabAsset(car, CarPrefabPath, out bool ok);
