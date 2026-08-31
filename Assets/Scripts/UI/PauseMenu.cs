@@ -50,14 +50,22 @@ namespace DreamCar.UI
         void LeaveRoom()
         {
             Time.timeScale = 1f;
+            MarkIntentionalLeave();
             if (PhotonNetwork.InRoom) PhotonNetwork.LeaveRoom();
         }
 
         void GoMainMenu()
         {
             Time.timeScale = 1f;
+            MarkIntentionalLeave();
             if (PhotonNetwork.InRoom) PhotonNetwork.LeaveRoom();
             SceneManager.LoadScene("MainMenu");
+        }
+
+        static void MarkIntentionalLeave()
+        {
+            if (Network.ReconnectionManager.Instance)
+                Network.ReconnectionManager.Instance.MarkUserInitiatedLeave();
         }
     }
 }

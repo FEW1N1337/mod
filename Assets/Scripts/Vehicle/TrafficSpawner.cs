@@ -35,7 +35,8 @@ namespace DreamCar.Vehicle
                 if (!go) { _alive.RemoveAt(i); continue; }
                 if (tracker && Vector3.Distance(go.transform.position, tracker.position) > despawnDistance)
                 {
-                    Destroy(go);
+                    if (Core.ObjectPool.Instance) Core.ObjectPool.Instance.Despawn(go);
+                    else Destroy(go);
                     _alive.RemoveAt(i);
                 }
             }
@@ -59,7 +60,10 @@ namespace DreamCar.Vehicle
             if (!prefab) return;
 
             var spawn = lane.waypoints[0];
-            var go = Instantiate(prefab, spawn.position, spawn.rotation);
+            var go = Core.ObjectPool.Instance
+                ? Core.ObjectPool.Instance.Spawn(prefab, spawn.position, spawn.rotation)
+                : Instantiate(prefab, spawn.position, spawn.rotation);
+            if (!go) return;
             var ai = go.GetComponent<TrafficCar>() ?? go.AddComponent<TrafficCar>();
             ai.waypoints = lane.waypoints;
             _alive.Add(go);

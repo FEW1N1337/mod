@@ -137,6 +137,7 @@ namespace DreamCar.EditorTools
             car.AddComponent<GearBox>();
             car.AddComponent<FuelSystem>();
             car.AddComponent<Emote.HornController>();
+            car.AddComponent<Core.StatsTracker>();
 
             // Audio
             var engineSrcIdle = car.AddComponent<AudioSource>();
@@ -180,11 +181,16 @@ namespace DreamCar.EditorTools
             var boot = new GameObject("~Bootstrap");
             boot.AddComponent<GameBootstrap>();
             boot.AddComponent<PhotonConnector>();
+            boot.AddComponent<ReconnectionManager>();
             boot.AddComponent<LobbyManager>();
             boot.AddComponent<LoginStreak>();
             boot.AddComponent<BanList>();
             boot.AddComponent<PlayerMoney>();
             boot.AddComponent<CarInventory>();
+            boot.AddComponent<Core.PlayerStats>();
+            boot.AddComponent<Core.ObjectPool>();
+            boot.AddComponent<CrashReporter>();
+            boot.AddComponent<MusicManager>();
             boot.AddComponent<ChatProfanityFilter>();
             boot.AddComponent<PlayFabAuth>();
             boot.AddComponent<PlayFabMoneySync>();
@@ -244,6 +250,15 @@ namespace DreamCar.EditorTools
             var toast = boot.AddComponent<ToastNotification>();
             toast.stackParent = toastRoot.GetComponent<RectTransform>();
 
+            // Ek ekranlar (Ayarlar / Liderlik / Başarımlar / Mağaza / İstatistik)
+            BuildSecondaryScreens(canvasGo, mainPanel);
+
+            // Loading overlay
+            BuildLoadingScreen(canvasGo, boot);
+
+            // Reconnect overlay
+            BuildReconnectOverlay(canvasGo, boot);
+
             // Save
             EditorSceneManager.SaveScene(scene, MainMenuPath);
             AssetDatabase.SaveAssets();
@@ -297,8 +312,13 @@ namespace DreamCar.EditorTools
             var boot = new GameObject("~Bootstrap");
             boot.AddComponent<GameBootstrap>();
             boot.AddComponent<PhotonConnector>();
+            boot.AddComponent<ReconnectionManager>();
             boot.AddComponent<PlayerMoney>();
             boot.AddComponent<CarInventory>();
+            boot.AddComponent<Core.PlayerStats>();
+            boot.AddComponent<Core.ObjectPool>();
+            boot.AddComponent<CrashReporter>();
+            boot.AddComponent<MusicManager>();
             boot.AddComponent<ChatProfanityFilter>();
             boot.AddComponent<PlayFabAuth>();
             boot.AddComponent<PlayFabAchievements>();
@@ -486,6 +506,172 @@ namespace DreamCar.EditorTools
             Debug.Log("[DreamCarSetup] Build Settings updated: MainMenu, Game");
         }
 
+        // ---------------------------------------------------------- Secondary screens
+        // Ayarlar / Liderlik / Başarımlar / Coin Mağazası / İstatistik panelleri.
+        // Hepsi kapalı başlar; ana menüye açma butonları eklenir.
+        static void BuildSecondaryScreens(GameObject canvasGo, GameObject mainPanel)
+        {
+            // --- Ayarlar ---
+            var settingsPanel = MakeUiChild(canvasGo, "SettingsScreen");
+            settingsPanel.SetActive(false);
+            MakeText(settingsPanel, "Title", "Ayarlar", new Vector2(0f, 420f), 64);
+            var qualityDd = MakeDropdown(settingsPanel, "QualityDropdown", new Vector2(0f, 300f));
+            var fpsDd = MakeDropdown(settingsPanel, "FpsDropdown", new Vector2(0f, 210f));
+            var masterSl = MakeSlider(settingsPanel, "MasterSlider", new Vector2(0f, 120f));
+            var musicSl = MakeSlider(settingsPanel, "MusicSlider", new Vector2(0f, 50f));
+            var sfxSl = MakeSlider(settingsPanel, "SfxSlider", new Vector2(0f, -20f));
+            var steerSl = MakeSlider(settingsPanel, "SteeringSlider", new Vector2(0f, -90f));
+            var steerVal = MakeText(settingsPanel, "SteeringValue", "1.0x", new Vector2(340f, -90f), 28);
+            var langDd = MakeDropdown(settingsPanel, "LanguageDropdown", new Vector2(0f, -170f));
+            var settingsClose = MakeButton(settingsPanel, "Close", "Kapat", new Vector2(0f, -320f));
+
+            var settings = settingsPanel.AddComponent<SettingsScreen>();
+            settings.panel = settingsPanel;
+            settings.closeButton = settingsClose;
+            settings.qualityDropdown = qualityDd;
+            settings.fpsDropdown = fpsDd;
+            settings.masterSlider = masterSl;
+            settings.musicSlider = musicSl;
+            settings.sfxSlider = sfxSl;
+            settings.steeringSensitivitySlider = steerSl;
+            settings.steeringValueLabel = steerVal;
+            settings.languageDropdown = langDd;
+
+            // --- Liderlik ---
+            var lbPanel = MakeUiChild(canvasGo, "LeaderboardScreen");
+            lbPanel.SetActive(false);
+            var lbTitle = MakeText(lbPanel, "Title", "En İyi Tur", new Vector2(0f, 420f), 64);
+            var lbRaceTab = MakeButton(lbPanel, "RaceTab", "Yarış", new Vector2(-160f, 320f));
+            var lbDriftTab = MakeButton(lbPanel, "DriftTab", "Drift", new Vector2(160f, 320f));
+            var lbList = MakeListContainer(lbPanel, "List", new Vector2(0f, -30f), new Vector2(900f, 620f));
+            var lbLoading = MakeText(lbPanel, "Loading", "Yükleniyor…", new Vector2(0f, 0f), 32).gameObject;
+            var lbClose = MakeButton(lbPanel, "Close", "Kapat", new Vector2(0f, -420f));
+
+            var leaderboard = lbPanel.AddComponent<LeaderboardScreen>();
+            leaderboard.panel = lbPanel;
+            leaderboard.closeButton = lbClose;
+            leaderboard.raceTabButton = lbRaceTab;
+            leaderboard.driftTabButton = lbDriftTab;
+            leaderboard.listParent = lbList;
+            leaderboard.rowPrefab = MakeRowPrefabTemplate(lbPanel, "RowTemplate", 3);
+            leaderboard.titleLabel = lbTitle;
+            leaderboard.loadingIndicator = lbLoading;
+
+            // --- Başarımlar ---
+            var achPanel = MakeUiChild(canvasGo, "AchievementsScreen");
+            achPanel.SetActive(false);
+            MakeText(achPanel, "Title", "Başarımlar", new Vector2(0f, 420f), 64);
+            var achSummary = MakeText(achPanel, "Summary", "0 / 0", new Vector2(0f, 340f), 32);
+            var achList = MakeListContainer(achPanel, "List", new Vector2(0f, -30f), new Vector2(900f, 620f));
+            var achClose = MakeButton(achPanel, "Close", "Kapat", new Vector2(0f, -420f));
+
+            var achievements = achPanel.AddComponent<AchievementsScreen>();
+            achievements.panel = achPanel;
+            achievements.closeButton = achClose;
+            achievements.listParent = achList;
+            achievements.rowPrefab = MakeRowPrefabTemplate(achPanel, "RowTemplate", 3);
+            achievements.summaryLabel = achSummary;
+
+            // --- Coin mağazası ---
+            var shopPanel = MakeUiChild(canvasGo, "CoinShopScreen");
+            shopPanel.SetActive(false);
+            MakeText(shopPanel, "Title", "Mağaza", new Vector2(0f, 420f), 64);
+            var shopBalance = MakeText(shopPanel, "Balance", "0 ₺", new Vector2(0f, 340f), 40);
+            var adBtn = MakeButton(shopPanel, "WatchAdButton", "Reklam İzle", new Vector2(0f, -200f));
+            var adReward = MakeText(shopPanel, "AdReward", "+5.000 ₺", new Vector2(0f, -280f), 28);
+            var shopClose = MakeButton(shopPanel, "Close", "Kapat", new Vector2(0f, -420f));
+
+            var coinShop = shopPanel.AddComponent<CoinShopScreen>();
+            coinShop.panel = shopPanel;
+            coinShop.closeButton = shopClose;
+            coinShop.balanceLabel = shopBalance;
+            coinShop.watchAdButton = adBtn;
+            coinShop.adRewardLabel = adReward;
+
+            // --- İstatistik ---
+            var statsPanel = MakeUiChild(canvasGo, "StatsScreen");
+            statsPanel.SetActive(false);
+            MakeText(statsPanel, "Title", "İstatistikler", new Vector2(0f, 420f), 64);
+            var stats = statsPanel.AddComponent<StatsScreen>();
+            stats.panel = statsPanel;
+            stats.distanceLabel = MakeStatRow(statsPanel, "Mesafe", 300f);
+            stats.driveTimeLabel = MakeStatRow(statsPanel, "Süre", 230f);
+            stats.topSpeedLabel = MakeStatRow(statsPanel, "En Yüksek Hız", 160f);
+            stats.racesLabel = MakeStatRow(statsPanel, "Yarış", 90f);
+            stats.winsLabel = MakeStatRow(statsPanel, "Galibiyet", 20f);
+            stats.winRateLabel = MakeStatRow(statsPanel, "Kazanma Oranı", -50f);
+            stats.bestDriftLabel = MakeStatRow(statsPanel, "En İyi Drift", -120f);
+            stats.moneyEarnedLabel = MakeStatRow(statsPanel, "Kazanılan Para", -190f);
+            stats.carsOwnedLabel = MakeStatRow(statsPanel, "Araç", -260f);
+            stats.crashesLabel = MakeStatRow(statsPanel, "Çarpışma", -330f);
+            stats.closeButton = MakeButton(statsPanel, "Close", "Kapat", new Vector2(0f, -430f));
+
+            // --- Ana menüdeki açma butonları ---
+            var navSettings = MakeButton(mainPanel, "NavSettings", "Ayarlar", new Vector2(-600f, -300f));
+            navSettings.onClick.AddListener(settings.Open);
+            var navLeaderboard = MakeButton(mainPanel, "NavLeaderboard", "Liderlik", new Vector2(-300f, -300f));
+            navLeaderboard.onClick.AddListener(leaderboard.Open);
+            var navAchievements = MakeButton(mainPanel, "NavAchievements", "Başarımlar", new Vector2(0f, -300f));
+            navAchievements.onClick.AddListener(achievements.Open);
+            var navShop = MakeButton(mainPanel, "NavShop", "Mağaza", new Vector2(300f, -300f));
+            navShop.onClick.AddListener(coinShop.Open);
+            var navStats = MakeButton(mainPanel, "NavStats", "İstatistik", new Vector2(600f, -300f));
+            navStats.onClick.AddListener(stats.Open);
+        }
+
+        static void BuildLoadingScreen(GameObject canvasGo, GameObject boot)
+        {
+            var panel = MakeUiChild(canvasGo, "LoadingScreen");
+            var bg = panel.AddComponent<Image>();
+            bg.color = new Color(0.03f, 0.04f, 0.07f, 1f);
+            var cg = panel.AddComponent<CanvasGroup>();
+            panel.SetActive(false);
+
+            MakeText(panel, "Title", "Yükleniyor", new Vector2(0f, 120f), 64);
+            var tip = MakeText(panel, "Tip", "", new Vector2(0f, -180f), 30);
+            var pct = MakeText(panel, "Percent", "0%", new Vector2(0f, -40f), 36);
+
+            var barBg = new GameObject("BarBG", typeof(RectTransform), typeof(Image));
+            barBg.transform.SetParent(panel.transform, false);
+            barBg.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.15f);
+            var barBgRt = barBg.GetComponent<RectTransform>();
+            barBgRt.anchoredPosition = new Vector2(0f, 20f);
+            barBgRt.sizeDelta = new Vector2(700f, 26f);
+
+            var fillGo = new GameObject("Fill", typeof(RectTransform), typeof(Image));
+            fillGo.transform.SetParent(barBg.transform, false);
+            var fill = fillGo.GetComponent<Image>();
+            fill.color = new Color(0.25f, 0.75f, 1f);
+            fill.type = Image.Type.Filled;
+            fill.fillMethod = Image.FillMethod.Horizontal;
+            var fillRt = fillGo.GetComponent<RectTransform>();
+            fillRt.anchorMin = Vector2.zero; fillRt.anchorMax = Vector2.one;
+            fillRt.offsetMin = Vector2.zero; fillRt.offsetMax = Vector2.zero;
+
+            var loading = boot.AddComponent<LoadingScreen>();
+            loading.panel = panel;
+            loading.progressFill = fill;
+            loading.progressLabel = pct;
+            loading.tipLabel = tip;
+            loading.canvasGroup = cg;
+        }
+
+        static void BuildReconnectOverlay(GameObject canvasGo, GameObject boot)
+        {
+            var overlay = MakeUiChild(canvasGo, "ReconnectOverlay");
+            var bg = overlay.AddComponent<Image>();
+            bg.color = new Color(0f, 0f, 0f, 0.75f);
+            overlay.SetActive(false);
+            var status = MakeText(overlay, "Status", "Yeniden bağlanıyor…", Vector2.zero, 40);
+
+            var reconnect = boot.GetComponent<ReconnectionManager>();
+            if (reconnect)
+            {
+                reconnect.reconnectingOverlay = overlay;
+                reconnect.statusLabel = status;
+            }
+        }
+
         // ---------------------------------------------------------- Helpers
         static void EnsureFolder(string path)
         {
@@ -530,6 +716,212 @@ namespace DreamCar.EditorTools
             tRt.anchorMin = Vector2.zero; tRt.anchorMax = Vector2.one;
             tRt.offsetMin = Vector2.zero; tRt.offsetMax = Vector2.zero;
             return go.GetComponent<Button>();
+        }
+
+        static TMP_Dropdown MakeDropdown(GameObject parent, string name, Vector2 anchoredPos)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(TMP_Dropdown));
+            go.transform.SetParent(parent.transform, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchoredPosition = anchoredPos;
+            rt.sizeDelta = new Vector2(480f, 60f);
+            go.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.1f);
+
+            var label = MakeText(go, "Label", "", Vector2.zero, 28);
+            var labelRt = label.GetComponent<RectTransform>();
+            labelRt.anchorMin = Vector2.zero; labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = new Vector2(14f, 0f); labelRt.offsetMax = new Vector2(-40f, 0f);
+            label.alignment = TextAlignmentOptions.MidlineLeft;
+
+            // Template — Unity Dropdown açılır listesi bunu klonlar.
+            var template = new GameObject("Template", typeof(RectTransform), typeof(Image), typeof(ScrollRect));
+            template.transform.SetParent(go.transform, false);
+            template.SetActive(false);
+            var tplRt = template.GetComponent<RectTransform>();
+            tplRt.anchorMin = new Vector2(0f, 0f); tplRt.anchorMax = new Vector2(1f, 0f);
+            tplRt.pivot = new Vector2(0.5f, 1f);
+            tplRt.anchoredPosition = new Vector2(0f, 2f);
+            tplRt.sizeDelta = new Vector2(0f, 220f);
+            template.GetComponent<Image>().color = new Color(0.1f, 0.1f, 0.14f, 0.98f);
+
+            var viewport = new GameObject("Viewport", typeof(RectTransform), typeof(Mask), typeof(Image));
+            viewport.transform.SetParent(template.transform, false);
+            var vpRt = viewport.GetComponent<RectTransform>();
+            vpRt.anchorMin = Vector2.zero; vpRt.anchorMax = Vector2.one;
+            vpRt.offsetMin = Vector2.zero; vpRt.offsetMax = Vector2.zero;
+            viewport.GetComponent<Mask>().showMaskGraphic = false;
+
+            var content = new GameObject("Content", typeof(RectTransform));
+            content.transform.SetParent(viewport.transform, false);
+            var contentRt = content.GetComponent<RectTransform>();
+            contentRt.anchorMin = new Vector2(0f, 1f); contentRt.anchorMax = new Vector2(1f, 1f);
+            contentRt.pivot = new Vector2(0.5f, 1f);
+            contentRt.sizeDelta = new Vector2(0f, 56f);
+
+            var item = new GameObject("Item", typeof(RectTransform), typeof(Toggle));
+            item.transform.SetParent(content.transform, false);
+            var itemRt = item.GetComponent<RectTransform>();
+            itemRt.anchorMin = new Vector2(0f, 0.5f); itemRt.anchorMax = new Vector2(1f, 0.5f);
+            itemRt.sizeDelta = new Vector2(0f, 56f);
+
+            var itemBg = new GameObject("Item Background", typeof(RectTransform), typeof(Image));
+            itemBg.transform.SetParent(item.transform, false);
+            var itemBgRt = itemBg.GetComponent<RectTransform>();
+            itemBgRt.anchorMin = Vector2.zero; itemBgRt.anchorMax = Vector2.one;
+            itemBgRt.offsetMin = Vector2.zero; itemBgRt.offsetMax = Vector2.zero;
+            itemBg.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.06f);
+
+            var itemLabel = MakeText(item, "Item Label", "Option", Vector2.zero, 26);
+            var itemLabelRt = itemLabel.GetComponent<RectTransform>();
+            itemLabelRt.anchorMin = Vector2.zero; itemLabelRt.anchorMax = Vector2.one;
+            itemLabelRt.offsetMin = new Vector2(16f, 0f); itemLabelRt.offsetMax = new Vector2(-16f, 0f);
+            itemLabel.alignment = TextAlignmentOptions.MidlineLeft;
+
+            var toggle = item.GetComponent<Toggle>();
+            toggle.targetGraphic = itemBg.GetComponent<Image>();
+
+            var scroll = template.GetComponent<ScrollRect>();
+            scroll.content = contentRt;
+            scroll.viewport = vpRt;
+            scroll.horizontal = false;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+
+            var dd = go.GetComponent<TMP_Dropdown>();
+            dd.template = tplRt;
+            dd.captionText = label;
+            dd.itemText = itemLabel;
+            return dd;
+        }
+
+        static Slider MakeSlider(GameObject parent, string name, Vector2 anchoredPos)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Slider));
+            go.transform.SetParent(parent.transform, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchoredPosition = anchoredPos;
+            rt.sizeDelta = new Vector2(480f, 36f);
+
+            var bg = new GameObject("Background", typeof(RectTransform), typeof(Image));
+            bg.transform.SetParent(go.transform, false);
+            var bgRt = bg.GetComponent<RectTransform>();
+            bgRt.anchorMin = new Vector2(0f, 0.35f); bgRt.anchorMax = new Vector2(1f, 0.65f);
+            bgRt.offsetMin = Vector2.zero; bgRt.offsetMax = Vector2.zero;
+            bg.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.15f);
+
+            var fillArea = new GameObject("Fill Area", typeof(RectTransform));
+            fillArea.transform.SetParent(go.transform, false);
+            var faRt = fillArea.GetComponent<RectTransform>();
+            faRt.anchorMin = new Vector2(0f, 0.35f); faRt.anchorMax = new Vector2(1f, 0.65f);
+            faRt.offsetMin = Vector2.zero; faRt.offsetMax = Vector2.zero;
+
+            var fillGo = new GameObject("Fill", typeof(RectTransform), typeof(Image));
+            fillGo.transform.SetParent(fillArea.transform, false);
+            var fillRt = fillGo.GetComponent<RectTransform>();
+            fillRt.anchorMin = Vector2.zero; fillRt.anchorMax = new Vector2(1f, 1f);
+            fillRt.offsetMin = Vector2.zero; fillRt.offsetMax = Vector2.zero;
+            fillGo.GetComponent<Image>().color = new Color(0.25f, 0.75f, 1f);
+
+            var handleArea = new GameObject("Handle Slide Area", typeof(RectTransform));
+            handleArea.transform.SetParent(go.transform, false);
+            var haRt = handleArea.GetComponent<RectTransform>();
+            haRt.anchorMin = Vector2.zero; haRt.anchorMax = Vector2.one;
+            haRt.offsetMin = Vector2.zero; haRt.offsetMax = Vector2.zero;
+
+            var handle = new GameObject("Handle", typeof(RectTransform), typeof(Image));
+            handle.transform.SetParent(handleArea.transform, false);
+            var handleRt = handle.GetComponent<RectTransform>();
+            handleRt.sizeDelta = new Vector2(32f, 36f);
+            handle.GetComponent<Image>().color = Color.white;
+
+            var slider = go.GetComponent<Slider>();
+            slider.fillRect = fillRt;
+            slider.handleRect = handleRt;
+            slider.targetGraphic = handle.GetComponent<Image>();
+            slider.minValue = 0f;
+            slider.maxValue = 1f;
+            slider.value = 1f;
+            return slider;
+        }
+
+        // ScrollRect + Content — liste satırlarının ebeveyni Content olur.
+        static Transform MakeListContainer(GameObject parent, string name, Vector2 anchoredPos, Vector2 size)
+        {
+            var scrollGo = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(ScrollRect));
+            scrollGo.transform.SetParent(parent.transform, false);
+            var rt = scrollGo.GetComponent<RectTransform>();
+            rt.anchoredPosition = anchoredPos;
+            rt.sizeDelta = size;
+            scrollGo.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.25f);
+
+            var viewport = new GameObject("Viewport", typeof(RectTransform), typeof(Mask), typeof(Image));
+            viewport.transform.SetParent(scrollGo.transform, false);
+            var vpRt = viewport.GetComponent<RectTransform>();
+            vpRt.anchorMin = Vector2.zero; vpRt.anchorMax = Vector2.one;
+            vpRt.offsetMin = Vector2.zero; vpRt.offsetMax = Vector2.zero;
+            viewport.GetComponent<Mask>().showMaskGraphic = false;
+
+            var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            content.transform.SetParent(viewport.transform, false);
+            var contentRt = content.GetComponent<RectTransform>();
+            contentRt.anchorMin = new Vector2(0f, 1f); contentRt.anchorMax = new Vector2(1f, 1f);
+            contentRt.pivot = new Vector2(0.5f, 1f);
+            contentRt.sizeDelta = new Vector2(0f, 0f);
+
+            var vlg = content.GetComponent<VerticalLayoutGroup>();
+            vlg.spacing = 6f;
+            vlg.padding = new RectOffset(10, 10, 10, 10);
+            vlg.childControlHeight = false;
+            vlg.childForceExpandHeight = false;
+            vlg.childControlWidth = true;
+            vlg.childForceExpandWidth = true;
+
+            var fitter = content.GetComponent<ContentSizeFitter>();
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var scroll = scrollGo.GetComponent<ScrollRect>();
+            scroll.content = contentRt;
+            scroll.viewport = vpRt;
+            scroll.horizontal = false;
+            scroll.movementType = ScrollRect.MovementType.Elastic;
+
+            return content.transform;
+        }
+
+        // Liste satırı şablonu — sahnede kapalı durur, script Instantiate eder.
+        static GameObject MakeRowPrefabTemplate(GameObject parent, string name, int textCount)
+        {
+            var row = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+            row.transform.SetParent(parent.transform, false);
+            row.SetActive(false);
+            var rt = row.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(0f, 64f);
+            row.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.06f);
+            row.GetComponent<LayoutElement>().preferredHeight = 64f;
+
+            float[] anchors = { 0.02f, 0.14f, 0.72f };
+            float[] widths = { 0.10f, 0.56f, 0.26f };
+            for (int i = 0; i < textCount; i++)
+            {
+                var t = MakeText(row, "Text" + i, "", Vector2.zero, 26);
+                var tRt = t.GetComponent<RectTransform>();
+                float a = i < anchors.Length ? anchors[i] : 0.02f;
+                float w = i < widths.Length ? widths[i] : 0.3f;
+                tRt.anchorMin = new Vector2(a, 0f);
+                tRt.anchorMax = new Vector2(a + w, 1f);
+                tRt.offsetMin = Vector2.zero; tRt.offsetMax = Vector2.zero;
+                t.alignment = i == textCount - 1 ? TextAlignmentOptions.MidlineRight : TextAlignmentOptions.MidlineLeft;
+            }
+            return row;
+        }
+
+        // "Etiket ............ değer" satırı; değer TMP_Text'i döner.
+        static TMP_Text MakeStatRow(GameObject parent, string label, float y)
+        {
+            var caption = MakeText(parent, label + "Caption", label, new Vector2(-220f, y), 30);
+            caption.alignment = TextAlignmentOptions.MidlineLeft;
+            var value = MakeText(parent, label + "Value", "-", new Vector2(220f, y), 30);
+            value.alignment = TextAlignmentOptions.MidlineRight;
+            return value;
         }
 
         static TMP_InputField MakeInputField(GameObject parent, string name, string placeholder, Vector2 anchoredPos)

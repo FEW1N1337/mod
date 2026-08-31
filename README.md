@@ -475,7 +475,83 @@ Detaylı kurulum: `.github/workflows/CI_SETUP.md` — Unity lisansı `.alf`→`.
 
 ---
 
-## 11) Kalan iterasyonlar (v0.6+)
+## 11) v0.6a — Kritik altyapı (reconnect, ekranlar, müzik, pooling, crash)
+
+Bu paket, "script var ama oyuncunun göreceği karşılığı yok" boşluklarını ve mobilde oyunu bozan eksikleri kapatır.
+
+### 11a) Yeniden bağlanma — `Network/ReconnectionManager.cs`
+
+Mobilde bağlantı sürekli kopar (telefon uykuya girer, 4G↔WiFi geçişi, tünel). Önceden `OnDisconnected` sadece log basıyordu; oyuncu odadan düşüyor ve geri dönemiyordu.
+
+- Üstel geri çekilme ile 6 deneme (2s → 4s → 8s… max 30s)
+- Oda biliniyorsa `ReconnectAndRejoin()`, yoksa `Reconnect()`, o da olmazsa `ConnectUsingSettings()`
+- "Bilerek çıkış" ayrımı var: `InGameHUD` ve `PauseMenu` çıkış butonları `MarkUserInitiatedLeave()` çağırır → boşuna yeniden bağlanmaya çalışmaz
+- Kurtarılamaz sebeplerde (auth hatası, ban, CCU dolu) denemez
+- Ekranda "Yeniden bağlanıyor… (2/6)" overlay'i
+
+### 11b) Eksik 5 ekran
+
+Backend'leri vardı, paneli yoktu. Hepsi `DreamCarSetup` wizard'ı tarafından MainMenu'ye kuruluyor ve ana menüye açma butonları ekleniyor.
+
+| Ekran | Ne gösterir |
+|---|---|
+| `UI/SettingsScreen.cs` | Kalite, FPS, master/müzik/SFX ses, direksiyon hassasiyeti, dil — `GameSettings`'e canlı bağlı |
+| `UI/LeaderboardScreen.cs` | Sekmeli: En İyi Tur / Drift Skoru. `PlayFabLeaderboards`'tan çeker, süreyi `1:23.45` formatına çevirir |
+| `UI/AchievementsScreen.cs` | `AchievementCatalog` listesi, kilitli/açık ayrımı, ilerleme özeti `7 / 20` |
+| `UI/CoinShopScreen.cs` | IAP coin paketleri + "reklam izle para kazan" (60 sn cooldown) |
+| `UI/StatsScreen.cs` | Mesafe, süre, en yüksek hız, yarış/galibiyet/oran, en iyi drift, kazanılan para, araç, çarpışma |
+
+### 11c) İstatistik takibi — `Core/PlayerStats.cs` + `Core/StatsTracker.cs`
+
+Achievement'lar `OnDistanceTravelled` gibi çağrılar bekliyordu ama kimse çağırmıyordu. Artık:
+
+- `PlayerStats` — kümülatif sayaçlar, PlayerPrefs persist, `ToJson()`/`FromJson()` ile cloud save'e hazır (v0.6b bunu kullanacak)
+- `StatsTracker` — araç prefab'ına eklenir, sadece sahibi olan araçta çalışır. Mesafe/süre/en yüksek hız/çarpışma toplar, 5 sn'de bir flush eder. Teleport sıçramalarını mesafeye yazmaz
+- `RaceManager`, `DriftScore`, `PlayerMoney` artık `PlayerStats`'e rapor ediyor
+
+### 11d) Müzik sistemi — `Audio/MusicManager.cs`
+
+Oyunda hiç müzik yoktu. İki `AudioSource` ile crossfade yapan playlist:
+
+- `Playlist.Menu` / `Playlist.Gameplay` iki ayrı liste
+- Shuffle, parça bitince otomatik sıradaki, `crossfadeSeconds` ile yumuşak geçiş
+- `AudioMixerGroup` alanına müzik grubunu ata → `GameSettings.MusicVolume` slider'ı etkiler
+
+> **AudioMixer asset repoda yok** — Unity'de script ile `.mixer` oluşturulamıyor. Editor'de: **Assets → Create → Audio Mixer** → içine `Master`, `Music`, `SFX` grupları ekle → her grubun Volume parametresini expose et ve **tam olarak** `Master` / `Music` / `SFX` adlarını ver → `GameSettings.mixer` alanına sürükle. Bu yapılmazsa ses slider'ları sessizce hiçbir şey yapmaz.
+
+### 11e) Loading screen — `UI/LoadingScreen.cs`
+
+Sahne geçişleri sert kesmeydi. Artık progress bar + dönen ipuçları + fade in/out.
+
+- `ShowForPhotonLoad()` — `PhotonNetwork.LevelLoadingProgress` takip eder (master `LoadLevel` çağırdığında)
+- `LoadScene(name)` — normal async yükleme, `allowSceneActivation` ile %100'de bekletip geçer
+- 8 hazır ipucu metni (drift, nitro, yakıt, kamera modu, tamir, şifreli oda, günlük ödül, checkpoint)
+
+### 11f) Object pooling — `Core/ObjectPool.cs`
+
+`TrafficSpawner` sürekli Instantiate/Destroy yapıyordu → mobilde GC spike ve takılma.
+
+- Prefab başına stack, `prewarm` listesi ile önden doldurma, `maxSize` ile şişme koruması
+- `Spawn(prefab, pos, rot)` / `Despawn(go)` / `DespawnAfter(go, sec)`
+- `IPooled` arayüzü — havuzdan çıkarken/girerken state sıfırlamak isteyen bileşenler uygular
+- `TrafficSpawner` artık pool varsa onu kullanıyor, yoksa eski yola düşüyor
+
+### 11g) Crash reporting — `Backend/CrashReporter.cs`
+
+Cihazda çökerse hiçbir kayıt yoktu.
+
+- Yakalanmamış exception + `LogType.Exception`/`Error` yakalar
+- Son 40 log satırını "breadcrumb" olarak tutar → çökmeden önce ne olduğu görünür
+- Rapor içeriği: sürüm, cihaz, OS, RAM, PlayFabId, aktif sahne, mesaj, stack, breadcrumb'lar
+- `FIREBASE_CRASHLYTICS` define'ı varsa Crashlytics'e yollar; yoksa PlayerPrefs'e yazar → `CrashReporter.ConsumePendingReport()` ile destek e-postasına eklenebilir
+
+### 11h) Wizard güncellendi
+
+`DreamCar → Setup → Run All` artık şunları da kuruyor: ReconnectionManager + overlay, PlayerStats, ObjectPool, CrashReporter, MusicManager, LoadingScreen paneli, 5 ekran + ana menü nav butonları, araç prefab'ına StatsTracker.
+
+---
+
+## 12) Kalan iterasyonlar (v0.6b+)
 
 - Bomb modu (bomba pas mini oyunu)
 - Sürücü avatarı (TurnTheGameOn IKAvatarDriver eşdeğeri)

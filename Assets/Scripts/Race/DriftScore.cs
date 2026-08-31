@@ -41,6 +41,7 @@ namespace DreamCar.Race
                 OnScoreChanged?.Invoke(0);
                 var ach = Backend.PlayFabAchievements.Instance;
                 if (ach) ach.OnDriftBank(_bank);
+                if (Core.PlayerStats.Instance) Core.PlayerStats.Instance.ReportDriftScore(_bank);
             }
         }
     }
