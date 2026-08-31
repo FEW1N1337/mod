@@ -29,6 +29,7 @@ namespace DreamCar.Moderation
             if (p == null || string.IsNullOrEmpty(p.UserId)) return;
             _banned.Add(p.UserId);
             Save();
+            Monetization.Analytics.Event("player_banned", new() { { "nickname", p.NickName ?? "-" } });
             if (PhotonNetwork.IsMasterClient) PhotonNetwork.CloseConnection(p);
         }
 

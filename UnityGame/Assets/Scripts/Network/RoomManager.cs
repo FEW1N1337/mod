@@ -48,6 +48,13 @@ namespace DreamCar.Network
 
             _localCar = PhotonNetwork.Instantiate(prefab, pos, rot);
 
+            Monetization.Analytics.Event("car_spawn", new()
+            {
+                { "car", prefab },
+                { "room", PhotonNetwork.CurrentRoom?.Name ?? "-" },
+                { "players", PhotonNetwork.CurrentRoom?.PlayerCount ?? 0 },
+            });
+
             var follow = Camera.main ? Camera.main.GetComponent<Car.CarCameraFollow>() : null;
             if (follow) follow.target = _localCar.transform;
 

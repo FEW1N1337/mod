@@ -82,6 +82,11 @@ namespace DreamCar.Backend
             _unlocked.Add(def.id);
             SaveLocalCache();
             if (def.moneyReward > 0 && PlayerMoney.Instance != null) PlayerMoney.Instance.Add(def.moneyReward);
+            Monetization.Analytics.Event("achievement_unlocked", new()
+            {
+                { "id", def.id },
+                { "reward", def.moneyReward },
+            });
             ToastNotification.Show($"🏆 {def.displayName}  +{def.moneyReward:N0} ₺");
         }
 

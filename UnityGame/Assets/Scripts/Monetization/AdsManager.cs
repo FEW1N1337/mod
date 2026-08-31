@@ -37,7 +37,15 @@ namespace DreamCar.Monetization
 
         public void ShowRewarded(Action onReward = null)
         {
+            // CAS mediation kuruluysa onu tercih et (daha yüksek eCPM waterfall).
+            if (CASAdsManager.Instance != null && CASAdsManager.Instance.CanShowRewarded())
+            {
+                CASAdsManager.Instance.ShowRewarded(onReward);
+                return;
+            }
+
             _pendingReward = onReward;
+            Analytics.Event("ad_shown", new() { { "network", "unity" }, { "placement", rewardedPlacement } });
             if (_loaded) Advertisement.Show(rewardedPlacement, this);
             else Advertisement.Load(rewardedPlacement, this);
         }
@@ -53,6 +61,7 @@ namespace DreamCar.Monetization
             if (showCompletionState == UnityAdsShowCompletionState.COMPLETED)
             {
                 PlayerMoney.Instance?.Add(rewardAmount);
+                Analytics.Event("ad_completed", new() { { "network", "unity" }, { "reward", rewardAmount } });
                 _pendingReward?.Invoke();
             }
             _pendingReward = null;
@@ -68,8 +77,14 @@ namespace DreamCar.Monetization
         void Awake() { Instance = this; }
         public void ShowRewarded(Action onReward = null)
         {
-            Debug.Log("[Ads] Unity Ads not installed. Simulating reward.");
+            if (CASAdsManager.Instance != null && CASAdsManager.Instance.CanShowRewarded())
+            {
+                CASAdsManager.Instance.ShowRewarded(onReward);
+                return;
+            }
+            Debug.Log("[Ads] Reklam SDK'sı yok — ödül simüle ediliyor.");
             PlayerMoney.Instance?.Add(rewardAmount);
+            Analytics.Event("ad_completed", new() { { "network", "none" }, { "reward", rewardAmount } });
             onReward?.Invoke();
         }
     }

@@ -48,6 +48,11 @@ namespace DreamCar.Rewards
             PlayerPrefs.SetString(LastClaimKey, DateTime.UtcNow.ToString("o"));
             PlayerPrefs.Save();
             if (PlayerMoney.Instance != null) PlayerMoney.Instance.Add(_amountForToday);
+            Monetization.Analytics.Event("daily_reward_claimed", new()
+            {
+                { "streak", _streakForToday },
+                { "amount", _amountForToday },
+            });
             if (popup) popup.SetActive(false);
             ToastNotification.Show($"Günlük ödül: +{_amountForToday:N0} ₺");
         }

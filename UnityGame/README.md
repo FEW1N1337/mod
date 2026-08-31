@@ -551,7 +551,63 @@ Cihazda çökerse hiçbir kayıt yoktu.
 
 ---
 
-## 12) Kalan iterasyonlar (v0.6b+)
+## 12) v0.6b — Cloud save, voice HUD, push, analytics, localization JSON, CAS
+
+### 12a) Tam profil cloud save — `Backend/PlayFabCloudSave.cs`
+
+`PlayFabMoneySync` sadece parayı taşıyordu. Artık profilin tamamı buluta gidiyor:
+
+- Garaj (sahip olunan araçlar + aktif araç), plaka (split ve tek parça), boya (renk/metallic/smoothness), ayarlar (ses/kalite/FPS/hassasiyet), streak, davet kodu, açılmış başarımlar, dil, **istatistikler**
+- 5 sn debounce; uygulama arka plana atılınca veya kapanınca anında flush
+- **Merge stratejisi**: araçlar bulut ∪ yerel (offline satın alma kaybolmaz), istatistikler max(bulut, yerel)
+- `CarInventory.OwnedCarIds()` ve `MergeOwnedFromCloud()` eklendi
+
+Yeni cihaz testi: `player.customId` PlayerPref'ini ikinci cihaza kopyala → login → tüm profil gelir.
+
+### 12b) Voice chat HUD — `Voice/VoiceHUD.cs`, `Voice/PlayerVoiceMute.cs`
+
+`VoiceChatController` API'ydi, ekranı yoktu.
+
+- `VoiceHUD` — push-to-talk butonu (basılı tut), mute toggle, konuşma göstergesi renk değiştirir. Editor testi için `T` tuşu
+- `PlayerVoiceMute` — oyuncu bazlı **yerel** susturma, UserId bazlı PlayerPrefs'te kalıcı. `PlayerListPanel` satırlarına bağlanabilir
+
+Photon Voice 2 kurulumu: Asset Store import → sahneye `Recorder` → araç prefab'ına `Speaker` → Define'a `PHOTON_VOICE_DEFINED`.
+
+### 12c) Push + yerel bildirim — `Notifications/`
+
+- `PushNotificationsManager.cs` — Firebase Cloud Messaging. Token alınca PlayerPrefs'e yazıp cloud save'i tetikler → sunucu hedefli bildirim gönderebilir. `data.link` payload'ı ile deep link event'i. Define: `FIREBASE_MESSAGING`
+- `LocalNotificationScheduler.cs` — Sunucusuz. Günlük ödül alınmadıysa saat 20:00'ye bildirim kurar; alındıysa yarına atar. `ScheduleIn(delay, title, body)` ile özel bildirim. Paket: `com.unity.mobile.notifications`
+
+iOS kurulumu: Firebase konsolunda APNs Auth Key yükle, `GoogleService-Info.plist` projeye ekle.
+
+### 12d) Analytics kapsamı genişletildi
+
+Önceden 4 çağrı vardı, şimdi 12+ event: `login`, `car_spawn`, `race_start`, `race_finished`, `car_purchased`, `achievement_unlocked`, `daily_reward_claimed`, `referral_redeemed`, `player_banned`, `player_reported`, `ad_shown`, `ad_completed`, `ad_failed`, `iap`.
+
+### 12e) Localization JSON'a taşındı
+
+Çeviriler artık `Assets/Resources/Localization/tr.json` ve `en.json` dosyalarında (~90 anahtar). C# içinde hardcoded değil.
+
+- Yeni dil eklemek: `es.json` koy + `LocalizationManager.availableLanguages` dizisine `"es"` ekle
+- Fallback zinciri: aktif dil → İngilizce → anahtarın kendisi
+- JSON yoksa dahili minik liste devreye girer (oyun boş metinle açılmaz)
+- `AddOrOverride(code, key, value)` ile runtime'da sunucudan gelen metin enjekte edilebilir
+
+JSON formatı:
+```json
+{ "entries": [ { "key": "play", "value": "Oyna" } ] }
+```
+
+### 12f) CAS ad mediation — `Monetization/CASAdsManager.cs`
+
+Tek ağ (Unity Ads) yerine waterfall: AdMob + AppLovin MAX + IronSource + Unity Ads + Vungle.
+
+- `AdsManager.ShowRewarded()` artık önce CAS'ı dener, hazır değilse Unity Ads'e, o da yoksa simülasyona düşer — **çağıran kod değişmedi**
+- Kurulum: Package Manager → git URL `https://github.com/cleveradssolutions/CAS-Unity.git` → Assets → CleverAdsSolutions → Settings → iOS Manager ID → Define `CAS_INSTALLED`
+
+---
+
+## 13) Kalan iterasyonlar (v0.6c+)
 
 - Bomb modu (bomba pas mini oyunu)
 - Sürücü avatarı (TurnTheGameOn IKAvatarDriver eşdeğeri)
