@@ -484,6 +484,15 @@ namespace DreamCar.EditorTools.Procedural
             AddAnchor(root, "InteriorCam", new Vector3(-0.34f, 1.02f, 0.05f));
             var overhead = AddAnchor(root, "OverheadAnchor", new Vector3(0f, 1.6f, 0f));
 
+            // Ağ — ses/emote bileşenlerinden ÖNCE kurulmalı. HornController, AirHorn ve
+            // benzeri MonoBehaviourPun türevlerinde [RequireComponent(typeof(PhotonView))]
+            // var; PhotonView henüz yokken eklenirlerse Unity kendi PhotonView'ını üretir ve
+            // aşağıdaki AddComponent ikinci bir PhotonView yaratırdı.
+            var pv = root.AddComponent<Photon.Pun.PhotonView>();
+            var sync = root.AddComponent<CarNetworkSync>();
+            pv.ObservedComponents = new List<Component> { sync };
+            pv.Synchronization = Photon.Pun.ViewSynchronization.UnreliableOnChange;
+
             // Ses
             var idleSource = root.AddComponent<AudioSource>();
             idleSource.loop = true; idleSource.spatialBlend = 1f; idleSource.volume = 0.55f;
@@ -513,15 +522,42 @@ namespace DreamCar.EditorTools.Procedural
             var horn = root.AddComponent<Emote.HornController>();
             horn.horn = hornSource;
 
-            // Ağ
-            var pv = root.AddComponent<Photon.Pun.PhotonView>();
-            var sync = root.AddComponent<CarNetworkSync>();
-            pv.ObservedComponents = new List<Component> { sync };
-            pv.Synchronization = Photon.Pun.ViewSynchronization.UnreliableOnChange;
+            // Nitro döngüsü ve çarpma sesi. Taban volume sıfır bırakılamaz: CarNitro
+            // ve CarDamage bu kaynakları Awake'te AudioBus.RegisterSfx ile kaydeder ve
+            // o andaki volume'u "taban seviye" kabul eder — 0 olursa sonsuza dek sessiz kalır.
+            var nitroSource = root.AddComponent<AudioSource>();
+            nitroSource.loop = true; nitroSource.spatialBlend = 1f; nitroSource.playOnAwake = false;
+            nitroSource.volume = 0.5f;
+            nitroSource.rolloffMode = AudioRolloffMode.Linear; nitroSource.maxDistance = 50f;
+
+            var crashSource = root.AddComponent<AudioSource>();
+            crashSource.spatialBlend = 1f; crashSource.playOnAwake = false;
+            crashSource.volume = 0.8f;
+            crashSource.rolloffMode = AudioRolloffMode.Linear; crashSource.maxDistance = 70f;
+
+            // Sentezleyiciye tüm kaynakları bağla — bağlanmayan kaynak için klip
+            // üretilmez, yani o ses tamamen sessiz kalır.
+            synth.screechSource = screechSource;
+            synth.hornSource = hornSource;
+            synth.nitroSource = nitroSource;
+            synth.crashSource = crashSource;
+
+            // Emote ve ritmik korna — ikisi de MonoBehaviourPun, araçta PhotonView zaten var.
+            // İçerik (ikon/nota klipleri) Editor'de doldurulur; boş listeyle RPC'ler sessizce geçer.
+            var emotes = root.AddComponent<Emote.EmoteSystem>();
+            emotes.overheadAnchor = overhead;
+            emotes.audioSource = hornSource;
+
+            var airHorn = root.AddComponent<Emote.AirHorn>();
+            airHorn.source = hornSource;
 
             // Oyun bileşenleri
-            root.AddComponent<CarNitro>();
-            root.AddComponent<CarDamage>();
+            var nitro = root.AddComponent<CarNitro>();
+            nitro.nitroLoop = nitroSource;
+
+            var damage = root.AddComponent<CarDamage>();
+            damage.crashSfx = crashSource;
+
             root.AddComponent<CruiseControl>();
             root.AddComponent<GearBox>();
             root.AddComponent<FuelSystem>();
