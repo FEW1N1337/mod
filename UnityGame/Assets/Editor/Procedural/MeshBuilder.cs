@@ -178,6 +178,14 @@ namespace DreamCar.EditorTools.Procedural
             AddFlatQuad(p000, p100, p101, p001); // -Y
         }
 
+        // Belirli bir indeksten sonraki köşeleri dönüştürür. Bir ilkeli (silindir gibi)
+        // ürettikten sonra döndürmek/kaydırmak için — yeniden üretmeye gerek kalmaz.
+        public void TransformVertices(int fromIndex, System.Func<Vector3, Vector3> transform)
+        {
+            for (int i = Mathf.Max(0, fromIndex); i < _verts.Count; i++)
+                _verts[i] = transform(_verts[i]);
+        }
+
         public Mesh ToMesh(string name, bool recalculateNormals = false)
         {
             var mesh = new Mesh { name = name };
