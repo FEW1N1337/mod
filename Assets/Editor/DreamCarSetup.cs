@@ -192,6 +192,12 @@ namespace DreamCar.EditorTools
             boot.AddComponent<CrashReporter>();
             boot.AddComponent<MusicManager>();
             boot.AddComponent<ChatProfanityFilter>();
+            boot.AddComponent<Localization.LocalizationManager>();
+            boot.AddComponent<PlayFabCloudSave>();
+            boot.AddComponent<Notifications.PushNotificationsManager>();
+            boot.AddComponent<Notifications.LocalNotificationScheduler>();
+            boot.AddComponent<Monetization.CASAdsManager>();
+            boot.AddComponent<Voice.PlayerVoiceMute>();
             boot.AddComponent<PlayFabAuth>();
             boot.AddComponent<PlayFabMoneySync>();
             boot.AddComponent<PlayFabInventoryBridge>();
@@ -320,6 +326,12 @@ namespace DreamCar.EditorTools
             boot.AddComponent<CrashReporter>();
             boot.AddComponent<MusicManager>();
             boot.AddComponent<ChatProfanityFilter>();
+            boot.AddComponent<Localization.LocalizationManager>();
+            boot.AddComponent<PlayFabCloudSave>();
+            boot.AddComponent<Notifications.PushNotificationsManager>();
+            boot.AddComponent<Notifications.LocalNotificationScheduler>();
+            boot.AddComponent<Monetization.CASAdsManager>();
+            boot.AddComponent<Voice.PlayerVoiceMute>();
             boot.AddComponent<PlayFabAuth>();
             boot.AddComponent<PlayFabAchievements>();
             boot.AddComponent<RateAppPopup>();

@@ -54,6 +54,8 @@ namespace DreamCar.Moderation
             string reason = reasonDropdown ? reasonDropdown.options[reasonDropdown.value].text : "?";
             string detail = detailField ? detailField.text : "";
 
+            Monetization.Analytics.Event("player_reported", new() { { "reason", reason } });
+
 #if PLAYFAB_INSTALLED
             var req = new ExecuteCloudScriptRequest
             {

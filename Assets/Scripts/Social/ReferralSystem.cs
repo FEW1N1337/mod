@@ -73,6 +73,7 @@ namespace DreamCar.Social
                     PlayerPrefs.SetInt(RedeemedKey, 1);
                     PlayerPrefs.Save();
                     if (PlayerMoney.Instance != null) PlayerMoney.Instance.Add(refereeBonus);
+                    Monetization.Analytics.Event("referral_redeemed", new() { { "bonus", refereeBonus } });
                     ToastNotification.Show($"Kod kabul edildi! +{refereeBonus:N0} ₺");
                 }
                 else ToastNotification.Show("Kod geçersiz veya süresi dolmuş");

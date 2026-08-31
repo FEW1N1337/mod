@@ -43,6 +43,11 @@ namespace DreamCar.Backend
                 IsLoggedIn = true;
                 PlayFabId = r.PlayFabId;
                 Debug.Log("[PlayFab] Login OK: " + PlayFabId);
+                Monetization.Analytics.Event("login", new()
+                {
+                    { "newly_created", r.NewlyCreated },
+                    { "platform", Application.platform.ToString() },
+                });
                 OnLoggedIn?.Invoke();
             }, err => Debug.LogError("[PlayFab] Login failed: " + err.GenerateErrorReport()));
 #else

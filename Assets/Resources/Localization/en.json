@@ -1,0 +1,115 @@
+{
+  "entries": [
+    { "key": "play",              "value": "Play" },
+    { "key": "shop",              "value": "Shop" },
+    { "key": "garage",            "value": "Garage" },
+    { "key": "settings",          "value": "Settings" },
+    { "key": "buy",               "value": "Buy" },
+    { "key": "owned",             "value": "Owned" },
+    { "key": "locked",            "value": "Locked" },
+    { "key": "select",            "value": "Select" },
+    { "key": "selected",          "value": "Selected" },
+    { "key": "close",             "value": "Close" },
+    { "key": "cancel",            "value": "Cancel" },
+    { "key": "confirm",           "value": "Confirm" },
+    { "key": "back",              "value": "Back" },
+
+    { "key": "room.password",     "value": "Password" },
+    { "key": "room.create",       "value": "Create Room" },
+    { "key": "room.join",         "value": "Join" },
+    { "key": "room.quick_join",   "value": "Quick Join" },
+    { "key": "room.name",         "value": "Room Name" },
+    { "key": "room.max_players",  "value": "Max Players" },
+    { "key": "room.visible",      "value": "Public" },
+    { "key": "room.wrong_password", "value": "Wrong password" },
+
+    { "key": "mode.free",         "value": "Free Roam" },
+    { "key": "mode.race",         "value": "Race" },
+    { "key": "mode.drift",        "value": "Drift" },
+
+    { "key": "money.short",       "value": "$" },
+    { "key": "money.insufficient","value": "Not enough money" },
+
+    { "key": "race.lap",          "value": "Lap" },
+    { "key": "race.best_lap",     "value": "Best Lap" },
+    { "key": "race.go",           "value": "GO!" },
+    { "key": "race.finished",     "value": "Race finished" },
+
+    { "key": "drift.score",       "value": "Drift Score" },
+    { "key": "drift.finished",    "value": "Drift session over" },
+
+    { "key": "nitro",             "value": "Nitro" },
+    { "key": "fuel",              "value": "Fuel" },
+    { "key": "fuel.low",          "value": "Low fuel — find a station" },
+    { "key": "fuel.filled",       "value": "Tank filled" },
+    { "key": "fuel.station",      "value": "Gas Station" },
+    { "key": "fuel.pay_and_fill", "value": "Pay and Fill" },
+
+    { "key": "repair",            "value": "Repair" },
+    { "key": "repair.done",       "value": "Repaired" },
+    { "key": "damage",            "value": "Damage" },
+
+    { "key": "pause",             "value": "Paused" },
+    { "key": "pause.resume",      "value": "Resume" },
+    { "key": "pause.leave_room",  "value": "Leave Room" },
+    { "key": "pause.main_menu",   "value": "Main Menu" },
+
+    { "key": "settings.quality",  "value": "Graphics Quality" },
+    { "key": "settings.fps",      "value": "Frame Rate" },
+    { "key": "settings.master",   "value": "Master Volume" },
+    { "key": "settings.music",    "value": "Music" },
+    { "key": "settings.sfx",      "value": "Sound Effects" },
+    { "key": "settings.steering", "value": "Steering Sensitivity" },
+    { "key": "settings.language", "value": "Language" },
+    { "key": "settings.support",  "value": "Support" },
+    { "key": "settings.privacy",  "value": "Privacy Policy" },
+
+    { "key": "stats.title",       "value": "Statistics" },
+    { "key": "stats.distance",    "value": "Distance" },
+    { "key": "stats.drive_time",  "value": "Drive Time" },
+    { "key": "stats.top_speed",   "value": "Top Speed" },
+    { "key": "stats.races",       "value": "Races" },
+    { "key": "stats.wins",        "value": "Wins" },
+    { "key": "stats.win_rate",    "value": "Win Rate" },
+    { "key": "stats.best_drift",  "value": "Best Drift" },
+    { "key": "stats.money_earned","value": "Money Earned" },
+    { "key": "stats.cars_owned",  "value": "Cars Owned" },
+    { "key": "stats.crashes",     "value": "Crashes" },
+
+    { "key": "leaderboard",       "value": "Leaderboard" },
+    { "key": "leaderboard.empty", "value": "No entries yet" },
+    { "key": "achievements",      "value": "Achievements" },
+
+    { "key": "daily.title",       "value": "Daily Reward" },
+    { "key": "daily.claim",       "value": "Claim" },
+    { "key": "daily.day",         "value": "day" },
+
+    { "key": "referral.title",    "value": "Invite Code" },
+    { "key": "referral.redeem",   "value": "Redeem Code" },
+    { "key": "referral.invalid",  "value": "Invalid code" },
+    { "key": "referral.used",     "value": "Code already redeemed" },
+
+    { "key": "friends",           "value": "Friends" },
+    { "key": "friends.add",       "value": "Add Friend" },
+    { "key": "played_with",       "value": "Recently Played With" },
+
+    { "key": "report",            "value": "Report" },
+    { "key": "report.sent",       "value": "Report sent. Thank you." },
+    { "key": "kick",              "value": "Kick" },
+    { "key": "ban",               "value": "Ban" },
+    { "key": "mute",              "value": "Mute" },
+
+    { "key": "chat.placeholder",  "value": "Message…" },
+    { "key": "chat.send",         "value": "Send" },
+
+    { "key": "net.reconnecting",  "value": "Reconnecting…" },
+    { "key": "net.reconnected",   "value": "Reconnected" },
+    { "key": "net.failed",        "value": "Connection failed" },
+    { "key": "net.connecting",    "value": "Connecting…" },
+    { "key": "net.online",        "value": "Online" },
+
+    { "key": "loading",           "value": "Loading" },
+    { "key": "watch_ad",          "value": "Watch Ad" },
+    { "key": "nickname",          "value": "Nickname" }
+  ]
+}

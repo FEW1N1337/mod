@@ -51,6 +51,36 @@ namespace DreamCar.Economy
             OnChanged?.Invoke();
         }
 
+        // Cloud save için: sahip olunan araçların listesi.
+        public List<string> OwnedCarIds() => new(_owned);
+
+        // Buluttan gelen listeyi yerel ile birleştirir (union) — offline satın alınan
+        // araçlar kaybolmasın. Aktif araç buluttakine ayarlanır, o da sahip değilse
+        // mevcut seçim korunur.
+        public void MergeOwnedFromCloud(List<string> cloudOwned, string cloudActive)
+        {
+            bool changed = false;
+
+            if (cloudOwned != null)
+            {
+                foreach (var id in cloudOwned)
+                {
+                    if (string.IsNullOrWhiteSpace(id)) continue;
+                    if (_owned.Add(id.Trim())) changed = true;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(cloudActive) && _owned.Contains(cloudActive) && _activeId != cloudActive)
+            {
+                _activeId = cloudActive;
+                changed = true;
+            }
+
+            if (!changed) return;
+            Save();
+            OnChanged?.Invoke();
+        }
+
         void Load()
         {
             var raw = PlayerPrefs.GetString(OwnedKey, StartCarId);

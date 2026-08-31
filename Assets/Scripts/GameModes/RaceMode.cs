@@ -35,6 +35,11 @@ namespace DreamCar.GameModes
                 yield return new WaitForSeconds(1f);
             }
             ToastNotification.Show("GO!");
+            Monetization.Analytics.Event("race_start", new()
+            {
+                { "laps", _race.totalLaps },
+                { "players", PhotonNetwork.CurrentRoom?.PlayerCount ?? 1 },
+            });
             _race.StartRace(PhotonNetwork.LocalPlayer.ActorNumber);
         }
     }
