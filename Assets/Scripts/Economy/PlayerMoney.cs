@@ -48,7 +48,11 @@ namespace DreamCar.Economy
 
         void Save()
         {
-            PlayerPrefs.SetInt(PrefKey, (int)Mathf.Clamp(_money, 0, int.MaxValue));
+            // Mathf.Clamp(long, ...) float overload'una düşüyordu: 16.7M üstündeki bakiyeler
+            // float hassasiyetinde yuvarlanıyor, int.MaxValue civarında ise (int) dönüşümü
+            // taşıp parayı negatife çeviriyordu. Kırpmayı long aritmetiğiyle yapıyoruz.
+            long clamped = _money < 0 ? 0 : (_money > int.MaxValue ? int.MaxValue : _money);
+            PlayerPrefs.SetInt(PrefKey, (int)clamped);
             PlayerPrefs.Save();
             Publish();
         }

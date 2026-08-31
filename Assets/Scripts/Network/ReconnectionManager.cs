@@ -49,7 +49,16 @@ namespace DreamCar.Network
 
         public override void OnLeftRoom()
         {
-            if (_userInitiatedLeave) _lastRoomName = null;
+            if (_userInitiatedLeave)
+            {
+                _lastRoomName = null;
+                // Bayrak sadece OnJoinedRoom'da sıfırlanıyordu. Oyuncu ana menüye
+                // döndükten sonra (PauseMenu/InGameHUD "Çık") yeni bir odaya girene
+                // kadar bayrak açık kalıyor, dolayısıyla menüdeyken yaşanan gerçek
+                // kopmalarda hiç yeniden bağlanılmıyor ve Play butonu sonsuza dek
+                // pasif kalıyordu. İstemli çıkış tüketildi: bayrağı burada kapat.
+                _userInitiatedLeave = false;
+            }
         }
 
         public override void OnDisconnected(DisconnectCause cause)
@@ -57,6 +66,10 @@ namespace DreamCar.Network
             if (_userInitiatedLeave || IsUnrecoverable(cause))
             {
                 Debug.Log($"[Reconnect] Yeniden denenmiyor (cause={cause}, userLeave={_userInitiatedLeave})");
+                // İstemli kopma gerçekleşti; bundan sonraki kopmalar beklenmedik
+                // sayılmalı. (RegionSelector bölge değiştirirken Disconnect ediyor —
+                // bayrak açık kalırsa o oturumda reconnect bir daha hiç çalışmıyordu.)
+                _userInitiatedLeave = false;
                 SetOverlay(false);
                 return;
             }
@@ -125,6 +138,14 @@ namespace DreamCar.Network
         {
             if (reconnectingOverlay) reconnectingOverlay.SetActive(on);
             if (statusLabel && text != null) statusLabel.text = text;
+
+            // Overlay yalnızca MainMenu sahnesinde kuruluyor (DreamCarSetup.BuildReconnectOverlay).
+            // Bu bileşen DontDestroyOnLoad olduğu için Game sahnesine geçildiğinde
+            // referans yok olmuş oluyor ve SetOverlay sessizce hiçbir şey yapmıyordu:
+            // oyun içinde bağlantı koparsa oyuncu donmuş bir ekrandan başka bir şey
+            // görmüyor. Overlay yoksa en azından toast ile durumu bildir.
+            if (on && text != null && !reconnectingOverlay)
+                ToastNotification.Show(text);
         }
     }
 }

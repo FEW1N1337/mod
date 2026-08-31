@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using UnityEngine;
 
 namespace DreamCar.Rewards
@@ -31,11 +32,20 @@ namespace DreamCar.Rewards
             var nowUtc = DateTime.UtcNow.Date;
             string lastRaw = PlayerPrefs.GetString(LastLoginKey, "");
             DateTime last = DateTime.MinValue;
-            DateTime.TryParse(lastRaw, out last);
+            // Kayıt UTC yazılıyor, ama düz TryParse dizeyi yerel saate çevirip Kind=Local
+            // döndürüyordu: sonuç hiçbir zaman nowUtc'ye (UTC gece yarısı) eşit olmuyordu,
+            // yani "aynı gün" kontrolü hiç tutmuyordu. UTC'nin gerisindeki saat dilimlerinde
+            // last.Date bir gün geriye kayıp streak aynı gün ikinci kez artıyordu.
+            DateTime.TryParse(lastRaw, CultureInfo.InvariantCulture,
+                DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out last);
 
-            if (last == nowUtc) return Streak;
+            // Tarih (saat değil) karşılaştırılır — eski kayıtlarda saat bileşeni olabilir.
+            if (last.Date == nowUtc) return Streak;
 
             int daysBetween = last == DateTime.MinValue ? int.MaxValue : (int)(nowUtc - last.Date).TotalDays;
+            // Cihaz saati geri alınırsa fark negatif olur. Bu durumda streak'i ne ilerlet
+            // ne de sıfırla; kayıt da güncellenmez, saat düzelince doğru fark hesaplanır.
+            if (daysBetween < 0) return Streak;
             Streak = Util.GameMath.NextStreak(Streak, daysBetween);
 
             PlayerPrefs.SetInt(StreakKey, Streak);
