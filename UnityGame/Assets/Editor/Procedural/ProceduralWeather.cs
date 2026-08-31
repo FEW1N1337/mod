@@ -229,7 +229,9 @@ namespace DreamCar.EditorTools.Procedural
             ?? Shader.Find("Particles/Standard Unlit")
             ?? Shader.Find("Sprites/Default");
 
-        static Material ParticleMaterial(string name, string textureName)
+        // Drift dumanı da bu plumbing'i kullanıyor (ProceduralCarGenerator) —
+        // aynı shader yedekleme zinciri ve saydamlık kurulumu iki yerde tekrarlanmasın.
+        public static Material ParticleMaterial(string name, string textureName)
         {
             string path = $"{MaterialFolder}/{name}.mat";
             var shader = ParticleShader();
@@ -284,9 +286,12 @@ namespace DreamCar.EditorTools.Procedural
             var existing = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
             if (existing != null) return existing;
 
-            var built = name == "fx_snowflake"
-                ? BuildFlake(FlakeSize)
-                : BuildDrop(DropWidth, DropHeight);
+            // Yumuşak daire hem kar tanesi hem lastik dumanı için doğru şekil;
+            // ikisini farklı boyutta üretiyoruz, gerisini materyal rengi ayırıyor.
+            Texture2D built;
+            if (name == "fx_snowflake") built = BuildFlake(FlakeSize);
+            else if (name == "fx_smoke") built = BuildFlake(FlakeSize * 2);
+            else built = BuildDrop(DropWidth, DropHeight);
 
             SaveTexture(built, name);
             return AssetDatabase.LoadAssetAtPath<Texture2D>(path);

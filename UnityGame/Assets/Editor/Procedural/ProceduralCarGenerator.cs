@@ -368,6 +368,12 @@ namespace DreamCar.EditorTools.Procedural
             var rearMeshes = new List<Transform>();
             var allColliders = new List<WheelCollider>();
 
+            // Drift dumanı ve fren izi ortak materyal kullanır — dört tekerlek için
+            // ayrı materyal üretmenin anlamı yok. Partikül plumbing'i (shader yedekleme
+            // zinciri, saydamlık anahtarları, yumuşak daire dokusu) hava durumundan
+            // paylaşılıyor.
+            var smokeMaterial = ProceduralWeather.ParticleMaterial("mat_fx_smoke", "fx_smoke");
+
             foreach (var spec in wheelSpecs)
             {
                 var colGo = new GameObject(spec.name + "_Collider");
@@ -408,6 +414,75 @@ namespace DreamCar.EditorTools.Procedural
 
                 var glow = rimGo.AddComponent<WheelGlow>();
                 glow.wheel = wc;
+
+                // Drift dumanı + fren izi. DriftSmoke yazılmıştı ama hiçbir prefab'a
+                // eklenmiyordu; drift modu olan bir oyunda kayma tamamen görsel
+                // geri bildirimsizdi.
+                //
+                // Duman ve iz colGo'nun altında: WheelCollider'ın GameObject'i
+                // tekerlekle birlikte DÖNMEZ (dönüş wc.steerAngle ile olur), mesh
+                // ise döner. İz dönen mesh'e bağlansaydı spiral çizerdi.
+                var smokeGo = new GameObject(spec.name + "_Smoke");
+                smokeGo.transform.SetParent(colGo.transform, false);
+                var smokePs = smokeGo.AddComponent<ParticleSystem>();
+                smokePs.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+                var smokeMain = smokePs.main;
+                smokeMain.startLifetime = new ParticleSystem.MinMaxCurve(0.7f, 1.4f);
+                smokeMain.startSpeed = new ParticleSystem.MinMaxCurve(0.4f, 1.6f);
+                smokeMain.startSize = new ParticleSystem.MinMaxCurve(0.5f, 1.1f);
+                smokeMain.startColor = new ParticleSystem.MinMaxGradient(
+                    new Color(0.78f, 0.76f, 0.74f, 0.55f));
+                smokeMain.gravityModifier = -0.05f;      // duman hafifçe yükselir
+                smokeMain.maxParticles = 120;
+                // playOnAwake AÇIK kalmalı: DriftSmoke yalnızca emission.rateOverTime
+                // yazıyor, hiç Play() çağırmıyor. Duran bir sistemde oran yazmak
+                // hiçbir şey yapmaz — sistem sürekli çalışır, kaymadığında oran 0
+                // olduğu için partikül üretilmez, maliyeti de yok denecek kadar azdır.
+                smokeMain.playOnAwake = true;
+                // Dünya uzayı şart: araç ilerlerken duman lastiğe yapışmasın, geride kalsın.
+                smokeMain.simulationSpace = ParticleSystemSimulationSpace.World;
+
+                // Emisyon oranını DriftSmoke her karede kaymaya göre yazıyor.
+                var smokeEmission = smokePs.emission;
+                smokeEmission.rateOverTime = 0f;
+
+                var smokeShape = smokePs.shape;
+                smokeShape.shapeType = ParticleSystemShapeType.Sphere;
+                smokeShape.radius = 0.18f;
+
+                var smokeSizeOverLife = smokePs.sizeOverLifetime;
+                smokeSizeOverLife.enabled = true;
+                smokeSizeOverLife.size = new ParticleSystem.MinMaxCurve(
+                    1f, AnimationCurve.Linear(0f, 0.6f, 1f, 1.6f));
+
+                var smokeRenderer = smokePs.GetComponent<ParticleSystemRenderer>();
+                smokeRenderer.sharedMaterial = smokeMaterial;
+                smokeRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                smokeRenderer.receiveShadows = false;
+                smokeRenderer.sortingFudge = 8f;
+
+                // Fren izi — yere değen noktada, tekerlek yarıçapı kadar aşağıda.
+                var trailGo = new GameObject(spec.name + "_SkidTrail");
+                trailGo.transform.SetParent(colGo.transform, false);
+                trailGo.transform.localPosition = new Vector3(0f, -preset.wheelRadius + 0.02f, 0f);
+                var trail = trailGo.AddComponent<TrailRenderer>();
+                trail.time = 4.5f;
+                trail.startWidth = preset.wheelRadius * 0.42f;
+                trail.endWidth = preset.wheelRadius * 0.30f;
+                trail.minVertexDistance = 0.12f;
+                trail.autodestruct = false;
+                trail.emitting = false;                  // DriftSmoke kaymaya göre açar
+                trail.sharedMaterial = smokeMaterial;
+                trail.startColor = new Color(0.05f, 0.05f, 0.05f, 0.55f);
+                trail.endColor = new Color(0.05f, 0.05f, 0.05f, 0f);
+                trail.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                trail.receiveShadows = false;
+
+                var driftSmoke = colGo.AddComponent<DriftSmoke>();
+                driftSmoke.wheel = wc;
+                driftSmoke.smoke = smokePs;
+                driftSmoke.skidTrail = trail;
 
                 if (spec.front) { frontColliders.Add(wc); frontMeshes.Add(meshGo.transform); }
                 else { rearColliders.Add(wc); rearMeshes.Add(meshGo.transform); }
