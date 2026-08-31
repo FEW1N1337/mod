@@ -58,6 +58,10 @@ namespace DreamCar.Network
             var follow = Camera.main ? Camera.main.GetComponent<Car.CarCameraFollow>() : null;
             if (follow) follow.target = _localCar.transform;
 
+            // Interest management mesafeyi bu araca göre ölçer.
+            if (NetworkInterestManager.Instance)
+                NetworkInterestManager.Instance.SetLocalCar(_localCar.transform);
+
             var input = FindFirstObjectByType<InputSystemMobile.MobileTouchInput>();
             if (input) input.car = _localCar.GetComponent<Car.CarController>();
         }

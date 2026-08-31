@@ -33,8 +33,12 @@ namespace DreamCar.Network
         {
             if (PhotonNetwork.IsConnected) return;
             PhotonNetwork.GameVersion = gameVersion;
-            if (!string.IsNullOrEmpty(preferredRegion))
-                PhotonNetwork.PhotonServerSettings.AppSettings.FixedRegion = preferredRegion;
+
+            // Öncelik: oyuncunun RegionSelector'dan seçtiği bölge, yoksa inspector değeri.
+            var saved = UI.RegionSelector.SavedRegion;
+            var region = !string.IsNullOrEmpty(saved) ? saved : preferredRegion;
+            PhotonNetwork.PhotonServerSettings.AppSettings.FixedRegion =
+                string.IsNullOrEmpty(region) ? null : region;
             PhotonNetwork.ConnectUsingSettings();
         }
 

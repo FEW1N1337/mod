@@ -607,7 +607,82 @@ Tek ağ (Unity Ads) yerine waterfall: AdMob + AppLovin MAX + IronSource + Unity 
 
 ---
 
-## 13) Kalan iterasyonlar (v0.6c+)
+## 13) v0.6c — Spam koruması, anti-cheat, bant genişliği, cihaz uyarlama
+
+### 13a) Chat spam koruması — `Moderation/ChatRateLimiter.cs`
+
+Küfür filtresi vardı, flood engeli yoktu.
+
+- **Token bucket**: 4 mesaj burst, sonra saniyede 0.5 token
+- **Tekrar tespiti**: aynı mesaj 20 sn içinde 3 kez → ceza
+- **Kademeli susturma**: 10 sn → 20 → 40 … max 5 dk. 2 dk sessiz kalınca kademe sıfırlanır
+- `RichChatUI.Send()` içine bağlandı; engellendiğinde sebep toast'la gösterilir
+
+### 13b) Hile tespiti — `Moderation/CheatDetector.cs`
+
+PlayFab yalnızca parayı koruyordu, fizik tarafı açıktı.
+
+- Uzak oyuncuların pozisyonunu 0.5 sn'de bir örnekler
+- **NaN/Infinity pozisyon** → anında ihlal (bu paketler client çökertmek için kullanılır)
+- **Teleport** (tek örnekte >120 m) ve **imkânsız hız** (>400 km/h) → strike
+- 5 strike → `cheat_suspected` analytics event + toast; `masterAutoKick` açıksa master kick eder (varsayılan **kapalı** — yanlış pozitif riski)
+- Temiz örneklerde strike geri sayılır
+
+> Bu client-side sezgisel bir katman, kesin çözüm değil. Gerçek koruma Photon Server Plugin ister.
+
+### 13c) Bant genişliği — `Network/NetworkInterestManager.cs`
+
+500 m uzaktaki araç da her frame sync ediliyordu.
+
+- Mesafe kademeleri: yakın (80 m) / orta (200 m) / uzak — `PhotonNetwork.SerializationRate` 20/10/4'e ayarlanır
+- 400 m'den uzaktaki araçların `Renderer`'ları kapatılır (hem GPU hem görsel gürültü kazancı)
+- `RoomManager` spawn'da yerel aracı bu manager'a bildirir
+
+### 13d) Cihaz uyarlama — `Settings/QualityAutoDetect.cs`
+
+Eski iPhone'da da full quality açılıyordu.
+
+- RAM + VRAM + çekirdek + ekran pikseli üzerinden puanlar → Low / Mid / High
+- Kalite seviyesi + hedef FPS (30/60) + render scale (0.7 / 0.85 / 1.0) uygular
+- **Kullanıcı Ayarlar'dan değiştirdiyse bir daha karışmaz** (`MarkUserOverride`, SettingsScreen'den çağrılıyor)
+
+### 13e) Remote config — `Backend/RemoteConfig.cs`
+
+Ödül/fiyat değiştirmek için app güncellemesi gerekiyordu.
+
+- PlayFab **TitleData**'dan anahtar-değer çeker, PlayerPrefs'e cache'ler (ağ yoksa son değerlerle çalışır)
+- Kullanım: `RemoteConfig.GetLong("race.win_reward", 1000)` — anahtar yoksa default'a düşer
+- `GetInt / GetLong / GetFloat / GetBool / GetString`
+
+PlayFab dashboard → **Content → Title Data** → anahtar ekle, deploy gerektirmez.
+
+### 13f) Deep link + davet paylaşımı — `Core/DeepLinkManager.cs`
+
+- `dreamcar://room/<oda>?pwd=<şifre>` ve `dreamcar://ref/<kod>` şemaları
+- Soğuk başlatma (`Application.absoluteURL`) ve çalışırken gelen link (`deepLinkActivated`) ikisi de yakalanır
+- `ShareCurrentRoom()` / `ShareReferral()` → linki panoya kopyalar + toast
+- Web fallback: `https://<host>/room/<oda>` — aynı parser her ikisini de çözer
+
+iOS kurulumu: Xcode → Info → URL Types → URL Schemes → `dreamcar`
+
+### 13g) Haptik — `Core/Haptics.cs`
+
+- 7 stil: Light / Medium / Heavy / Success / Warning / Failure / Selection
+- `Haptics.PlayImpact(impulse)` çarpma şiddetine göre otomatik seviye seçer — `CarDamage`'a bağlandı
+- Ayarlardan kapatılabilir (`Haptics.Instance.Enabled`)
+- iOS'ta gerçek Taptic Engine için `Assets/Plugins/iOS/Haptics.mm` gerekir; yoksa çağrı sessizce yutulur
+
+### 13h) Bölge seçimi — `UI/RegionSelector.cs`
+
+`preferredRegion` kodda vardı ama ekranı yoktu, herkes default bölgeye düşüyordu.
+
+- 10 Photon bölgesi + "Otomatik (en iyi ping)" seçeneği
+- Seçim PlayerPrefs'e yazılır; `PhotonConnector.Connect()` artık önce bu değeri okur
+- Bölge değişince otomatik yeniden bağlanır (ReconnectionManager'a "bilerek çıkış" bildirilir)
+
+---
+
+## 14) Kalan iterasyonlar (v0.7+)
 
 - Bomb modu (bomba pas mini oyunu)
 - Sürücü avatarı (TurnTheGameOn IKAvatarDriver eşdeğeri)

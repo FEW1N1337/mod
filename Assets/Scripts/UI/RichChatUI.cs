@@ -36,6 +36,15 @@ namespace DreamCar.UI
 
             string msg = inputField.text.Trim();
             if (msg.Length > maxLength) msg = msg.Substring(0, maxLength);
+
+            // Spam/flood koruması — küfür filtresinden önce çalışır.
+            var limiter = Moderation.ChatRateLimiter.Instance;
+            if (limiter != null && !limiter.TrySend(msg, out string reason))
+            {
+                ToastNotification.Show(reason);
+                return;
+            }
+
             msg = Sanitize(msg);
             if (ChatProfanityFilter.Instance != null) msg = ChatProfanityFilter.Instance.Sanitize(msg);
             photonView.RPC(nameof(RPC_Receive), RpcTarget.All, PhotonNetwork.NickName, msg);
