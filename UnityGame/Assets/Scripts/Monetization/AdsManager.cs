@@ -1,6 +1,6 @@
 // Unity Ads scaffold. Package Manager'dan "Advertisement Legacy" veya
-// "Advertisement with Mediation" import et. Project Settings → Services → Ads → On,
-// iOS Game ID gir.
+// "Advertisement with Mediation" import et. Project Settings → Services → Ads → On.
+// Unity Dashboard'da iOS ve Android için AYRI proje ID'si verilir — ikisini de gir.
 using System;
 using UnityEngine;
 
@@ -16,8 +16,27 @@ namespace DreamCar.Monetization
     public class AdsManager : MonoBehaviour, IUnityAdsInitializationListener, IUnityAdsLoadListener, IUnityAdsShowListener
     {
         public static AdsManager Instance { get; private set; }
+        [Header("Unity Ads — platform başına ayrı proje ID'si")]
         public string iosGameId = "0000000";
-        public string rewardedPlacement = "Rewarded_iOS";
+        public string androidGameId = "0000000";
+        public string iosRewardedPlacement = "Rewarded_iOS";
+        public string androidRewardedPlacement = "Rewarded_Android";
+
+        // Aktif build hedefine göre doğru ID/placement seçilir. Editor'de de
+        // seçili platform hangisiyse onu kullanır — test tutarlı olsun.
+        string GameId =>
+#if UNITY_ANDROID
+            androidGameId;
+#else
+            iosGameId;
+#endif
+
+        string rewardedPlacement =>
+#if UNITY_ANDROID
+            androidRewardedPlacement;
+#else
+            iosRewardedPlacement;
+#endif
         public long rewardAmount = 5000;
         public bool testMode = true;
 
@@ -29,7 +48,7 @@ namespace DreamCar.Monetization
             if (Instance && Instance != this) { Destroy(gameObject); return; }
             Instance = this;
             DontDestroyOnLoad(gameObject);
-            Advertisement.Initialize(iosGameId, testMode, this);
+            Advertisement.Initialize(GameId, testMode, this);
         }
 
         public void OnInitializationComplete() => Advertisement.Load(rewardedPlacement, this);

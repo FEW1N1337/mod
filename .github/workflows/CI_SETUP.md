@@ -1,6 +1,14 @@
 # DreamCar CI Kurulumu
 
-`unity-ios-build.yml` workflow'unu çalıştırmak için gereken secret ve variable listesi.
+İki workflow var:
+
+| Workflow | Runner | Maliyet | Çıktı |
+|---|---|---|---|
+| `unity-android-build.yml` | Linux (hosted) | **Ücretsiz** | `.apk` / `.aab` |
+| `unity-ios-build.yml` | macOS (self-hosted) | Kendi Mac'in | Xcode projesi → `.ipa` |
+
+**Android çok daha kolay** — sadece Unity lisansı yeterli, Mac/Xcode/Apple üyeliği
+gerekmez. Önce Android'i çalıştır, iOS'u sonra ekle.
 
 ## 1. Unity lisansı (compile-check + ios-build ortak)
 
@@ -58,6 +66,47 @@ Repo → Settings → Secrets and variables → Actions → **Variables** sekmes
 | `IOS_BUILD_ENABLED` | `true` | iOS build job'unu ayrıca kontrol |
 
 `UNITY_CI_ENABLED=false` → tüm job'lar skip. Boş bırakırsan default: skip.
+
+## 1e) Android — bu kadar, hazırsın
+
+`UNITY_LICENSE` + `UNITY_CI_ENABLED=true` yeterli. Push at → Actions sekmesinde
+**Unity Android Build** job'u çalışır → artifact olarak `.apk` iner.
+
+Telefona kurmak için: artifact'ı indir → zip'i aç → `.apk`'yı telefona at →
+Ayarlar'dan "bilinmeyen kaynaklara izin ver" → kur.
+
+### Android imzalama (sadece Play Store için)
+
+Kendi telefonuna kurmak için gerekmez. Play Store'a yükleyeceksen imzalı `.aab` lazım:
+
+**Keystore oluştur** (bir kez, bilgisayarında):
+```bash
+keytool -genkeypair -v -keystore dreamcar.keystore \
+  -alias dreamcar -keyalg RSA -keysize 2048 -validity 10000
+```
+> Bu dosyayı ve şifreni **kaybetme**. Kaybedersen aynı uygulamayı bir daha
+> güncelleyemezsin — Play Store yeni paket adı ister.
+
+**Base64'e çevir:**
+```bash
+base64 -i dreamcar.keystore -o keystore.b64
+cat keystore.b64 | pbcopy    # macOS
+cat keystore.b64 | xclip -selection clipboard   # Linux
+```
+
+**Secret'lar:**
+
+| Secret | Değer |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | `keystore.b64` içeriği |
+| `ANDROID_KEYSTORE_PASS` | Keystore şifresi |
+| `ANDROID_KEYALIAS_NAME` | `dreamcar` (yukarıdaki `-alias` değeri) |
+| `ANDROID_KEYALIAS_PASS` | Alias şifresi |
+
+`.aab` üretmek için: Actions → Unity Android Build → **Run workflow** →
+"Play Store için .aab üret" kutusunu işaretle.
+
+---
 
 ## 2. iOS build için ek secret'lar
 
