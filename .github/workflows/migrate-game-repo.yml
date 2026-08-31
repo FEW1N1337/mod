@@ -1,0 +1,145 @@
+name: Oyunu ayrı depoya taşı
+
+# Bu workflow `game-standalone` dalını (mod menüsünden arındırılmış, oyun kök
+# dizinde, 14 commit'lik geçmişiyle) ayrı bir depoya `main` olarak gönderir.
+#
+# Telefondan çalıştırılabilir — bilgisayar gerekmez.
+#
+# ÖN KOŞUL: tek bir secret eklemen gerekiyor. Adımlar en altta.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_repo:
+        description: 'Hedef depo (kullanıcı/depo)'
+        required: true
+        default: 'FEW1N1337/dreamcar-game'
+      target_branch:
+        description: 'Hedef dal'
+        required: true
+        default: 'main'
+      force:
+        description: 'Hedef dal doluysa üzerine yaz (dikkat: veri kaybı)'
+        type: boolean
+        default: false
+
+jobs:
+  migrate:
+    name: game-standalone → hedef depo
+    runs-on: ubuntu-latest
+    steps:
+      - name: Secret kontrolü
+        env:
+          TOKEN: ${{ secrets.GAME_REPO_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::GAME_REPO_TOKEN secret'ı tanımlı değil."
+            echo "Nasıl ekleneceği bu workflow dosyasının altındaki yorumda yazıyor."
+            exit 1
+          fi
+          echo "Secret bulundu."
+
+      # game-standalone dalının tam geçmişi lazım — sığ klon işe yaramaz.
+      - name: game-standalone dalını çek
+        uses: actions/checkout@v4
+        with:
+          ref: game-standalone
+          fetch-depth: 0
+
+      - name: Taşınacak içeriği göster
+        run: |
+          {
+            echo "### Taşınacak içerik"
+            echo ""
+            echo "**Kaynak:** \`game-standalone\` (bu depo)"
+            echo "**Hedef:** \`${{ inputs.target_repo }}\` dal \`${{ inputs.target_branch }}\`"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Commit sayısı | $(git rev-list --count HEAD) |"
+            echo "| Dosya sayısı | $(git ls-files | wc -l) |"
+            echo "| C# script | $(git ls-files '*.cs' | wc -l) |"
+            echo ""
+            echo "**Kök dizin:**"
+            echo '```'
+            git ls-tree --name-only HEAD
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Mod menüsünün kazara sızmadığını doğrula — bu taşımanın bütün amacı.
+      - name: Mod menüsü sızıntı kontrolü
+        run: |
+          if git ls-files | grep -qiE 'Tweak\.xm|template/'; then
+            echo "::error::Mod menüsü dosyaları bulundu — taşıma durduruldu."
+            git ls-files | grep -iE 'Tweak\.xm|template/'
+            exit 1
+          fi
+          echo "Temiz: mod menüsüne ait dosya yok."
+
+      - name: Hedef depoya gönder
+        env:
+          TOKEN: ${{ secrets.GAME_REPO_TOKEN }}
+          TARGET_REPO: ${{ inputs.target_repo }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+
+          # Token URL'de görünmesin diye kimlik bilgisi header üzerinden verilir.
+          git remote add target "https://github.com/${TARGET_REPO}.git"
+          AUTH=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+
+          PUSH_ARGS=""
+          if [ "$FORCE" = "true" ]; then
+            PUSH_ARGS="--force"
+            echo "::warning::Force push açık — hedef daldaki mevcut geçmiş silinecek."
+          fi
+
+          git -c "http.https://github.com/.extraheader=Authorization: Basic ${AUTH}" \
+              push $PUSH_ARGS target "HEAD:refs/heads/${TARGET_BRANCH}"
+
+          echo "Gönderildi."
+
+      - name: Sonuç
+        run: |
+          {
+            echo ""
+            echo "### Taşıma tamamlandı"
+            echo ""
+            echo "👉 https://github.com/${{ inputs.target_repo }}"
+            echo ""
+            echo "Yeni depoda yapılacaklar:"
+            echo "1. Settings → Secrets → \`UNITY_LICENSE\` ekle"
+            echo "2. Settings → Variables → \`UNITY_CI_ENABLED\` = \`true\`"
+            echo "3. Actions → Unity Android Build → Run workflow → APK indir"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+# ============================================================================
+# SECRET NASIL EKLENİR (telefondan yapılabilir)
+# ============================================================================
+#
+# 1) Token oluştur
+#    github.com → sağ üst profil → Settings → en altta Developer settings
+#    → Personal access tokens → Fine-grained tokens → Generate new token
+#
+#    - Token name:        dreamcar-migration
+#    - Expiration:        7 days  (iş bitince kendiliğinden ölsün)
+#    - Repository access: Only select repositories → dreamcar-game
+#    - Permissions:       Repository permissions → Contents → Read and write
+#
+#    Generate token → çıkan yazıyı kopyala (bir daha gösterilmez)
+#
+# 2) Secret olarak ekle
+#    Bu depo (mod) → Settings → Secrets and variables → Actions
+#    → New repository secret
+#
+#    - Name:   GAME_REPO_TOKEN
+#    - Secret: kopyaladığın token
+#
+# 3) Çalıştır
+#    Bu depo → Actions → "Oyunu ayrı depoya taşı" → Run workflow
+#
+# 4) Bittikten sonra token'ı sil
+#    Settings → Developer settings → Personal access tokens → Delete
+#    (7 gün sonra zaten kendiliğinden geçersiz olur)
+# ============================================================================
