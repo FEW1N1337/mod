@@ -507,7 +507,10 @@ namespace DreamCar.EditorTools.Procedural.Maps
             dayNight.sun = sun;
             dayNight.dayLengthSeconds = 0f;   // harita kendi sabit ışığını korur
 
-            root.AddComponent<Weather>();
+            // Weather'ın üç alanı (rainFX / snowFX / rainLoop) boş kalırsa yağmur
+            // varyantı temiz havadan ayırt edilemez — FX'leri burada kuruyoruz.
+            var weather = root.AddComponent<Weather>();
+            ProceduralWeather.Attach(root, weather);
         }
 
         static void SetupSceneManagers(GameObject root, MapArchetype arch)

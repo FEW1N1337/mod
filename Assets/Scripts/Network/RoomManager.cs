@@ -58,6 +58,11 @@ namespace DreamCar.Network
             var follow = Camera.main ? Camera.main.GetComponent<Car.CarCameraFollow>() : null;
             if (follow) follow.target = _localCar.transform;
 
+            // Minimap kamerası yerel aracı takip eder. Araç ancak odaya girilince
+            // doğduğu için bu bağlantı Editor'de kurulamıyor.
+            var minimap = FindFirstObjectByType<UI.Minimap>();
+            if (minimap) minimap.target = _localCar.transform;
+
             // Interest management mesafeyi bu araca göre ölçer.
             if (NetworkInterestManager.Instance)
                 NetworkInterestManager.Instance.SetLocalCar(_localCar.transform);
