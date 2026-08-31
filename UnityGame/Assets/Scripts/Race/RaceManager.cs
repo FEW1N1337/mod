@@ -66,6 +66,7 @@ namespace DreamCar.Race
                 if (ach) ach.OnRaceFinished(won: true);
                 var rate = AppMeta.RateAppPopup.Instance;
                 if (rate) rate.OnRaceFinished();
+                if (Core.PlayerStats.Instance) Core.PlayerStats.Instance.ReportRaceFinished(won: true);
             }
             _states.Remove(actor);
         }

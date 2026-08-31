@@ -40,6 +40,8 @@ namespace DreamCar.UI
 
         void Leave()
         {
+            // Bilerek çıkış — ReconnectionManager yeniden bağlanmayı denememeli.
+            if (Network.ReconnectionManager.Instance) Network.ReconnectionManager.Instance.MarkUserInitiatedLeave();
             PhotonNetwork.LeaveRoom();
             PhotonNetwork.LoadLevel("MainMenu");
         }

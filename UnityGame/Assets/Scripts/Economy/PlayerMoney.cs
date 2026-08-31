@@ -33,6 +33,7 @@ namespace DreamCar.Economy
             _money += amount;
             Save();
             OnMoneyChanged?.Invoke(_money);
+            if (Core.PlayerStats.Instance) Core.PlayerStats.Instance.AddMoneyEarned(amount);
         }
 
         public bool TrySpend(long amount)
