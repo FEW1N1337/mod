@@ -382,7 +382,10 @@ namespace DreamCar.EditorTools
             var roomManager = boot.AddComponent<RoomManager>();
             roomManager.spawnPoints = spawns;
 
-            boot.AddComponent<Weather>();
+            // FX'siz Weather hiçbir şey yapmaz; yağmur/kar partikülleri ve ses
+            // döngüsü burada kurulup alanlarına bağlanır.
+            var weather = boot.AddComponent<Weather>();
+            Procedural.ProceduralWeather.Attach(boot, weather);
             boot.AddComponent<DayNightCycle>().sun = sun;
             boot.AddComponent<MapSelector>();
 
@@ -414,6 +417,41 @@ namespace DreamCar.EditorTools
 
             var pingText = MakeText(hudPanel, "PingText", "-- ms", new Vector2(700f, 400f), 24);
             hudPanel.AddComponent<PingIndicator>().label = pingText;
+
+            // Minimap — 8 harita var, yön bulma olmadan oyuncu kayboluyor.
+            // Ayrı bir ortografik kamera RenderTexture'a çizer, RawImage onu gösterir.
+            var minimapCamGo = new GameObject("MinimapCamera");
+            var minimapCam = minimapCamGo.AddComponent<Camera>();
+            minimapCam.orthographic = true;
+            // Minimap.Start() ortographic'i açıyor ama boyutu ayarlamıyor; varsayılan
+            // 5 birim bir araba oyunu için çok dar, yol bile sığmaz.
+            minimapCam.orthographicSize = 90f;
+            minimapCam.nearClipPlane = 1f;
+            minimapCam.farClipPlane = 400f;
+            minimapCam.clearFlags = CameraClearFlags.SolidColor;
+            minimapCam.backgroundColor = new Color(0.06f, 0.08f, 0.11f, 1f);
+            // RenderTexture'a çiziyor — HDR ve MSAA burada sadece maliyet.
+            minimapCam.allowHDR = false;
+            minimapCam.allowMSAA = false;
+
+            var minimapCamData = minimapCamGo.GetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>()
+                              ?? minimapCamGo.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+            // Minimap'te post-processing ve gölge hem çirkin durur hem ikinci kez ödenir.
+            minimapCamData.renderPostProcessing = false;
+            minimapCamData.renderShadows = false;
+
+            var minimapGo = new GameObject("Minimap", typeof(RectTransform), typeof(RawImage));
+            minimapGo.transform.SetParent(hudPanel.transform, false);
+            var minimapRt = minimapGo.GetComponent<RectTransform>();
+            minimapRt.anchoredPosition = new Vector2(760f, 200f);
+            minimapRt.sizeDelta = new Vector2(260f, 260f);
+
+            var minimap = minimapGo.AddComponent<Minimap>();
+            minimap.minimapCamera = minimapCam;
+            minimap.minimapImage = minimapGo.GetComponent<RawImage>();
+            minimap.height = 80f;
+            // minimap.target çalışma anında bağlanır: araç odaya girildiğinde
+            // PhotonNetwork.Instantiate ile doğuyor (RoomManager.SpawnLocalCar).
 
             // Toast stack
             var toastRoot = MakeUiChild(canvasGo, "ToastStack");

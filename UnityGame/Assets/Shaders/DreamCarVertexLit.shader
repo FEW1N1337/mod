@@ -74,6 +74,12 @@ Shader "DreamCar/VertexLit"
                 UNITY_DEFINE_INSTANCED_PROP(float4, _BaseColor)
             UNITY_INSTANCING_BUFFER_END(Props)
 
+            // Weather.Update her karede Shader.SetGlobalFloat ile yazar (0 = kuru,
+            // 1 = sırılsıklam). Global değişken materyal başına değil sahne başına
+            // olduğu için CBUFFER dışında, dosya kapsamında tanımlanmalı —
+            // ShadowCaster geçişindeki _LightDirection ile aynı kalıp.
+            float _GlobalWetness;
+
             CBUFFER_START(UnityPerMaterial)
                 float4 _BaseMap_ST;
                 float  _VertexColorMix;
@@ -110,6 +116,12 @@ Shader "DreamCar/VertexLit"
                 // Vertex renk katkısı ayarlanabilir: arazide 1, düz yüzeylerde 0
                 albedo.rgb = lerp(albedo.rgb, albedo.rgb * IN.color.rgb, _VertexColorMix);
 
+                // Islaklık: ıslak yüzey ışığın çoğunu aynasal olarak ileri yansıttığı
+                // için dağınık (diffuse) bileşeni azalır — göze koyulaşma olarak gelir.
+                // Tek lerp, mobilde maliyeti ölçülemeyecek kadar küçük.
+                half wetness = saturate(_GlobalWetness);
+                albedo.rgb = lerp(albedo.rgb, albedo.rgb * half3(0.52h, 0.55h, 0.60h), wetness);
+
                 float3 normalWS = normalize(IN.normalWS);
 
                 // Gölge koordinatı — ana ışık gölgesi açıksa kullanılır
@@ -125,7 +137,9 @@ Shader "DreamCar/VertexLit"
                 half wrapped = ndotl * 0.5h + 0.5h;
                 half3 diffuse = mainLight.color * (wrapped * wrapped) * mainLight.shadowAttenuation;
 
-                half3 ambient = SampleSH(normalWS) * _AmbientBoost;
+                // Ambient de hafif kırılır: yağmurda gökyüzü kapalıdır, yüzeye her
+                // yönden gelen ışık azalır. Abartmadan — sadece ıslak hissi pekiştirir.
+                half3 ambient = SampleSH(normalWS) * _AmbientBoost * lerp(1.0h, 0.82h, wetness);
 
                 half3 finalColor = albedo.rgb * (diffuse + ambient);
                 finalColor = MixFog(finalColor, IN.fogFactor);
