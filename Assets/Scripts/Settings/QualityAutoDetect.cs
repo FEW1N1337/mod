@@ -38,29 +38,12 @@ namespace DreamCar.Settings
 
         public Tier Detect()
         {
-            int score = 0;
-
-            // Bellek
-            int mem = SystemInfo.systemMemorySize;
-            if (mem >= 5500) score += 2;
-            else if (mem >= 3500) score += 1;
-
-            // GPU
-            int gfxMem = SystemInfo.graphicsMemorySize;
-            if (gfxMem >= 2000) score += 2;
-            else if (gfxMem >= 1000) score += 1;
-
-            // İşlemci çekirdeği
-            int cores = SystemInfo.processorCount;
-            if (cores >= 6) score += 1;
-
-            // Ekran çözünürlüğü — çok yüksek pikselde daha muhafazakâr ol
-            int pixels = Screen.width * Screen.height;
-            if (pixels > 2_500_000) score -= 1;
-
-            if (score >= 4) return Tier.High;
-            if (score >= 2) return Tier.Mid;
-            return Tier.Low;
+            int tier = Util.GameMath.QualityTier(
+                SystemInfo.systemMemorySize,
+                SystemInfo.graphicsMemorySize,
+                SystemInfo.processorCount,
+                Screen.width * Screen.height);
+            return (Tier)tier;
         }
 
         public void Apply(Tier tier)

@@ -17,13 +17,7 @@ namespace DreamCar.Vehicle
         void Update()
         {
             isReverse = _car.throttleInput < -0.05f && _car.SpeedKmh < 2f;
-            if (isReverse) { currentGear = 0; return; }
-
-            for (int i = 0; i < gearSpeedLimits.Length; i++)
-            {
-                if (_car.SpeedKmh < gearSpeedLimits[i]) { currentGear = i + 1; return; }
-            }
-            currentGear = gearSpeedLimits.Length;
+            currentGear = isReverse ? 0 : Util.GameMath.GearForSpeed(_car.SpeedKmh, gearSpeedLimits);
         }
 
         public string GearLabel => isReverse ? "R" : (currentGear == 0 ? "N" : currentGear.ToString());

@@ -20,7 +20,6 @@ namespace DreamCar.UI
         public string emojiSpriteAssetName = "DreamCarEmojis";
 
         readonly Queue<string> _lines = new();
-        static readonly Regex UnsafeSize = new(@"<size\s*=\s*[0-9]*[0-9]{4,}", RegexOptions.IgnoreCase);
         static readonly Regex EmojiToken = new(@":([a-z0-9_]{1,16}):", RegexOptions.IgnoreCase);
 
         void Start()
@@ -62,6 +61,7 @@ namespace DreamCar.UI
             if (messagesText) messagesText.text = string.Join("\n", _lines);
         }
 
-        static string Sanitize(string s) => string.IsNullOrEmpty(s) ? "" : UnsafeSize.Replace(s, "<size=100%");
+        // Aşırı büyük <size> etiketleri ekranı kaplayan spam saldırısında kullanılır.
+        static string Sanitize(string s) => Util.GameMath.ClampRichTextSize(s) ?? "";
     }
 }

@@ -86,13 +86,15 @@ namespace DreamCar.Moderation
 
             float dt = Mathf.Max(0.0001f, Time.time - track.lastSampleTime);
             float distance = Vector3.Distance(pos, track.lastPosition);
-            float speedKmh = (distance / dt) * 3.6f;
 
             track.lastPosition = pos;
             track.lastSampleTime = Time.time;
 
-            if (distance > teleportDistanceMeters) { Flag(view, "teleport", instant: false); return; }
-            if (speedKmh > maxPlausibleSpeedKmh) { Flag(view, "speed", instant: false); return; }
+            if (!Util.GameMath.IsPlausibleMovement(distance, dt, maxPlausibleSpeedKmh, teleportDistanceMeters))
+            {
+                Flag(view, distance > teleportDistanceMeters ? "teleport" : "speed", instant: false);
+                return;
+            }
 
             // Temiz örnekte strike'ı yavaşça geri al.
             if (track.strikes > 0) track.strikes--;

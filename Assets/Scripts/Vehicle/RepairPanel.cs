@@ -33,12 +33,8 @@ namespace DreamCar.Vehicle
             if (repairButton) repairButton.interactable = price > 0 && PlayerMoney.Instance && PlayerMoney.Instance.Money >= price;
         }
 
-        long ComputePrice()
-        {
-            if (!damage) return 0;
-            float missing = 1f - (damage.health / damage.maxHealth);
-            return (long)Mathf.Ceil(missing * 100f * baseUnitPrice);
-        }
+        long ComputePrice() =>
+            damage ? Util.GameMath.RepairPrice(damage.health, damage.maxHealth, baseUnitPrice) : 0;
 
         void Repair()
         {

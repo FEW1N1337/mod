@@ -60,20 +60,8 @@ namespace DreamCar.UI
             if (crashesLabel) crashesLabel.text = s.CollisionCount.ToString("N0");
         }
 
-        static string FormatDistance(float meters)
-        {
-            if (meters < 1000f) return Mathf.RoundToInt(meters) + " m";
-            return (meters / 1000f).ToString("N1") + " km";
-        }
-
-        static string FormatDuration(float seconds)
-        {
-            int h = Mathf.FloorToInt(seconds / 3600f);
-            int m = Mathf.FloorToInt((seconds - h * 3600f) / 60f);
-            if (h > 0) return $"{h}s {m}dk";
-            int sec = Mathf.FloorToInt(seconds - m * 60f);
-            return m > 0 ? $"{m}dk {sec}sn" : $"{sec}sn";
-        }
+        static string FormatDistance(float meters) => Util.GameMath.FormatDistance(meters);
+        static string FormatDuration(float seconds) => Util.GameMath.FormatDuration(seconds);
 
         public void Open() { if (panel) panel.SetActive(true); Refresh(); }
         public void Close() { if (panel) panel.SetActive(false); }

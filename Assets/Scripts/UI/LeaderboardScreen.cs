@@ -69,15 +69,11 @@ namespace DreamCar.UI
 
         static string FormatValue(string stat, int value)
         {
-            if (stat == PlayFabLeaderboards.RaceBestLapStat)
-            {
-                // Backend negatif ms yazıyor (küçük süre = büyük değer).
-                float seconds = Mathf.Abs(value) / 1000f;
-                int minutes = Mathf.FloorToInt(seconds / 60f);
-                float rest = seconds - minutes * 60f;
-                return minutes > 0 ? $"{minutes}:{rest:00.00}" : $"{rest:0.00}s";
-            }
-            return value.ToString("N0");
+            // Backend negatif ms yazıyor (küçük süre = büyük değer); FormatLapTime
+            // mutlak değeri kullanır.
+            return stat == PlayFabLeaderboards.RaceBestLapStat
+                ? Util.GameMath.FormatLapTime(value)
+                : value.ToString("N0");
         }
 
         void AddRow(int rank, string name, string value)

@@ -59,8 +59,7 @@ namespace DreamCar.UI
             if (fuelFill) fuelFill.fillAmount = p;
             if (fuelPercentLabel) fuelPercentLabel.text = Mathf.RoundToInt(p * 100f) + "%";
 
-            float missing = _target.capacity - _target.current;
-            long price = (long)Mathf.Ceil(missing * _target.pricePerLiter);
+            long price = Util.GameMath.RefuelPrice(_target.current, _target.capacity, _target.pricePerLiter);
             if (priceLabel) priceLabel.text = price > 0 ? $"{price:N0} ₺" : "Depo dolu";
             if (payButton) payButton.interactable = price > 0 &&
                 PlayerMoney.Instance && PlayerMoney.Instance.Money >= price;
