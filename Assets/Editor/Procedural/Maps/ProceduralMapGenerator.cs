@@ -165,6 +165,12 @@ namespace DreamCar.EditorTools.Procedural.Maps
         }
 
         // ---------------------------------------------------------- Proplar
+        // Çarpışması gereken büyük yapılar. Bunlar gerçek GameObject olur (sayıları az);
+        // ağaç/kaya gibi binlerce olan şeyler GPU instancing ile çizilir.
+        static bool NeedsCollider(Kind kind) =>
+            kind is Kind.Building or Kind.Container or Kind.Crane
+                 or Kind.House or Kind.Barn or Kind.Barrier;
+
         static int ScatterProps(GameObject root, MapArchetype arch,
                                 List<RoadSpline.Sample> samples, float[,] heights, System.Random rng)
         {
@@ -173,20 +179,35 @@ namespace DreamCar.EditorTools.Procedural.Maps
             var propRoot = new GameObject("Props");
             propRoot.transform.SetParent(root.transform, false);
 
-            var propMaterial = VertexColorMaterial("mat_props");
+            // Instancing hedefi — binlerce bitki/kaya buradan çizilecek
+            var instancedGo = new GameObject("InstancedProps");
+            instancedGo.transform.SetParent(propRoot.transform, false);
+            var instanced = instancedGo.AddComponent<DreamCar.Core.InstancedPropRenderer>();
+
+            var propMaterial = InstancedMaterial("mat_props_instanced");
             int placed = 0;
 
             foreach (var rule in arch.props)
             {
                 var mesh = PropMeshLibrary.Get(rule.kind);
-                var kindRoot = new GameObject(rule.kind.ToString());
-                kindRoot.transform.SetParent(propRoot.transform, false);
 
-                // Bariyer ve lamba yol kenarına dizilir, diğerleri rastgele saçılır.
+                // Bariyer ve lamba yol kenarına dizilir
                 if (rule.kind is Kind.Barrier or Kind.Lamp)
                 {
-                    placed += PlaceAlongRoad(kindRoot, mesh, propMaterial, rule, samples, arch);
+                    placed += PlaceAlongRoad(propRoot, instanced, mesh, propMaterial, rule, samples, arch);
                     continue;
+                }
+
+                var batch = instanced.GetOrCreateBatch(rule.kind.ToString(), mesh, propMaterial);
+                batch.cullDistance = CullDistanceFor(rule.kind);
+                batch.lodDistance = batch.cullDistance * 0.45f;
+                batch.castShadows = false;
+
+                GameObject colliderRoot = null;
+                if (NeedsCollider(rule.kind))
+                {
+                    colliderRoot = new GameObject(rule.kind + "_Colliders");
+                    colliderRoot.transform.SetParent(propRoot.transform, false);
                 }
 
                 int attempts = rule.count * 6;
@@ -206,39 +227,63 @@ namespace DreamCar.EditorTools.Procedural.Maps
                     // Eğim kontrolü — dik yamaca ağaç dikme
                     if (Slope(heights, arch.terrain, x, z) > rule.maxSlope) continue;
 
-                    var go = new GameObject($"{rule.kind}_{spawned}");
-                    go.transform.SetParent(kindRoot.transform, false);
-                    go.transform.position = new Vector3(x, y, z);
-                    go.transform.rotation = Quaternion.Euler(0f, (float)rng.NextDouble() * 360f, 0f);
-
+                    var position = new Vector3(x, y, z);
+                    var rotation = Quaternion.Euler(0f, (float)rng.NextDouble() * 360f, 0f);
                     float scale = Mathf.Lerp(rule.minScale, rule.maxScale, (float)rng.NextDouble());
-                    go.transform.localScale = Vector3.one * scale;
 
-                    go.AddComponent<MeshFilter>().sharedMesh = mesh;
-                    var mr = go.AddComponent<MeshRenderer>();
-                    mr.sharedMaterial = propMaterial;
-                    mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    // Renk çeşitliliği: kural tonu ± küçük sapma, hepsi aynı görünmesin
+                    float shade = 0.86f + (float)rng.NextDouble() * 0.28f;
+                    var tint = rule.tint * shade;
+                    tint.a = 1f;
 
-                    // Büyük yapılar çarpışsın, bitkiler çarpışmasın (performans)
-                    if (rule.kind is Kind.Building or Kind.Container or Kind.Crane
-                                  or Kind.House or Kind.Barn or Kind.Rock)
-                        go.AddComponent<BoxCollider>();
+                    DreamCar.Core.InstancedPropRenderer.AddInstance(
+                        batch, position, rotation, Vector3.one * scale, tint);
+
+                    if (colliderRoot != null)
+                        AddColliderOnly(colliderRoot, mesh, position, rotation, scale, $"{rule.kind}_{spawned}");
 
                     spawned++;
                     placed++;
                 }
             }
 
+            instanced.Prepare();
             return placed;
         }
 
-        static int PlaceAlongRoad(GameObject parent, Mesh mesh, Material material,
-                                  MapArchetype.PropRule rule, List<RoadSpline.Sample> samples,
-                                  MapArchetype arch)
+        // Görsel instancing'den çizildiği için burada yalnızca çarpışma kutusu var —
+        // MeshRenderer yok, dolayısıyla draw call da yok.
+        static void AddColliderOnly(GameObject parent, Mesh mesh, Vector3 position,
+                                    Quaternion rotation, float scale, string name)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent.transform, false);
+            go.transform.SetPositionAndRotation(position, rotation);
+            go.transform.localScale = Vector3.one * scale;
+
+            var box = go.AddComponent<BoxCollider>();
+            box.center = mesh.bounds.center;
+            box.size = mesh.bounds.size;
+        }
+
+        static int PlaceAlongRoad(GameObject parent, DreamCar.Core.InstancedPropRenderer instanced,
+                                  Mesh mesh, Material material, MapArchetype.PropRule rule,
+                                  List<RoadSpline.Sample> samples, MapArchetype arch)
         {
             int stride = Mathf.Max(1, samples.Count / Mathf.Max(1, rule.count));
             float lateral = (rule.minRoadDistance + rule.maxRoadDistance) * 0.5f;
             int placed = 0;
+
+            var batch = instanced.GetOrCreateBatch(rule.kind.ToString(), mesh, material);
+            batch.cullDistance = CullDistanceFor(rule.kind);
+            batch.lodDistance = batch.cullDistance * 0.5f;
+
+            GameObject colliderRoot = null;
+            if (NeedsCollider(rule.kind))
+            {
+                colliderRoot = new GameObject(rule.kind + "_Colliders");
+                colliderRoot.transform.SetParent(parent.transform, false);
+            }
 
             for (int i = 0; i < samples.Count; i += stride)
             {
@@ -249,22 +294,31 @@ namespace DreamCar.EditorTools.Procedural.Maps
                 for (int s = 0; s < sides; s++)
                 {
                     float side = (sides == 1) ? 1f : (s == 0 ? -1f : 1f);
-                    var go = new GameObject($"{rule.kind}_{placed}");
-                    go.transform.SetParent(parent.transform, false);
-                    go.transform.position = sample.position + sample.right * lateral * side;
-                    go.transform.rotation = Quaternion.LookRotation(sample.forward, Vector3.up);
+                    var position = sample.position + sample.right * lateral * side;
+                    var rotation = Quaternion.LookRotation(sample.forward, Vector3.up);
 
-                    go.AddComponent<MeshFilter>().sharedMesh = mesh;
-                    var mr = go.AddComponent<MeshRenderer>();
-                    mr.sharedMaterial = material;
-                    mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    DreamCar.Core.InstancedPropRenderer.AddInstance(
+                        batch, position, rotation, Vector3.one, rule.tint);
 
-                    if (rule.kind == Kind.Barrier) go.AddComponent<BoxCollider>();
+                    if (colliderRoot != null)
+                        AddColliderOnly(colliderRoot, mesh, position, rotation, 1f, $"{rule.kind}_{placed}");
+
                     placed++;
                 }
             }
             return placed;
         }
+
+        // Büyük yapılar uzaktan da görünmeli; küçük bitkiler yakında elensin.
+        static float CullDistanceFor(Kind kind) => kind switch
+        {
+            Kind.Crane or Kind.Building => 900f,
+            Kind.Barn or Kind.House     => 500f,
+            Kind.Container              => 420f,
+            Kind.Lamp or Kind.Barrier   => 260f,
+            Kind.Rock                   => 300f,
+            _                           => 260f,   // ağaç, çam, kaktüs
+        };
 
         static float DistanceToRoad(List<RoadSpline.Sample> samples, float x, float z)
         {
@@ -478,6 +532,10 @@ namespace DreamCar.EditorTools.Procedural.Maps
 
             boot.AddComponent<NetworkInterestManager>();
             boot.AddComponent<DreamCar.Maps.MapSelector>();
+
+            // Cihaz gücüne göre çizim mesafesi / gölge / sis ayarı
+            boot.AddComponent<DreamCar.Settings.QualityAutoDetect>();
+            boot.AddComponent<DreamCar.Core.GraphicsTuner>();
         }
 
         // ---------------------------------------------------------- Katalog
@@ -549,19 +607,38 @@ namespace DreamCar.EditorTools.Procedural.Maps
             return go;
         }
 
+        // Arazi ve proplar vertex color kullanır. URP/Lit vertex rengini yok saydığı
+        // için kendi shader'ımıza düşüyoruz; o yoksa Simple Lit yedeği.
+        static Shader VertexLitShader() =>
+            Shader.Find("DreamCar/VertexLit")
+            ?? Shader.Find("Universal Render Pipeline/Simple Lit")
+            ?? Shader.Find("Standard");
+
         static Material VertexColorMaterial(string name)
         {
-            // Arazi ve proplar vertex color kullanır — tek materyal, çok renk.
-            var shader = Shader.Find("Universal Render Pipeline/Simple Lit")
-                      ?? Shader.Find("Universal Render Pipeline/Lit")
-                      ?? Shader.Find("Standard");
-            return GetOrCreateMaterial(name, shader, mat =>
+            return GetOrCreateMaterial(name, VertexLitShader(), mat =>
             {
                 if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
                 if (mat.HasProperty("_Color")) mat.SetColor("_Color", Color.white);
+                if (mat.HasProperty("_VertexColorMix")) mat.SetFloat("_VertexColorMix", 1f);
+                if (mat.HasProperty("_AmbientBoost")) mat.SetFloat("_AmbientBoost", 1.1f);
                 if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.12f);
                 if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", 0.12f);
             });
+        }
+
+        // Instancing açık varyant — DrawMeshInstanced bunu kullanır.
+        static Material InstancedMaterial(string name)
+        {
+            var mat = GetOrCreateMaterial(name, VertexLitShader(), m =>
+            {
+                if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", Color.white);
+                if (m.HasProperty("_VertexColorMix")) m.SetFloat("_VertexColorMix", 1f);
+                if (m.HasProperty("_AmbientBoost")) m.SetFloat("_AmbientBoost", 1.15f);
+            });
+            mat.enableInstancing = true;
+            EditorUtility.SetDirty(mat);
+            return mat;
         }
 
         static Material SolidMaterial(string name, Color color, float metallic, float smoothness)
