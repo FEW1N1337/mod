@@ -682,7 +682,130 @@ iOS kurulumu: Xcode → Info → URL Types → URL Schemes → `dreamcar`
 
 ---
 
-## 14) Kalan iterasyonlar (v0.7+)
+## 14) v0.7 — Prosedürel varlıklar (3D, texture, ses, UI kodla üretiliyor)
+
+Buraya kadar oyun **kod olarak** hazırdı ama sahne gri küplerden ibaretti; hiç
+3D model, texture, ses veya UI grafiği yoktu. Artık hepsi kodla üretiliyor —
+dışarıdan telifli varlık indirmene gerek yok.
+
+### 14a) Tek komutla her şey
+
+```
+Menü → DreamCar → BUILD EVERYTHING (sıfırdan oynanabilir hale getir)
+```
+
+Sırayla texture'ları, UI sprite'larını, 5 aracı, kataloğu, iki sahneyi ve
+şehri üretir; Build Settings'i ayarlar. Tek tıklama, ~1-2 dakika.
+
+Tek tek çalıştırmak istersen: `DreamCar → Procedural → …` altındaki komutlar.
+
+### 14b) Araçlar — `Editor/Procedural/ProceduralCarGenerator.cs`
+
+Gövde **loft** ile üretilir: uzunluk boyunca kesitler (genişlik, yükseklik,
+merkez yüksekliği) tanımlanır, aralarına yüzey gerilir. Kaput eğimi, kabin
+yükselmesi ve bagaj düşüşü bu kesitlerden doğal olarak çıkar.
+
+| Araç | Karakter | Fiyat |
+|---|---|---|
+| Sedan | Dengeli, uzun kabin | 0 (başlangıç) |
+| Hatchback | Kısa, dik arka | 25.000 ₺ |
+| Sport Coupe | Alçak, geniş iz, 235 km/h | 85.000 ₺ |
+| SUV | Yüksek, ağır, büyük tekerlek | 60.000 ₺ |
+| Pickup | Uzun, açık kasa profili | 48.000 ₺ |
+
+Her prefab şunlarla **bağlı** çıkar: 4 WheelCollider + süspansiyon, CarController
+aks yapılandırması, PhotonView + sync, farlar/stoplar (gerçek Light + emissive),
+sinyaller, nitro, hasar, yakıt, vites, boya, HDR boya, kokpit kamerası, motor/
+lastik/korna ses kaynakları, kamera bağlantı noktaları, istatistik takibi.
+
+Tekerlek mesh'i lastik + jant yüzü + 5 jant kolu içerir; jant ayrı child olduğu
+için `WheelGlow` fren ısısını oraya basar.
+
+### 14c) Şehir — `Editor/Procedural/ProceduralCityGenerator.cs`
+
+6×6 blok ızgara (~450×450 m):
+
+- Yollar ve kaldırımlar tek mesh'te birleştirilmiş (draw call az)
+- Binalar merkeze doğru yükselen siluet oluşturur; çatı katlarıyla kırılma
+- Sokak lambaları (her ikinci direkte gerçek ışık — performans dengesi)
+- 24 waypoint'lik kapalı trafik halkası, iki şeride bölünmüş
+- 8 yarış checkpoint'i (0 numaralı bitiş çizgisi)
+- 16 spawn noktası merkez meydanda
+- Çalışır benzin istasyonu (saçak, pompalar, dolum tetikleyicisi, aydınlatma)
+- `TrafficSpawner` üretilen araç prefab'larına otomatik bağlanır
+
+### 14d) Texture'lar — `Editor/Procedural/ProceduralTextures.cs`
+
+Perlin gürültü ve prosedürel desenle: asfalt (çok ölçekli gürültü + çakıl),
+kaldırım (taş + fuga), bina cephesi (kat ızgarası; **gece varyantında**
+pencerelerin bir kısmı yanar), yol çizgisi, çim.
+
+Materyaller URP ve Built-in pipeline'ın **ikisinde de** çalışır — shader
+bulunamazsa Standard'a düşer.
+
+### 14e) Ses — `Scripts/Audio/ProceduralEngineAudio.cs`
+
+Ses dosyası yok, hepsi **sentezleniyor**:
+
+- **Motor**: harmonik serisi (tek harmonikler baskın) + silindir sayısına bağlı
+  patlama zarfı + alçak geçirgen filtrelenmiş gürültü + yumuşak doyum. Rölanti ve
+  gaz için iki ayrı klip; `EngineAudio` bunları RPM'e göre pitch'ler.
+- **Lastik çığlığı**: bant geçirgen gürültü + yavaş frekans modülasyonu
+- **Korna**: iki kare dalga (A4 + C#5) + attack/release zarfı
+
+Klipler **tam sayıda çevrim** içerir ve dikişte çapraz geçiş uygulanır — döngüde
+tık sesi olmaz.
+
+### 14f) UI sprite'ları — `Editor/Procedural/ProceduralUISprites.cs`
+
+9-slice yuvarlak köşeli panel (köşeler bozulmadan esner), pill buton, daire,
+halka, gradyan, chevron oku, dişli/kupa/bayrak ikonları. Hepsi antialiaslı.
+
+### 14g) iOS native köprü — `Plugins/iOS/DreamCarNative.mm`
+
+`Haptics.cs` ve `KVKKConsent.cs` bunları çağırıyordu ama karşılığı yoktu:
+
+- Taptic Engine: impact (light/medium/heavy), notification (success/warning/error),
+  selection — generator'lar önceden hazırlanır, gecikme düşük
+- App Tracking Transparency izni
+- Düşük güç modu ve termal durum okuma (kalite düşürmek için kullanılabilir)
+
+Dosya `Assets/Plugins/iOS/` altında olduğu için Unity Xcode projesine otomatik ekler.
+
+> ATT penceresinin çıkması için Player Settings → iOS → **User Tracking Usage
+> Description** alanının dolu olması gerekir.
+
+### 14h) Testler — `Tests/EditMode/GameMathTests.cs`
+
+CI'daki `compile-check` job'u artık gerçekten bir şey doğruluyor: 40+ EditMode testi.
+
+Test edilebilirlik için saf mantık `Scripts/Util/GameMath.cs` içinde ayrı bir
+assembly'ye alındı (Unity paketlerine bağlı değil, PUN/PlayFab kurulu olmadan da
+derlenir). `LeaderboardScreen`, `StatsScreen`, `LoginStreak`, `RepairPanel`,
+`RefuelStationPanel`, `GearBox`, `SpeedometerNeedle`, `CheatDetector`,
+`QualityAutoDetect` ve `RichChatUI` artık kendi kopya mantıkları yerine bunu
+çağırıyor — yani testler gerçek kod yollarını doğruluyor.
+
+Kapsam: süre/mesafe biçimleme, streak çarpanı, tamir ve yakıt fiyatı, vites
+seçimi, kilometre saati açısı, hile tespiti eşikleri, token bucket, kalite
+kademesi, superellipse geometrisi, zararlı rich-text kırpma.
+
+### 14i) Görsel kalite hakkında dürüst not
+
+Bu prosedürel varlıklar **stilize low-poly** görünür. Oyun çalışır, tutarlı ve
+oynanabilir görünür — ama profesyonel modellenmiş bir oyunun görsel kalitesinde
+**değildir**. Sonradan yükseltmek istersen:
+
+1. Asset Store'dan araç modeli al
+2. Üretilen prefab'ı aç, `Body` child'ının `MeshFilter`'ındaki mesh'i değiştir
+3. WheelCollider konumlarını yeni modele göre ayarla
+
+Tüm oyun kodu (fizik, ağ, ışık, hasar, boya) olduğu gibi çalışmaya devam eder —
+sadece görsel katman değişir.
+
+---
+
+## 15) Kalan iterasyonlar (v0.8+)
 
 - Bomb modu (bomba pas mini oyunu)
 - Sürücü avatarı (TurnTheGameOn IKAvatarDriver eşdeğeri)

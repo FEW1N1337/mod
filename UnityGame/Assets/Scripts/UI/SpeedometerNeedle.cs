@@ -19,8 +19,7 @@ namespace DreamCar.UI
         {
             if (!car || !needle) return;
 
-            float t = Mathf.Clamp01(car.SpeedKmh / car.topSpeedKmh);
-            float target = Mathf.Lerp(minAngle, maxAngle, t);
+            float target = Util.GameMath.SpeedometerAngle(car.SpeedKmh, car.topSpeedKmh, minAngle, maxAngle);
             _current = Mathf.LerpAngle(_current, target, Time.deltaTime * smoothing);
             needle.localEulerAngles = new Vector3(0f, 0f, _current);
         }

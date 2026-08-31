@@ -35,9 +35,8 @@ namespace DreamCar.Rewards
 
             if (last == nowUtc) return Streak;
 
-            int daysBetween = (int)(nowUtc - last.Date).TotalDays;
-            if (daysBetween == 1) Streak += 1;
-            else if (daysBetween > 1 || last == DateTime.MinValue) Streak = 1;
+            int daysBetween = last == DateTime.MinValue ? int.MaxValue : (int)(nowUtc - last.Date).TotalDays;
+            Streak = Util.GameMath.NextStreak(Streak, daysBetween);
 
             PlayerPrefs.SetInt(StreakKey, Streak);
             PlayerPrefs.SetString(LastLoginKey, nowUtc.ToString("o"));
@@ -45,11 +44,6 @@ namespace DreamCar.Rewards
             return Streak;
         }
 
-        public float MultiplierFor(int streak)
-        {
-            if (streak >= 7) return 3f;
-            if (streak >= 3) return 2f;
-            return 1f;
-        }
+        public float MultiplierFor(int streak) => Util.GameMath.StreakMultiplier(streak);
     }
 }
