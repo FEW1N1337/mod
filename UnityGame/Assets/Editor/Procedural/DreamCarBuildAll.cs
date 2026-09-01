@@ -19,6 +19,7 @@ namespace DreamCar.EditorTools.Procedural
             bool proceed = EditorUtility.DisplayDialog(
                 "DreamCar — Her Şeyi Üret",
                 "Şunlar üretilecek:\n\n" +
+                "• Render pipeline (URP) + Player Settings\n" +
                 "• Texture ve materyaller\n" +
                 "• 5 araç prefab'ı (mesh dahil)\n" +
                 "• Araç kataloğu\n" +
@@ -39,7 +40,15 @@ namespace DreamCar.EditorTools.Procedural
 
             try
             {
-                EditorUtility.DisplayProgressBar("DreamCar", "Texture'lar üretiliyor…", 0.05f);
+                // EN BAŞTA: render pipeline atanmadan üretilen hiçbir şey doğru
+                // görünmez. Projede URP varlığı yoksa Unity Built-in pipeline'a
+                // düşer ve URP shader'ı kullanan her yüzey macenta render edilir.
+                // Renk uzayı da burada Linear'a alınıyor — PBR malzemeler ancak
+                // orada doğru görünür.
+                EditorUtility.DisplayProgressBar("DreamCar", "Render pipeline kuruluyor…", 0.03f);
+                ProceduralRenderPipeline.Setup(confirm: false);
+
+                EditorUtility.DisplayProgressBar("DreamCar", "Texture'lar üretiliyor…", 0.08f);
                 ProceduralTextures.GenerateAll();
 
                 EditorUtility.DisplayProgressBar("DreamCar", "UI sprite'ları üretiliyor…", 0.12f);

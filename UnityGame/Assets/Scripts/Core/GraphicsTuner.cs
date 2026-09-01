@@ -30,6 +30,10 @@ namespace DreamCar.Core
             public VolumeProfile postProfile;
             [Tooltip("Post-processing tamamen kapatılsın mı (en düşük cihazlar).")]
             public bool disablePostProcessing;
+            [Tooltip("Gerçek zamanlı yansıma probu çalışsın mı. Araç boyası metalik " +
+                     "olduğu için rengini büyük ölçüde yansımadan alır — kapatılırsa " +
+                     "araba matlaşır, ama düşük cihazlarda prob pahalıdır.")]
+            public bool realtimeReflections = true;
         }
 
         public Tier low = new()
@@ -42,6 +46,7 @@ namespace DreamCar.Core
             fogDensityScale = 1.9f,
             pixelLightCount = 1,
             disablePostProcessing = true,   // en zayıf cihazlarda tek geçiş bile pahalı
+            realtimeReflections = false,
         };
 
         public Tier mid = new()
@@ -105,6 +110,14 @@ namespace DreamCar.Core
             {
                 cam.farClipPlane = t.farClip;
                 ApplyPostProcessing(cam, t);
+            }
+
+            // Yansıma probu: metalik boya rengini yansımadan aldığı için görsel etkisi
+            // büyük, ama gerçek zamanlı prob her tazelemede sahneyi 6 kez çiziyor.
+            foreach (var probe in FindObjectsByType<ReflectionProbe>(FindObjectsSortMode.None))
+            {
+                if (probe.mode != UnityEngine.Rendering.ReflectionProbeMode.Realtime) continue;
+                probe.enabled = t.realtimeReflections;
             }
 
             // Sis: düşük cihazda yoğunlaştır — uzaktakiler elenirken kesme görünmesin
