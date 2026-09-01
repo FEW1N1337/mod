@@ -1,0 +1,105 @@
+name: Unity Android Build
+
+# Android build'in iOS'tan büyük avantajı: ücretsiz Linux runner'da tamamen
+# çalışır. Mac, Xcode veya Apple Developer üyeliği gerekmez — her push'ta
+# doğrudan kurulabilir bir .apk üretilir.
+
+on:
+  push:
+    branches:
+      - main
+      - 'claude/**'
+    paths:
+      - 'UnityGame/**'
+      - '.github/workflows/unity-android-build.yml'
+  pull_request:
+    paths:
+      - 'UnityGame/**'
+  workflow_dispatch:
+    inputs:
+      buildAab:
+        description: 'Play Store için .aab üret (imzalama secret''ları gerekir)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: unity-android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UNITY_PROJECT_PATH: UnityGame
+
+jobs:
+
+  android-build:
+    name: Android APK (Linux hosted)
+    runs-on: ubuntu-latest
+    if: ${{ vars.UNITY_CI_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      # Unity build image büyük — disk yer açmazsak "no space left" alınabilir.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc
+          sudo rm -rf /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.UNITY_PROJECT_PATH }}/Library
+          key: Library-Android-${{ hashFiles(format('{0}/Assets/**', env.UNITY_PROJECT_PATH), format('{0}/Packages/**', env.UNITY_PROJECT_PATH), format('{0}/ProjectSettings/**', env.UNITY_PROJECT_PATH)) }}
+          restore-keys: |
+            Library-Android-
+            Library-
+
+      # Play Store'a yüklenecek sürümler imzalanmalı. Secret'lar yoksa
+      # imzasız debug APK üretilir — kendi telefonuna kurmak için yeterli.
+      - name: Build Android
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: ${{ env.UNITY_PROJECT_PATH }}
+          targetPlatform: Android
+          buildName: DreamCar
+          buildsPath: build
+          androidExportType: ${{ inputs.buildAab && 'androidAppBundle' || 'androidPackage' }}
+          androidKeystoreName: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && 'dreamcar.keystore' || '' }}
+          androidKeystoreBase64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          androidKeystorePass: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          androidKeyaliasName: ${{ secrets.ANDROID_KEYALIAS_NAME }}
+          androidKeyaliasPass: ${{ secrets.ANDROID_KEYALIAS_PASS }}
+          androidTargetSdkVersion: AndroidApiLevel34
+
+      - name: Fix artifact permissions
+        run: sudo chown -R $USER:$USER build
+
+      - name: Upload APK/AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: DreamCar-Android-${{ github.sha }}
+          path: |
+            build/Android/*.apk
+            build/Android/*.aab
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Build summary
+        run: |
+          {
+            echo "### Android build hazır"
+            echo ""
+            echo "Artifact: \`DreamCar-Android-${{ github.sha }}\`"
+            echo ""
+            echo "**Telefona kurmak için:**"
+            echo "1. Actions sekmesinden artifact'ı indir, zip'i aç"
+            echo "2. \`.apk\` dosyasını telefona at"
+            echo "3. Ayarlar → Bilinmeyen kaynaklara izin ver → kur"
+            echo ""
+            ls -lh build/Android/ 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
