@@ -28,6 +28,15 @@ namespace DreamCar.EditorTools.Procedural
             Save(Trophy(96, Color.white), "icon_trophy");
             Save(Flag(96, Color.white), "icon_flag");
 
+            // Ana menüde sekiz navigasyon butonu var, elimizde üç ikon vardı.
+            // Kalan beşi burada; hepsi aşağıdaki Icon() + SDF yardımcılarıyla
+            // çiziliyor, yeni altyapı gerekmiyor.
+            Save(Car(96, Color.white), "icon_car");
+            Save(Coin(96, Color.white), "icon_coin");
+            Save(Chart(96, Color.white), "icon_chart");
+            Save(Globe(96, Color.white), "icon_globe");
+            Save(Plus(96, Color.white), "icon_plus");
+
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log("[Procedural] UI sprite'ları üretildi: " + Folder);
@@ -254,6 +263,149 @@ namespace DreamCar.EditorTools.Procedural
             tex.SetPixels(px);
             tex.Apply();
             return tex;
+        }
+
+        // --- Yeni ikonlar (normalize edilmiş 0..1 uzayda SDF) ---
+        //
+        // Gear/Trophy/Flag her biri kendi piksel döngüsünü taşıyor çünkü onlar
+        // önce yazıldı. Aşağıdakiler ortak bir Icon() + birkaç SDF ilkesi
+        // kullanıyor: kenar yumuşatma tek yerde, her ikon birkaç satır.
+
+        // coverage(p) 0..1 arası kapsama döndürür; doğrudan alfa olur.
+        static Texture2D Icon(int size, Color color, System.Func<Vector2, float> coverage)
+        {
+            var tex = New(size, size);
+            var px = new Color[size * size];
+            for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                // Piksel MERKEZİ örnekleniyor (+0.5), aksi halde şekiller yarım
+                // piksel kayar ve simetrik ikonlar simetrik çizilmez.
+                var p = new Vector2((x + 0.5f) / size, (y + 0.5f) / size);
+                float a = Mathf.Clamp01(coverage(p));
+                px[y * size + x] = new Color(color.r, color.g, color.b, color.a * a);
+            }
+            tex.SetPixels(px);
+            tex.Apply();
+            return tex;
+        }
+
+        // Kenar yumuşatma genişliği — normalize uzayda ~1.5 piksel.
+        static float Aa(int size) => 1.5f / size;
+
+        static float Disc(Vector2 p, Vector2 c, float r, float aa)
+            => Mathf.Clamp01((r - Vector2.Distance(p, c)) / aa);
+
+        static float Ring(Vector2 p, Vector2 c, float r, float width, float aa)
+            => Mathf.Clamp01((width * 0.5f - Mathf.Abs(Vector2.Distance(p, c) - r)) / aa);
+
+        // Uçları yuvarlatılmış kalın çizgi.
+        static float Bar(Vector2 p, Vector2 a, Vector2 b, float width, float aa)
+            => Mathf.Clamp01((width * 0.5f - SegmentDistance(p, a, b)) / aa);
+
+        static float Box(Vector2 p, float x0, float y0, float x1, float y1, float aa)
+        {
+            float dx = Mathf.Min(p.x - x0, x1 - p.x);
+            float dy = Mathf.Min(p.y - y0, y1 - p.y);
+            return Mathf.Clamp01(Mathf.Min(dx, dy) / aa);
+        }
+
+        static float Union(float a, float b) => Mathf.Max(a, b);
+        static float Subtract(float a, float b) => Mathf.Min(a, 1f - b);
+
+        // Yandan araba silueti — garaj / araç mağazası butonu.
+        static Texture2D Car(int size, Color color)
+        {
+            float aa = Aa(size);
+            return Icon(size, color, p =>
+            {
+                // Gövde + kabin birlikte; tekerlekler ayrı, üstlerinde gövdeden
+                // oyulmuş boşluk yok — silueti okunur tutuyor.
+                float body  = Box(p, 0.08f, 0.30f, 0.92f, 0.50f, aa);
+                float cabin = Box(p, 0.30f, 0.50f, 0.70f, 0.68f, aa);
+                // Kabinin ön camını eğimli göstermek için köşeyi kırp.
+                float slant = Mathf.Clamp01(((0.78f - p.x) - (p.y - 0.50f) * 0.9f) / aa);
+                cabin = Mathf.Min(cabin, slant);
+
+                float wheelL = Disc(p, new Vector2(0.29f, 0.26f), 0.115f, aa);
+                float wheelR = Disc(p, new Vector2(0.71f, 0.26f), 0.115f, aa);
+                float hubL   = Disc(p, new Vector2(0.29f, 0.26f), 0.045f, aa);
+                float hubR   = Disc(p, new Vector2(0.71f, 0.26f), 0.045f, aa);
+
+                float shape = Union(Union(body, cabin), Union(wheelL, wheelR));
+                return Subtract(shape, Union(hubL, hubR));
+            });
+        }
+
+        // Madeni para — coin mağazası butonu.
+        static Texture2D Coin(int size, Color color)
+        {
+            float aa = Aa(size);
+            var c = new Vector2(0.5f, 0.5f);
+            return Icon(size, color, p =>
+            {
+                float disc = Disc(p, c, 0.40f, aa);
+                float rim  = Ring(p, c, 0.31f, 0.045f, aa);
+                // Ortada dikey çubuk + iki yatay kol: para birimi işareti hissi
+                // veriyor ve gerçek bir para birimi sembolünü taklit etmiyor.
+                float stem = Bar(p, new Vector2(0.50f, 0.30f), new Vector2(0.50f, 0.70f), 0.075f, aa);
+                float armA = Bar(p, new Vector2(0.38f, 0.54f), new Vector2(0.62f, 0.60f), 0.055f, aa);
+                float armB = Bar(p, new Vector2(0.38f, 0.44f), new Vector2(0.62f, 0.50f), 0.055f, aa);
+                return Subtract(disc, Union(rim, Union(stem, Union(armA, armB))));
+            });
+        }
+
+        // Sütun grafiği — istatistik butonu.
+        static Texture2D Chart(int size, Color color)
+        {
+            float aa = Aa(size);
+            return Icon(size, color, p =>
+            {
+                float axis = Bar(p, new Vector2(0.14f, 0.16f), new Vector2(0.88f, 0.16f), 0.06f, aa);
+                float b1 = Box(p, 0.22f, 0.20f, 0.36f, 0.48f, aa);
+                float b2 = Box(p, 0.43f, 0.20f, 0.57f, 0.78f, aa);
+                float b3 = Box(p, 0.64f, 0.20f, 0.78f, 0.62f, aa);
+                return Union(axis, Union(b1, Union(b2, b3)));
+            });
+        }
+
+        // Meridyenli küre — bölge seçici butonu.
+        static Texture2D Globe(int size, Color color)
+        {
+            float aa = Aa(size);
+            var c = new Vector2(0.5f, 0.5f);
+            const float r = 0.38f;
+            return Icon(size, color, p =>
+            {
+                float outline = Ring(p, c, r, 0.06f, aa);
+
+                // Dikey meridyen: bir elipsin kenarı. Noktayı x ekseninde
+                // gererek daireye çeviriyoruz, sonra aynı halka testini
+                // uyguluyoruz — ayrı bir elips SDF'ine gerek yok.
+                var stretched = new Vector2(c.x + (p.x - c.x) / 0.42f, p.y);
+                float meridian = Ring(stretched, c, r, 0.055f, aa);
+                // Halkanın dışına taşan kısmı kırp.
+                meridian = Mathf.Min(meridian, Disc(p, c, r, aa));
+
+                float eq  = Bar(p, new Vector2(0.13f, 0.50f), new Vector2(0.87f, 0.50f), 0.05f, aa);
+                float par = Bar(p, new Vector2(0.20f, 0.665f), new Vector2(0.80f, 0.665f), 0.045f, aa);
+                float par2 = Bar(p, new Vector2(0.20f, 0.335f), new Vector2(0.80f, 0.335f), 0.045f, aa);
+                float lines = Mathf.Min(Union(eq, Union(par, par2)), Disc(p, c, r, aa));
+
+                return Union(outline, Union(meridian, lines));
+            });
+        }
+
+        // Artı — oda kur butonu.
+        static Texture2D Plus(int size, Color color)
+        {
+            float aa = Aa(size);
+            return Icon(size, color, p =>
+            {
+                float h = Bar(p, new Vector2(0.20f, 0.50f), new Vector2(0.80f, 0.50f), 0.16f, aa);
+                float v = Bar(p, new Vector2(0.50f, 0.20f), new Vector2(0.50f, 0.80f), 0.16f, aa);
+                return Union(h, v);
+            });
         }
 
         // --- Yardımcılar ---

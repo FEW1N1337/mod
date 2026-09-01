@@ -203,6 +203,10 @@ namespace DreamCar.EditorTools
         public static void CreateMainMenu()
         {
             EnsureFolder(ScenesFolder);
+            // Sprite'lar olmadan bütün arayüz düz dikdörtgene düşer. BUILD
+            // EVERYTHING zinciri bunları sahnelerden önce üretiyor, ama bu menü
+            // tek başına da çağrılabiliyor.
+            EnsureUiSprites();
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             // EventSystem + camera
@@ -302,12 +306,12 @@ namespace DreamCar.EditorTools
             garageThumbRt.anchoredPosition = new Vector2(-600f, 140f);
             garageThumbRt.sizeDelta = new Vector2(360f, 200f);
             var garageThumb = garageThumbGo.GetComponent<Image>();
-            garageThumb.color = new Color(1f, 1f, 1f, 0.10f);
+            Skin(garageThumb, "panel", Palette.Surface);
             garageThumb.preserveAspect = true;
 
-            var garagePrev = MakeButton(mainPanel, "GaragePrev", "◀", new Vector2(-820f, 140f));
+            var garagePrev = MakeChevronButton(mainPanel, "GaragePrev", new Vector2(-820f, 140f), pointRight: false);
             garagePrev.GetComponent<RectTransform>().sizeDelta = new Vector2(120f, 120f);
-            var garageNext = MakeButton(mainPanel, "GarageNext", "▶", new Vector2(-380f, 140f));
+            var garageNext = MakeChevronButton(mainPanel, "GarageNext", new Vector2(-380f, 140f), pointRight: true);
             garageNext.GetComponent<RectTransform>().sizeDelta = new Vector2(120f, 120f);
 
             var garageName = MakeText(mainPanel, "GarageName", "-", new Vector2(-600f, 10f), 36);
@@ -533,6 +537,8 @@ namespace DreamCar.EditorTools
         // çağırıyor. İki ayrı kopya tutmak kaçınılmaz olarak ayrışırdı.
         public static void BuildGameplayUI(GameObject boot)
         {
+            EnsureUiSprites();
+
             // EventSystem olmadan HİÇBİR buton çalışmaz — harita sahnelerinde
             // hiç kurulmuyordu. Sahneye özel ve DontDestroyOnLoad değil.
             if (!UnityEngine.Object.FindFirstObjectByType<EventSystem>())
@@ -557,10 +563,26 @@ namespace DreamCar.EditorTools
             scaler.matchWidthOrHeight = 0.5f;
 
             // Speed HUD
+            // YERLEŞİM NOTU: buradaki her şey KÖŞEYE hizalanır, merkeze göre
+            // mutlak konuma değil. Mutlak konum 16:9'da doğru görünüp 19.5:9
+            // telefonda ekran dışına taşıyordu — görünür dikey yarı-aralık
+            // ±540 değil ±489, 21:9'da ±454, üstüne bir de SafeAreaFitter
+            // kırpıyor. Yakıt çubuğu (0,-500) bu yüzden bugünkü her modern
+            // telefonda görünmüyordu.
             var hudPanel = MakeUiChild(canvasGo, "HUDPanel");
-            var speedText = MakeText(hudPanel, "SpeedText", "0 km/h", new Vector2(-800f, -400f), 48);
-            var playerCountText = MakeText(hudPanel, "PlayerCount", "0/16", new Vector2(800f, 400f), 32);
-            var roomNameText = MakeText(hudPanel, "RoomName", "-", new Vector2(-800f, 400f), 32);
+
+            var speedText = MakeText(hudPanel, "SpeedText", "0 km/h", Vector2.zero, 48);
+            AnchorTo(speedText.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 90f), new Vector2(420f, 110f));
+
+            var playerCountText = MakeText(hudPanel, "PlayerCount", "0/16", Vector2.zero, 32);
+            AnchorCorner(playerCountText.GetComponent<RectTransform>(),
+                         new Vector2(1f, 1f), new Vector2(260f, 190f), new Vector2(360f, 60f));
+
+            var roomNameText = MakeText(hudPanel, "RoomName", "-", Vector2.zero, 32);
+            roomNameText.alignment = TextAlignmentOptions.MidlineLeft;
+            AnchorCorner(roomNameText.GetComponent<RectTransform>(),
+                         new Vector2(0f, 1f), new Vector2(330f, 70f), new Vector2(600f, 70f));
             // Sağ ALT köşe artık gaz/fren/el freni için ayrıldı; çıkış butonu orada
             // kalsaydı gaz pedalıyla çakışırdı. Sağ üste, köşeye sabitlendi.
             var leaveBtn = MakeButton(hudPanel, "LeaveButton", "Çıkış", Vector2.zero);
@@ -573,7 +595,9 @@ namespace DreamCar.EditorTools
             hud.roomNameText = roomNameText;
             hud.leaveButton = leaveBtn;
 
-            var pingText = MakeText(hudPanel, "PingText", "-- ms", new Vector2(700f, 400f), 24);
+            var pingText = MakeText(hudPanel, "PingText", "-- ms", Vector2.zero, 24);
+            AnchorCorner(pingText.GetComponent<RectTransform>(),
+                         new Vector2(1f, 1f), new Vector2(260f, 250f), new Vector2(360f, 50f));
             hudPanel.AddComponent<PingIndicator>().label = pingText;
 
             // Minimap — 8 harita var, yön bulma olmadan oyuncu kayboluyor.
@@ -601,8 +625,10 @@ namespace DreamCar.EditorTools
             var minimapGo = new GameObject("Minimap", typeof(RectTransform), typeof(RawImage));
             minimapGo.transform.SetParent(hudPanel.transform, false);
             var minimapRt = minimapGo.GetComponent<RectTransform>();
-            minimapRt.anchoredPosition = new Vector2(760f, 200f);
-            minimapRt.sizeDelta = new Vector2(260f, 260f);
+            // (760,200) merkeze göreydi: iPad 4:3'te görünür yatay yarı-aralık
+            // ±831 ve minimap'in sağ kenarı 890'a düşüyordu — ekran dışında.
+            AnchorCorner(minimapRt, new Vector2(1f, 1f),
+                         new Vector2(170f, 440f), new Vector2(260f, 260f));
 
             var minimap = minimapGo.AddComponent<Minimap>();
             minimap.minimapCamera = minimapCam;
@@ -636,10 +662,25 @@ namespace DreamCar.EditorTools
             toast.toastPrefab = MakeToastTemplate(canvasGo, "ToastTemplate");
 
             // Chat
+            // Sohbet eskiden sol ALTTAYDI ve direksiyon pediyle çakışıyordu:
+            // ControlsPanel hiyerarşide ChatPanel'den SONRA geldiği için pedin
+            // yarı saydam Image'i ışını yiyordu ve sohbet kutusuna hiç
+            // odaklanılamıyordu; üstelik oraya dokunmak direksiyonu çeviriyordu.
+            // Sürüş kontrollerinin bulunmadığı sol ÜST bölgeye taşındı.
             var chatPanel = MakeUiChild(canvasGo, "ChatPanel");
-            var chatInput = MakeInputField(chatPanel, "ChatInput", "Mesaj…", new Vector2(-400f, -400f));
-            var chatSend = MakeButton(chatPanel, "ChatSend", "Gönder", new Vector2(0f, -400f));
-            var chatMessages = MakeText(chatPanel, "ChatMessages", "", new Vector2(-200f, -200f), 24);
+
+            var chatMessages = MakeText(chatPanel, "ChatMessages", "", Vector2.zero, 24);
+            chatMessages.alignment = TextAlignmentOptions.BottomLeft;
+            AnchorCorner(chatMessages.GetComponent<RectTransform>(),
+                         new Vector2(0f, 1f), new Vector2(380f, 420f), new Vector2(700f, 420f));
+
+            var chatInput = MakeInputField(chatPanel, "ChatInput", "Mesaj…", Vector2.zero);
+            AnchorCorner(chatInput.GetComponent<RectTransform>(),
+                         new Vector2(0f, 1f), new Vector2(300f, 680f), new Vector2(520f, 70f));
+
+            var chatSend = MakeButton(chatPanel, "ChatSend", "Gönder", Vector2.zero);
+            AnchorCorner(chatSend.GetComponent<RectTransform>(),
+                         new Vector2(0f, 1f), new Vector2(670f, 680f), new Vector2(200f, 70f));
             var chatPv = chatPanel.AddComponent<Photon.Pun.PhotonView>();
             var richChat = chatPanel.AddComponent<RichChatUI>();
             richChat.inputField = chatInput;
@@ -673,7 +714,11 @@ namespace DreamCar.EditorTools
             var steeringPad = new GameObject("SteeringPad", typeof(RectTransform), typeof(Image));
             steeringPad.transform.SetParent(ctrlPanel.transform, false);
             var padImg = steeringPad.GetComponent<Image>();
-            padImg.color = new Color(1f, 1f, 1f, 0.05f);
+            Skin(padImg, "ring", Palette.AccentDim);
+            // MobileTouchInput direksiyonu EventSystem'den değil ham
+            // Input.GetTouch ile okuyor; pedin ışın hedefi olmasına gerek yok
+            // ve açık kalırsa altındaki her şeyi bloke ediyor.
+            padImg.raycastTarget = false;
             var padRt = steeringPad.GetComponent<RectTransform>();
             AnchorCorner(padRt, new Vector2(0f, 0f), new Vector2(380f, 230f), new Vector2(700f, 420f));
 
@@ -688,21 +733,28 @@ namespace DreamCar.EditorTools
             var nitroBg = new GameObject("NitroBG", typeof(RectTransform), typeof(Image));
             nitroBg.transform.SetParent(nitroPanel.transform, false);
             var nitroBgRt = nitroBg.GetComponent<RectTransform>();
-            nitroBgRt.anchoredPosition = new Vector2(-800f, -450f);
-            nitroBgRt.sizeDelta = new Vector2(280f, 24f);
-            nitroBg.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.6f);
+            // Sağ alta, pedalların üstüne. Eski yeri (-800,-450) hem 21:9'da
+            // ekran dışıydı hem direksiyon pedinin TAM İÇİNDEYDİ.
+            AnchorCorner(nitroBgRt, new Vector2(1f, 0f),
+                         new Vector2(150f, 560f), new Vector2(280f, 24f));
+            Skin(nitroBg.GetComponent<Image>(), "pill", Palette.SurfaceDeep);
 
             var nitroFillGo = new GameObject("NitroFill", typeof(RectTransform), typeof(Image));
             nitroFillGo.transform.SetParent(nitroBg.transform, false);
             var nitroFill = nitroFillGo.GetComponent<Image>();
-            nitroFill.color = new Color(0.2f, 0.7f, 1f);
+            Skin(nitroFill, "pill", Palette.Accent);
             nitroFill.type = Image.Type.Filled;
             nitroFill.fillMethod = Image.FillMethod.Horizontal;
             var nitroFillRt = nitroFillGo.GetComponent<RectTransform>();
             nitroFillRt.anchorMin = Vector2.zero; nitroFillRt.anchorMax = Vector2.one;
             nitroFillRt.offsetMin = Vector2.zero; nitroFillRt.offsetMax = Vector2.zero;
 
-            var nitroBtn = MakeButton(nitroPanel, "NitroButton", "NOS", new Vector2(-800f, -380f));
+            // "NOS" butonu eski yerinde direksiyon pedinin İÇİNDE kalıyordu:
+            // MobileTouchInput ham dokunma okuduğu için NOS'a basmak aynı anda
+            // bir direksiyon sürüklemesi başlatıyordu. Pedalların yanına alındı.
+            var nitroBtn = MakeButton(nitroPanel, "NitroButton", "NOS", Vector2.zero);
+            AnchorCorner(nitroBtn.GetComponent<RectTransform>(),
+                         new Vector2(1f, 0f), new Vector2(150f, 460f), new Vector2(230f, 130f));
             var nitroBar = nitroPanel.AddComponent<NitroBar>();
             nitroBar.fill = nitroFill;
             nitroBar.nitroButton = nitroBtn;
@@ -712,20 +764,24 @@ namespace DreamCar.EditorTools
             var fuelBg = new GameObject("FuelBG", typeof(RectTransform), typeof(Image));
             fuelBg.transform.SetParent(fuelPanel.transform, false);
             var fuelBgRt = fuelBg.GetComponent<RectTransform>();
-            fuelBgRt.anchoredPosition = new Vector2(-800f, -500f);
-            fuelBgRt.sizeDelta = new Vector2(280f, 18f);
-            fuelBg.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.6f);
+            // (−800,−500): 16:9'dan uzun HER telefonda ekranın altında kalıyordu.
+            AnchorCorner(fuelBgRt, new Vector2(1f, 0f),
+                         new Vector2(150f, 610f), new Vector2(280f, 18f));
+            Skin(fuelBg.GetComponent<Image>(), "pill", Palette.SurfaceDeep);
 
             var fuelFillGo = new GameObject("FuelFill", typeof(RectTransform), typeof(Image));
             fuelFillGo.transform.SetParent(fuelBg.transform, false);
             var fuelFill = fuelFillGo.GetComponent<Image>();
+            Skin(fuelFill, "pill", Palette.Good);
             fuelFill.type = Image.Type.Filled;
             fuelFill.fillMethod = Image.FillMethod.Horizontal;
             var fuelFillRt = fuelFillGo.GetComponent<RectTransform>();
             fuelFillRt.anchorMin = Vector2.zero; fuelFillRt.anchorMax = Vector2.one;
             fuelFillRt.offsetMin = Vector2.zero; fuelFillRt.offsetMax = Vector2.zero;
 
-            var fuelLabel = MakeText(fuelPanel, "FuelPct", "100%", new Vector2(-620f, -500f), 20);
+            var fuelLabel = MakeText(fuelPanel, "FuelPct", "100%", Vector2.zero, 20);
+            AnchorCorner(fuelLabel.GetComponent<RectTransform>(),
+                         new Vector2(1f, 0f), new Vector2(370f, 610f), new Vector2(140f, 40f));
             var fuelMeter = fuelPanel.AddComponent<FuelMeter>();
             fuelMeter.fill = fuelFill;
             fuelMeter.percentLabel = fuelLabel;
@@ -744,7 +800,7 @@ namespace DreamCar.EditorTools
 
             var refuelFillBg = new GameObject("RefuelFillBG", typeof(RectTransform), typeof(Image));
             refuelFillBg.transform.SetParent(refuelPanel.transform, false);
-            refuelFillBg.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.6f);
+            Skin(refuelFillBg.GetComponent<Image>(), "pill", Palette.SurfaceDeep);
             var rfBgRt = refuelFillBg.GetComponent<RectTransform>();
             rfBgRt.anchoredPosition = new Vector2(0f, -20f);
             rfBgRt.sizeDelta = new Vector2(500f, 30f);
@@ -752,9 +808,12 @@ namespace DreamCar.EditorTools
             var refuelFillGo = new GameObject("RefuelFill", typeof(RectTransform), typeof(Image));
             refuelFillGo.transform.SetParent(refuelFillBg.transform, false);
             var refuelFill = refuelFillGo.GetComponent<Image>();
+            // Skin ÖNCE gelmeli: sprite'ın 9-slice kenarı olduğu için type'ı
+            // Sliced'a çekiyor ve sonradan çağrılırsa Filled'ı ezer — çubuk
+            // yakıt seviyesinden bağımsız olarak hep dolu görünürdü.
+            Skin(refuelFill, "pill", Palette.Good);
             refuelFill.type = Image.Type.Filled;
             refuelFill.fillMethod = Image.FillMethod.Horizontal;
-            refuelFill.color = new Color(0.4f, 0.9f, 0.4f);
             var rfFillRt = refuelFillGo.GetComponent<RectTransform>();
             rfFillRt.anchorMin = Vector2.zero; rfFillRt.anchorMax = Vector2.one;
             rfFillRt.offsetMin = Vector2.zero; rfFillRt.offsetMax = Vector2.zero;
@@ -780,10 +839,12 @@ namespace DreamCar.EditorTools
             var pausePanel = MakeUiChild(canvasGo, "PauseMenu", modal: true);
             pausePanel.SetActive(false);
             var pauseTitle = MakeText(pausePanel, "PauseTitle", "Duraklat", new Vector2(0f, 300f), 64);
-            var resumeBtn = MakeButton(pausePanel, "Resume", "Devam", new Vector2(0f, 150f));
-            var settingsBtn = MakeButton(pausePanel, "Settings", "Ayarlar", new Vector2(0f, 40f));
-            var leaveRoomBtn = MakeButton(pausePanel, "LeaveRoom", "Odadan Çık", new Vector2(0f, -70f));
-            var mainMenuBtn = MakeButton(pausePanel, "MainMenu", "Ana Menü", new Vector2(0f, -180f));
+            // Aralık 110 → 140: buton yüksekliği 80'den 120'ye çıktı, eski
+            // aralıkta üst üste binerlerdi.
+            var resumeBtn = MakeButton(pausePanel, "Resume", "Devam", new Vector2(0f, 190f));
+            var settingsBtn = MakeButton(pausePanel, "Settings", "Ayarlar", new Vector2(0f, 50f));
+            var leaveRoomBtn = MakeButton(pausePanel, "LeaveRoom", "Odadan Çık", new Vector2(0f, -90f));
+            var mainMenuBtn = MakeButton(pausePanel, "MainMenu", "Ana Menü", new Vector2(0f, -230f));
             // Ayarlar ekranı Game sahnesinde hiç kurulmuyordu (BuildSecondaryScreens
             // yalnızca ana menüde çağrılıyor), bu yüzden duraklatma menüsündeki
             // "Ayarlar" butonu sessizce hiçbir şey yapmıyordu: oyun içinde ses ve
@@ -842,7 +903,11 @@ namespace DreamCar.EditorTools
             var steerSl = MakeSlider(settingsPanel, "SteeringSlider", new Vector2(0f, -90f));
             var steerVal = MakeText(settingsPanel, "SteeringValue", "1.0x", new Vector2(340f, -90f), 28);
             var langDd = MakeDropdown(settingsPanel, "LanguageDropdown", new Vector2(0f, -170f));
-            var settingsClose = MakeButton(settingsPanel, "Close", "Kapat", new Vector2(0f, -320f));
+            // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
+            // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
+            var settingsClose = MakeButton(settingsPanel, "Close", "Kapat", Vector2.zero);
+            AnchorTo(settingsClose.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
             var settings = settingsPanel.AddComponent<SettingsScreen>();
             settings.panel = settingsPanel;
@@ -871,7 +936,11 @@ namespace DreamCar.EditorTools
             var lbDriftTab = MakeButton(lbPanel, "DriftTab", "Drift", new Vector2(160f, 320f));
             var lbList = MakeListContainer(lbPanel, "List", new Vector2(0f, -30f), new Vector2(900f, 620f));
             var lbLoading = MakeText(lbPanel, "Loading", "Yükleniyor…", new Vector2(0f, 0f), 32).gameObject;
-            var lbClose = MakeButton(lbPanel, "Close", "Kapat", new Vector2(0f, -420f));
+            // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
+            // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
+            var lbClose = MakeButton(lbPanel, "Close", "Kapat", Vector2.zero);
+            AnchorTo(lbClose.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
             var leaderboard = lbPanel.AddComponent<LeaderboardScreen>();
             leaderboard.panel = lbPanel;
@@ -889,7 +958,11 @@ namespace DreamCar.EditorTools
             MakeText(achPanel, "Title", "Başarımlar", new Vector2(0f, 420f), 64);
             var achSummary = MakeText(achPanel, "Summary", "0 / 0", new Vector2(0f, 340f), 32);
             var achList = MakeListContainer(achPanel, "List", new Vector2(0f, -30f), new Vector2(900f, 620f));
-            var achClose = MakeButton(achPanel, "Close", "Kapat", new Vector2(0f, -420f));
+            // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
+            // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
+            var achClose = MakeButton(achPanel, "Close", "Kapat", Vector2.zero);
+            AnchorTo(achClose.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
             var achievements = achPanel.AddComponent<AchievementsScreen>();
             achievements.panel = achPanel;
@@ -907,7 +980,11 @@ namespace DreamCar.EditorTools
             var shopBalance = MakeText(shopPanel, "Balance", "0 ₺", new Vector2(0f, 340f), 40);
             var adBtn = MakeButton(shopPanel, "WatchAdButton", "Reklam İzle", new Vector2(0f, -200f));
             var adReward = MakeText(shopPanel, "AdReward", "+5.000 ₺", new Vector2(0f, -280f), 28);
-            var shopClose = MakeButton(shopPanel, "Close", "Kapat", new Vector2(0f, -420f));
+            // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
+            // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
+            var shopClose = MakeButton(shopPanel, "Close", "Kapat", Vector2.zero);
+            AnchorTo(shopClose.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
             var coinShop = shopPanel.AddComponent<CoinShopScreen>();
             coinShop.panel = shopPanel;
@@ -958,7 +1035,11 @@ namespace DreamCar.EditorTools
             stats.moneyEarnedLabel = MakeStatRow(statsPanel, "Kazanılan Para", -190f);
             stats.carsOwnedLabel = MakeStatRow(statsPanel, "Araç", -260f);
             stats.crashesLabel = MakeStatRow(statsPanel, "Çarpışma", -330f);
-            stats.closeButton = MakeButton(statsPanel, "Close", "Kapat", new Vector2(0f, -430f));
+            // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
+            // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
+            stats.closeButton = MakeButton(statsPanel, "Close", "Kapat", Vector2.zero);
+            AnchorTo(stats.closeButton.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
             // --- Oda kurucu ---
             // Hiçbir sahneye eklenmiyordu: şifreli oda, mod ve harita seçimi yazılmıştı
@@ -980,7 +1061,11 @@ namespace DreamCar.EditorTools
             var rcSliderLabel = MakeText(createPanel, "MaxPlayersLabel", "10 oyuncu", new Vector2(380f, -50f), 28);
             var rcVisible = MakeToggle(createPanel, "VisibleToggle", "Oda listesinde görünsün", new Vector2(0f, -130f), true);
             var rcCreate = MakeButton(createPanel, "CreateButton", "ODAYI KUR", new Vector2(0f, -240f));
-            var rcClose = MakeButton(createPanel, "Close", "Kapat", new Vector2(0f, -380f));
+            // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
+            // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
+            var rcClose = MakeButton(createPanel, "Close", "Kapat", Vector2.zero);
+            AnchorTo(rcClose.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
             var roomCreator = createPanel.AddComponent<RoomCreatorUI>();
             roomCreator.nameInput = rcName;
@@ -1003,7 +1088,11 @@ namespace DreamCar.EditorTools
             var regionCurrent = MakeText(regionPanel, "Current", "-", new Vector2(0f, 300f), 32);
             var regionDd = MakeDropdown(regionPanel, "RegionDropdown", new Vector2(0f, 180f));
             var regionApply = MakeButton(regionPanel, "ApplyButton", "Uygula", new Vector2(0f, 40f));
-            var regionClose = MakeButton(regionPanel, "Close", "Kapat", new Vector2(0f, -380f));
+            // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
+            // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
+            var regionClose = MakeButton(regionPanel, "Close", "Kapat", Vector2.zero);
+            AnchorTo(regionClose.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
             var region = regionPanel.AddComponent<RegionSelector>();
             region.panel = regionPanel;
@@ -1021,7 +1110,11 @@ namespace DreamCar.EditorTools
             MakeText(carShopPanel, "Title", "Araçlar", new Vector2(0f, 420f), 64);
             var carShopMoney = MakeText(carShopPanel, "Money", "0 ₺", new Vector2(0f, 340f), 40);
             var carShopList = MakeListContainer(carShopPanel, "List", new Vector2(0f, -30f), new Vector2(900f, 620f));
-            var carShopClose = MakeButton(carShopPanel, "Close", "Kapat", new Vector2(0f, -420f));
+            // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
+            // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
+            var carShopClose = MakeButton(carShopPanel, "Close", "Kapat", Vector2.zero);
+            AnchorTo(carShopClose.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
             var carShop = carShopPanel.AddComponent<ShopUI>();
             carShop.catalog = Procedural.ProceduralCarGenerator.LoadCatalog();
@@ -1034,28 +1127,47 @@ namespace DreamCar.EditorTools
             // SERIALIZE EDİLMEZ. Sahne kaydedilip build'de yüklendiğinde bu beş
             // butonun hiçbiri çalışmazdı — ana menü navigasyonunun tamamı ölüydü.
             // Editörden kurulan bağlantılar kalıcı (persistent) olmak zorunda.
-            var navSettings = MakeButton(mainPanel, "NavSettings", "Ayarlar", new Vector2(-600f, -300f));
+            // Konumlar MainPanel'in ALT KENARINA sabitlendi: mutlak y -300/-400
+            // 21:9 telefonda (görünür yarı-aralık ±454) ikinci sırayı ekran
+            // dışına taşıyordu.
+            var navSettings = MakeIconButton(mainPanel, "NavSettings", "Ayarlar", Vector2.zero, "icon_gear");
+            AnchorTo(navSettings.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
+                     new Vector2(-600f, 290f), new Vector2(280f, 120f));
             UnityEventTools.AddPersistentListener(navSettings.onClick, settings.Open);
-            var navLeaderboard = MakeButton(mainPanel, "NavLeaderboard", "Liderlik", new Vector2(-300f, -300f));
+            var navLeaderboard = MakeIconButton(mainPanel, "NavLeaderboard", "Liderlik", Vector2.zero, "icon_trophy");
+            AnchorTo(navLeaderboard.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
+                     new Vector2(-300f, 290f), new Vector2(280f, 120f));
             UnityEventTools.AddPersistentListener(navLeaderboard.onClick, leaderboard.Open);
-            var navAchievements = MakeButton(mainPanel, "NavAchievements", "Başarımlar", new Vector2(0f, -300f));
+            var navAchievements = MakeIconButton(mainPanel, "NavAchievements", "Başarımlar", Vector2.zero, "icon_flag");
+            AnchorTo(navAchievements.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
+                     new Vector2(0f, 290f), new Vector2(280f, 120f));
             UnityEventTools.AddPersistentListener(navAchievements.onClick, achievements.Open);
-            var navShop = MakeButton(mainPanel, "NavShop", "Mağaza", new Vector2(300f, -300f));
+            var navShop = MakeIconButton(mainPanel, "NavShop", "Mağaza", Vector2.zero, "icon_coin");
+            AnchorTo(navShop.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
+                     new Vector2(300f, 290f), new Vector2(280f, 120f));
             UnityEventTools.AddPersistentListener(navShop.onClick, coinShop.Open);
-            var navStats = MakeButton(mainPanel, "NavStats", "İstatistik", new Vector2(600f, -300f));
+            var navStats = MakeIconButton(mainPanel, "NavStats", "İstatistik", Vector2.zero, "icon_chart");
+            AnchorTo(navStats.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
+                     new Vector2(600f, 290f), new Vector2(280f, 120f));
             UnityEventTools.AddPersistentListener(navStats.onClick, stats.Open);
 
             // İkinci sıra — birinci sıra beş butonla dolu.
             // RoomCreatorUI'de Open/Close yok, panel alanı da yok — paneli doğrudan
             // açıp kapatıyoruz. GameObject.SetActive kalıcı listener hedefi olabiliyor.
-            var navCreate = MakeButton(mainPanel, "NavCreateRoom", "Oda Kur", new Vector2(-150f, -400f));
+            var navCreate = MakeIconButton(mainPanel, "NavCreateRoom", "Oda Kur", Vector2.zero, "icon_plus");
+            AnchorTo(navCreate.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
+                     new Vector2(-150f, 160f), new Vector2(280f, 120f));
             UnityEventTools.AddBoolPersistentListener(navCreate.onClick, createPanel.SetActive, true);
             UnityEventTools.AddBoolPersistentListener(rcClose.onClick, createPanel.SetActive, false);
-            var navRegion = MakeButton(mainPanel, "NavRegion", "Bölge", new Vector2(150f, -400f));
+            var navRegion = MakeIconButton(mainPanel, "NavRegion", "Bölge", Vector2.zero, "icon_globe");
+            AnchorTo(navRegion.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
+                     new Vector2(150f, 160f), new Vector2(280f, 120f));
             UnityEventTools.AddPersistentListener(navRegion.onClick, region.Open);
 
             // ShopUI'de Open/Close yok — paneli doğrudan açıp kapatıyoruz.
-            var navCarShop = MakeButton(mainPanel, "NavCarShop", "Araçlar", new Vector2(450f, -400f));
+            var navCarShop = MakeIconButton(mainPanel, "NavCarShop", "Araçlar", Vector2.zero, "icon_car");
+            AnchorTo(navCarShop.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
+                     new Vector2(450f, 160f), new Vector2(280f, 120f));
             UnityEventTools.AddBoolPersistentListener(navCarShop.onClick, carShopPanel.SetActive, true);
             UnityEventTools.AddBoolPersistentListener(carShopClose.onClick, carShopPanel.SetActive, false);
         }
@@ -1064,7 +1176,7 @@ namespace DreamCar.EditorTools
         {
             var panel = MakeUiChild(canvasGo, "LoadingScreen");
             var bg = panel.AddComponent<Image>();
-            bg.color = new Color(0.03f, 0.04f, 0.07f, 1f);
+            bg.color = Palette.PanelBg;
             var cg = panel.AddComponent<CanvasGroup>();
             panel.SetActive(false);
 
@@ -1074,7 +1186,7 @@ namespace DreamCar.EditorTools
 
             var barBg = new GameObject("BarBG", typeof(RectTransform), typeof(Image));
             barBg.transform.SetParent(panel.transform, false);
-            barBg.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.15f);
+            Skin(barBg.GetComponent<Image>(), "pill", Palette.SurfaceDeep);
             var barBgRt = barBg.GetComponent<RectTransform>();
             barBgRt.anchoredPosition = new Vector2(0f, 20f);
             barBgRt.sizeDelta = new Vector2(700f, 26f);
@@ -1082,7 +1194,7 @@ namespace DreamCar.EditorTools
             var fillGo = new GameObject("Fill", typeof(RectTransform), typeof(Image));
             fillGo.transform.SetParent(barBg.transform, false);
             var fill = fillGo.GetComponent<Image>();
-            fill.color = new Color(0.25f, 0.75f, 1f);
+            Skin(fill, "pill", Palette.Accent);
             fill.type = Image.Type.Filled;
             fill.fillMethod = Image.FillMethod.Horizontal;
             var fillRt = fillGo.GetComponent<RectTransform>();
@@ -1111,6 +1223,63 @@ namespace DreamCar.EditorTools
                 reconnect.reconnectingOverlay = overlay;
                 reconnect.statusLabel = status;
             }
+        }
+
+        // ------------------------------------------------------ Görünüm (tema)
+
+        // Renkler dosyanın her yerine dağılmıştı ve aynı işi gören yüzeyler
+        // farklı renkteydi: (0.15,0.15,0.2,0.9), (1,1,1,0.06), (1,1,1,0.1),
+        // (0.25,0.75,1), (0.2,0.7,1)… Bir arayüzü "tasarlanmış" gösteren şeyin
+        // büyük kısmı bu tutarlılık.
+        static class Palette
+        {
+            public static readonly Color PanelBg     = new(0.07f, 0.08f, 0.12f, 0.96f);
+            public static readonly Color Surface     = new(1f, 1f, 1f, 0.07f);
+            public static readonly Color SurfaceDeep = new(0f, 0f, 0f, 0.55f);
+            public static readonly Color Stroke      = new(1f, 1f, 1f, 0.16f);
+            public static readonly Color ButtonBg    = new(0.16f, 0.18f, 0.26f, 0.95f);
+            public static readonly Color Accent      = new(0.24f, 0.72f, 1f, 1f);
+            public static readonly Color AccentDim   = new(0.24f, 0.72f, 1f, 0.35f);
+            public static readonly Color Good        = new(0.36f, 0.85f, 0.48f, 1f);
+            public static readonly Color TextDim     = new(1f, 1f, 1f, 0.45f);
+        }
+
+        const string UiSpriteFolder = "Assets/Generated/UI";
+
+        // ProceduralUISprites on beş sprite üretiyor (yuvarlak panel, kapsül,
+        // daire, halka, gradyan, chevron, sekiz ikon) ve bu dosya bunların
+        // HİÇBİRİNE referans vermiyordu: her Image varsayılan beyaz kareyle
+        // doğup düz bir renge boyanıyordu. Yani ekrandaki her buton, panel,
+        // sürgü ve kart köşesi keskin, kenarlıksız bir dikdörtgendi.
+        static Sprite Ui(string name) =>
+            AssetDatabase.LoadAssetAtPath<Sprite>($"{UiSpriteFolder}/{name}.png");
+
+        // Sprite yoksa SESSİZCE düz renge düşer. Sahne kurulum menüleri tek tek
+        // de çalıştırılabiliyor; sprite'lar üretilmeden çağrılırsa arayüz
+        // bozulmamalı, sadece sade kalmalı.
+        static Image Skin(Image img, string spriteName, Color tint)
+        {
+            if (!img) return img;
+            img.color = tint;
+
+            var sprite = Ui(spriteName);
+            if (!sprite) return img;
+
+            img.sprite = sprite;
+            // Kenarlıksız bir sprite'a Sliced vermek Unity'de her karede uyarı
+            // bastırır; 9-slice kenarı olan panel/kapsül dilimlenir, daire ve
+            // ikonlar olduğu gibi çizilir.
+            img.type = sprite.border != Vector4.zero ? Image.Type.Sliced : Image.Type.Simple;
+            return img;
+        }
+
+        // BUILD EVERYTHING zinciri sprite'ları sahnelerden önce üretiyor, ama
+        // "Create MainMenu Scene" tek başına da çağrılabiliyor.
+        static void EnsureUiSprites()
+        {
+            if (Directory.Exists(UiSpriteFolder) &&
+                Directory.GetFiles(UiSpriteFolder, "*.png").Length > 0) return;
+            Procedural.ProceduralUISprites.GenerateAll();
         }
 
         // ---------------------------------------------------------- Helpers
@@ -1152,6 +1321,27 @@ namespace DreamCar.EditorTools
                 var bgImg = bg.GetComponent<Image>();
                 bgImg.color = new Color(0.04f, 0.05f, 0.08f, 0.94f);
                 bgImg.raycastTarget = true;
+
+                // Başlık bandı. gradient_fade üretiliyordu ve hiç
+                // kullanılmıyordu; düz bir arayüzü katmanlı göstermenin en ucuz
+                // yolu bu. Yoksa sessizce atlanır.
+                var grad = Ui("gradient_fade");
+                if (grad)
+                {
+                    var band = new GameObject("HeaderBand", typeof(RectTransform), typeof(Image));
+                    band.transform.SetParent(go.transform, false);
+                    band.transform.SetSiblingIndex(1);   // arka planın hemen üstü
+                    var bandRt = band.GetComponent<RectTransform>();
+                    bandRt.anchorMin = new Vector2(0f, 1f);
+                    bandRt.anchorMax = new Vector2(1f, 1f);
+                    bandRt.pivot = new Vector2(0.5f, 1f);
+                    bandRt.offsetMin = new Vector2(0f, -190f);
+                    bandRt.offsetMax = Vector2.zero;
+                    var bandImg = band.GetComponent<Image>();
+                    bandImg.sprite = grad;
+                    bandImg.color = Palette.AccentDim;
+                    bandImg.raycastTarget = false;
+                }
             }
 
             // Çentik / Dynamic Island / ev göstergesi kenarları yiyor. Kontroller
@@ -1182,13 +1372,96 @@ namespace DreamCar.EditorTools
             go.transform.SetParent(parent.transform, false);
             var rt = go.GetComponent<RectTransform>();
             rt.anchoredPosition = anchoredPos;
-            rt.sizeDelta = new Vector2(280f, 80f);
-            go.GetComponent<Image>().color = new Color(0.15f, 0.15f, 0.2f, 0.9f);
+            // 80 referans birim 1080p bir telefonda ~34 dp'ye denk geliyor;
+            // Android'in 48 dp ve Apple'ın 44 pt minimumlarının altında. Sürüş
+            // kontrolleri daha önce büyütülmüştü, geri kalan 25+ buton
+            // varsayılanda kalmıştı.
+            rt.sizeDelta = new Vector2(280f, 120f);
+            Skin(go.GetComponent<Image>(), "pill", Palette.ButtonBg);
             var t = MakeText(go, "Label", label, Vector2.zero, 36);
             var tRt = t.GetComponent<RectTransform>();
             tRt.anchorMin = Vector2.zero; tRt.anchorMax = Vector2.one;
             tRt.offsetMin = Vector2.zero; tRt.offsetMax = Vector2.zero;
             return go.GetComponent<Button>();
+        }
+
+        // Etiketin soluna ikon koyan buton. Ana menüdeki sekiz navigasyon
+        // butonu düz metindi; ikon hem tanınmayı hızlandırıyor hem arayüzü
+        // "kart" hissine yaklaştırıyor.
+        static Button MakeIconButton(GameObject parent, string name, string label,
+                                     Vector2 anchoredPos, string iconName)
+        {
+            var btn = MakeButton(parent, name, label, anchoredPos);
+            var sprite = Ui(iconName);
+            if (!sprite) return btn;   // sprite'lar üretilmemiş: düz butonla kal
+
+            var icon = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+            icon.transform.SetParent(btn.transform, false);
+            var iconRt = icon.GetComponent<RectTransform>();
+            iconRt.anchorMin = new Vector2(0f, 0.5f);
+            iconRt.anchorMax = new Vector2(0f, 0.5f);
+            iconRt.anchoredPosition = new Vector2(46f, 0f);
+            iconRt.sizeDelta = new Vector2(46f, 46f);
+            var img = icon.GetComponent<Image>();
+            img.sprite = sprite;
+            img.preserveAspect = true;
+            // İkon dekoratif: ışın hedefi açık kalırsa butonun kendi tıklamasını
+            // yemez ama gereksiz raycast maliyeti çıkarır.
+            img.raycastTarget = false;
+
+            // Etiketi ikonun sağına kaydır, yoksa üst üste binerler.
+            var labelRt = btn.transform.Find("Label") as RectTransform;
+            if (labelRt)
+            {
+                labelRt.offsetMin = new Vector2(78f, labelRt.offsetMin.y);
+                labelRt.offsetMax = new Vector2(-16f, labelRt.offsetMax.y);
+
+                // İkon 78 birim yer aldı: 280 genişlikte etikete ~186 kalıyor
+                // ve "Başarımlar" 36 punto ile oraya sığmıyor. Otomatik
+                // küçültme, kısa etiketleri küçültmeden uzunları sığdırıyor.
+                var label = labelRt.GetComponent<TMP_Text>();
+                if (label)
+                {
+                    label.enableAutoSizing = true;
+                    label.fontSizeMin = 20f;
+                    label.fontSizeMax = 36f;
+                    // enableWordWrapping Unity 6'da [Obsolete]; sarma zaten
+                    // 120 birim yükseklikte sorun değil, taşma da otomatik
+                    // küçültmeden sonra nadiren oluşuyor.
+                    label.overflowMode = TextOverflowModes.Ellipsis;
+                }
+            }
+
+            return btn;
+        }
+
+        // "◀"/"▶" karakterleri yazı tipinde yoksa boş kutu çizilir. Chevron
+        // sprite'ı zaten üretiliyordu ve hiç kullanılmıyordu.
+        static Button MakeChevronButton(GameObject parent, string name,
+                                        Vector2 anchoredPos, bool pointRight)
+        {
+            var btn = MakeButton(parent, name, "", anchoredPos);
+            var sprite = Ui("chevron");
+            if (!sprite)
+            {
+                var fallback = btn.GetComponentInChildren<TMP_Text>();
+                if (fallback) fallback.text = pointRight ? ">" : "<";
+                return btn;
+            }
+
+            var icon = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+            icon.transform.SetParent(btn.transform, false);
+            var iconRt = icon.GetComponent<RectTransform>();
+            iconRt.anchorMin = new Vector2(0.5f, 0.5f);
+            iconRt.anchorMax = new Vector2(0.5f, 0.5f);
+            iconRt.sizeDelta = new Vector2(48f, 48f);
+            // Sprite sağa bakıyor; sola bakan için 180° döndür.
+            iconRt.localRotation = Quaternion.Euler(0f, 0f, pointRight ? 0f : 180f);
+            var img = icon.GetComponent<Image>();
+            img.sprite = sprite;
+            img.preserveAspect = true;
+            img.raycastTarget = false;
+            return btn;
         }
 
         static Toggle MakeToggle(GameObject parent, string name, string label,
@@ -1206,14 +1479,14 @@ namespace DreamCar.EditorTools
             boxRt.anchorMin = new Vector2(0f, 0.5f); boxRt.anchorMax = new Vector2(0f, 0.5f);
             boxRt.anchoredPosition = new Vector2(35f, 0f);
             boxRt.sizeDelta = new Vector2(46f, 46f);
-            box.GetComponent<Image>().color = new Color(0.15f, 0.15f, 0.2f, 0.9f);
+            Skin(box.GetComponent<Image>(), "panel", Palette.ButtonBg);
 
             var check = new GameObject("Check", typeof(RectTransform), typeof(Image));
             check.transform.SetParent(box.transform, false);
             var checkRt = check.GetComponent<RectTransform>();
             checkRt.anchorMin = Vector2.zero; checkRt.anchorMax = Vector2.one;
             checkRt.offsetMin = new Vector2(8f, 8f); checkRt.offsetMax = new Vector2(-8f, -8f);
-            check.GetComponent<Image>().color = new Color(0.35f, 0.75f, 0.45f, 1f);
+            Skin(check.GetComponent<Image>(), "circle", Palette.Good);
 
             var text = MakeText(go, "Label", label, new Vector2(60f, 0f), 28);
             text.alignment = TextAlignmentOptions.MidlineLeft;
@@ -1231,8 +1504,9 @@ namespace DreamCar.EditorTools
             go.transform.SetParent(parent.transform, false);
             var rt = go.GetComponent<RectTransform>();
             rt.anchoredPosition = anchoredPos;
-            rt.sizeDelta = new Vector2(480f, 60f);
-            go.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.1f);
+            // 60 birim ≈ 25 dp; açılır menü kapalı hali de dokunma hedefi.
+            rt.sizeDelta = new Vector2(480f, 90f);
+            Skin(go.GetComponent<Image>(), "panel_outline", Palette.Surface);
 
             var label = MakeText(go, "Label", "", Vector2.zero, 28);
             var labelRt = label.GetComponent<RectTransform>();
@@ -1248,8 +1522,9 @@ namespace DreamCar.EditorTools
             tplRt.anchorMin = new Vector2(0f, 0f); tplRt.anchorMax = new Vector2(1f, 0f);
             tplRt.pivot = new Vector2(0.5f, 1f);
             tplRt.anchoredPosition = new Vector2(0f, 2f);
-            tplRt.sizeDelta = new Vector2(0f, 220f);
-            template.GetComponent<Image>().color = new Color(0.1f, 0.1f, 0.14f, 0.98f);
+            // Satır 80 birim: dört satır sığsın (220 üçü bile göstermiyordu).
+            tplRt.sizeDelta = new Vector2(0f, 320f);
+            Skin(template.GetComponent<Image>(), "panel", Palette.PanelBg);
 
             var viewport = new GameObject("Viewport", typeof(RectTransform), typeof(Mask), typeof(Image));
             viewport.transform.SetParent(template.transform, false);
@@ -1263,20 +1538,21 @@ namespace DreamCar.EditorTools
             var contentRt = content.GetComponent<RectTransform>();
             contentRt.anchorMin = new Vector2(0f, 1f); contentRt.anchorMax = new Vector2(1f, 1f);
             contentRt.pivot = new Vector2(0.5f, 1f);
-            contentRt.sizeDelta = new Vector2(0f, 56f);
+            contentRt.sizeDelta = new Vector2(0f, 80f);
 
             var item = new GameObject("Item", typeof(RectTransform), typeof(Toggle));
             item.transform.SetParent(content.transform, false);
             var itemRt = item.GetComponent<RectTransform>();
             itemRt.anchorMin = new Vector2(0f, 0.5f); itemRt.anchorMax = new Vector2(1f, 0.5f);
-            itemRt.sizeDelta = new Vector2(0f, 56f);
+            // Açılır menü satırı 56 → 80 birim (~23 dp → ~34 dp).
+            itemRt.sizeDelta = new Vector2(0f, 80f);
 
             var itemBg = new GameObject("Item Background", typeof(RectTransform), typeof(Image));
             itemBg.transform.SetParent(item.transform, false);
             var itemBgRt = itemBg.GetComponent<RectTransform>();
             itemBgRt.anchorMin = Vector2.zero; itemBgRt.anchorMax = Vector2.one;
             itemBgRt.offsetMin = Vector2.zero; itemBgRt.offsetMax = Vector2.zero;
-            itemBg.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.06f);
+            Skin(itemBg.GetComponent<Image>(), "panel", Palette.Surface);
 
             var itemLabel = MakeText(item, "Item Label", "Option", Vector2.zero, 26);
             var itemLabelRt = itemLabel.GetComponent<RectTransform>();
@@ -1313,7 +1589,7 @@ namespace DreamCar.EditorTools
             var bgRt = bg.GetComponent<RectTransform>();
             bgRt.anchorMin = new Vector2(0f, 0.35f); bgRt.anchorMax = new Vector2(1f, 0.65f);
             bgRt.offsetMin = Vector2.zero; bgRt.offsetMax = Vector2.zero;
-            bg.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.15f);
+            Skin(bg.GetComponent<Image>(), "pill", Palette.SurfaceDeep);
 
             var fillArea = new GameObject("Fill Area", typeof(RectTransform));
             fillArea.transform.SetParent(go.transform, false);
@@ -1326,7 +1602,7 @@ namespace DreamCar.EditorTools
             var fillRt = fillGo.GetComponent<RectTransform>();
             fillRt.anchorMin = Vector2.zero; fillRt.anchorMax = new Vector2(1f, 1f);
             fillRt.offsetMin = Vector2.zero; fillRt.offsetMax = Vector2.zero;
-            fillGo.GetComponent<Image>().color = new Color(0.25f, 0.75f, 1f);
+            Skin(fillGo.GetComponent<Image>(), "pill", Palette.Accent);
 
             var handleArea = new GameObject("Handle Slide Area", typeof(RectTransform));
             handleArea.transform.SetParent(go.transform, false);
@@ -1337,8 +1613,9 @@ namespace DreamCar.EditorTools
             var handle = new GameObject("Handle", typeof(RectTransform), typeof(Image));
             handle.transform.SetParent(handleArea.transform, false);
             var handleRt = handle.GetComponent<RectTransform>();
-            handleRt.sizeDelta = new Vector2(32f, 36f);
-            handle.GetComponent<Image>().color = Color.white;
+            // 32x36 ≈ 15 dp — projedeki en küçük dokunma hedefiydi.
+            handleRt.sizeDelta = new Vector2(64f, 64f);
+            Skin(handle.GetComponent<Image>(), "circle", Color.white);
 
             var slider = go.GetComponent<Slider>();
             slider.fillRect = fillRt;
@@ -1358,7 +1635,7 @@ namespace DreamCar.EditorTools
             var rt = scrollGo.GetComponent<RectTransform>();
             rt.anchoredPosition = anchoredPos;
             rt.sizeDelta = size;
-            scrollGo.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.25f);
+            Skin(scrollGo.GetComponent<Image>(), "panel", Palette.SurfaceDeep);
 
             var viewport = new GameObject("Viewport", typeof(RectTransform), typeof(Mask), typeof(Image));
             viewport.transform.SetParent(scrollGo.transform, false);
@@ -1399,6 +1676,18 @@ namespace DreamCar.EditorTools
         // Bir RectTransform'u ekran köşesine sabitler. corner: (0,0) sol-alt,
         // (1,0) sağ-alt, (0,1) sol-üst, (1,1) sağ-üst. offset o köşeden içeri doğru
         // (x sağa, y yukarı pozitif) — sağ/üst köşelerde işareti otomatik çevrilir.
+        // Kenara/köşeye göre hizalar ama offset işaretine dokunmaz. AnchorCorner
+        // x işaretini köşeye göre ters çeviriyor; bu, kenar ORTASINA hizalarken
+        // (anchor.x = 0.5) yanlış: oradaki negatif x gerçekten "sola" demek.
+        static void AnchorTo(RectTransform rt, Vector2 anchor, Vector2 pos, Vector2 size)
+        {
+            rt.anchorMin = anchor;
+            rt.anchorMax = anchor;
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = size;
+            rt.anchoredPosition = pos;
+        }
+
         static void AnchorCorner(RectTransform rt, Vector2 corner, Vector2 offset, Vector2 size)
         {
             rt.anchorMin = corner;
@@ -1448,7 +1737,7 @@ namespace DreamCar.EditorTools
             row.transform.SetParent(parent.transform, false);
             row.SetActive(false);
             row.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 96f);
-            row.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.06f);
+            Skin(row.GetComponent<Image>(), "panel", Palette.Surface);
             row.GetComponent<LayoutElement>().preferredHeight = 96f;
 
             var nameText = MakeText(row, "Text0", "", Vector2.zero, 30);
@@ -1477,7 +1766,7 @@ namespace DreamCar.EditorTools
             go.transform.SetParent(parent.transform, false);
             go.SetActive(false);
             go.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 72f);
-            go.GetComponent<Image>().color = new Color(0.08f, 0.09f, 0.13f, 0.92f);
+            Skin(go.GetComponent<Image>(), "pill", Palette.PanelBg);
             go.GetComponent<LayoutElement>().preferredHeight = 72f;
 
             var label = MakeText(go, "Label", "", Vector2.zero, 30);
@@ -1497,7 +1786,7 @@ namespace DreamCar.EditorTools
             go.transform.SetParent(parent.transform, false);
             go.SetActive(false);
             go.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 76f);
-            go.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.08f);
+            Skin(go.GetComponent<Image>(), "panel", Palette.Surface);
             go.GetComponent<LayoutElement>().preferredHeight = 76f;
 
             var label = MakeText(go, "Label", "", Vector2.zero, 28);
@@ -1515,7 +1804,7 @@ namespace DreamCar.EditorTools
             row.SetActive(false);
             var rt = row.GetComponent<RectTransform>();
             rt.sizeDelta = new Vector2(0f, 64f);
-            row.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.06f);
+            Skin(row.GetComponent<Image>(), "panel", Palette.Surface);
             row.GetComponent<LayoutElement>().preferredHeight = 64f;
 
             float[] anchors = { 0.02f, 0.14f, 0.72f };
@@ -1551,7 +1840,7 @@ namespace DreamCar.EditorTools
             var rt = go.GetComponent<RectTransform>();
             rt.anchoredPosition = anchoredPos;
             rt.sizeDelta = new Vector2(500f, 70f);
-            go.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.1f);
+            Skin(go.GetComponent<Image>(), "panel_outline", Palette.Surface);
 
             var textArea = new GameObject("Text Area", typeof(RectTransform), typeof(RectMask2D));
             textArea.transform.SetParent(go.transform, false);
@@ -1566,7 +1855,7 @@ namespace DreamCar.EditorTools
             pRt.offsetMin = Vector2.zero; pRt.offsetMax = Vector2.zero;
             var pTxt = placeholderGo.AddComponent<TextMeshProUGUI>();
             pTxt.text = placeholder;
-            pTxt.color = new Color(1f, 1f, 1f, 0.4f);
+            pTxt.color = Palette.TextDim;
             pTxt.fontSize = 32;
             pTxt.alignment = TextAlignmentOptions.MidlineLeft;
 
