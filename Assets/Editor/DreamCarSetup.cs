@@ -331,15 +331,18 @@ namespace DreamCar.EditorTools
             lobbyUI.roomEntryPrefab = MakeRoomEntryTemplate(lobbyPanel, "RoomEntryTemplate");
 
             // Toast stack
+            // toastRoot güvenli alana oturan tam ekran kap (MakeUiChild ekliyor);
+            // yığın onun ALTINDA ayrı bir çocuk olmalı — anchor'larını burada
+            // ezseydik SafeAreaFitter her karede geri yazardı.
             var toastRoot = MakeUiChild(canvasGo, "ToastStack");
-            // MakeUiChild tam ekran gerdiriyor ve düzen bileşeni yok — toast'lar üst
-            // üste binerdi. Alt ortada sınırlı bir alana al ve dikey yığ.
-            var toastRt = toastRoot.GetComponent<RectTransform>();
+            var toastColumn = new GameObject("ToastColumn", typeof(RectTransform));
+            toastColumn.transform.SetParent(toastRoot.transform, false);
+            var toastRt = toastColumn.GetComponent<RectTransform>();
             toastRt.anchorMin = new Vector2(0.5f, 0f); toastRt.anchorMax = new Vector2(0.5f, 0f);
             toastRt.pivot = new Vector2(0.5f, 0f);
             toastRt.anchoredPosition = new Vector2(0f, 140f);
             toastRt.sizeDelta = new Vector2(900f, 400f);
-            var toastLayout = toastRoot.AddComponent<VerticalLayoutGroup>();
+            var toastLayout = toastColumn.AddComponent<VerticalLayoutGroup>();
             toastLayout.spacing = 8f;
             toastLayout.childAlignment = TextAnchor.LowerCenter;
             toastLayout.childControlHeight = false; toastLayout.childForceExpandHeight = false;
@@ -525,15 +528,18 @@ namespace DreamCar.EditorTools
             // PhotonNetwork.Instantiate ile doğuyor (RoomManager.SpawnLocalCar).
 
             // Toast stack
+            // toastRoot güvenli alana oturan tam ekran kap (MakeUiChild ekliyor);
+            // yığın onun ALTINDA ayrı bir çocuk olmalı — anchor'larını burada
+            // ezseydik SafeAreaFitter her karede geri yazardı.
             var toastRoot = MakeUiChild(canvasGo, "ToastStack");
-            // MakeUiChild tam ekran gerdiriyor ve düzen bileşeni yok — toast'lar üst
-            // üste binerdi. Alt ortada sınırlı bir alana al ve dikey yığ.
-            var toastRt = toastRoot.GetComponent<RectTransform>();
+            var toastColumn = new GameObject("ToastColumn", typeof(RectTransform));
+            toastColumn.transform.SetParent(toastRoot.transform, false);
+            var toastRt = toastColumn.GetComponent<RectTransform>();
             toastRt.anchorMin = new Vector2(0.5f, 0f); toastRt.anchorMax = new Vector2(0.5f, 0f);
             toastRt.pivot = new Vector2(0.5f, 0f);
             toastRt.anchoredPosition = new Vector2(0f, 140f);
             toastRt.sizeDelta = new Vector2(900f, 400f);
-            var toastLayout = toastRoot.AddComponent<VerticalLayoutGroup>();
+            var toastLayout = toastColumn.AddComponent<VerticalLayoutGroup>();
             toastLayout.spacing = 8f;
             toastLayout.childAlignment = TextAnchor.LowerCenter;
             toastLayout.childControlHeight = false; toastLayout.childForceExpandHeight = false;
@@ -916,6 +922,12 @@ namespace DreamCar.EditorTools
             var rt = go.GetComponent<RectTransform>();
             rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
             rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+
+            // Çentik / Dynamic Island / ev göstergesi kenarları yiyor. Kontroller
+            // köşelere sabitlendiği için tam oraya denk geliyorlar; panelleri güvenli
+            // alana oturtuyoruz. Doğrudan Canvas'a değil panellere uygulanır ki
+            // Canvas'ın kendi ölçekleme davranışı bozulmasın.
+            go.AddComponent<SafeAreaFitter>();
             return go;
         }
 
