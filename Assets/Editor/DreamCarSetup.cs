@@ -241,7 +241,10 @@ namespace DreamCar.EditorTools
             boot.AddComponent<PlayFabMoneySync>();
             boot.AddComponent<PlayFabInventoryBridge>();
             boot.AddComponent<PlayFabLeaderboards>();
-            boot.AddComponent<PlayFabAchievements>();
+            // Katalog olmadan hiçbir başarım değerlendirilemez: EvaluateForStat
+            // katalogdaki tanımlar üzerinde dönüyor.
+            boot.AddComponent<PlayFabAchievements>().catalog =
+                Procedural.ProceduralAchievements.Load();
             boot.AddComponent<ReferralSystem>();
             boot.AddComponent<PlayFabFriends>();
             boot.AddComponent<PlayedWithList>();
@@ -436,7 +439,10 @@ namespace DreamCar.EditorTools
             boot.AddComponent<ChatRateLimiter>();
             boot.AddComponent<DreamCar.Settings.QualityAutoDetect>();
             boot.AddComponent<PlayFabAuth>();
-            boot.AddComponent<PlayFabAchievements>();
+            // Katalog olmadan hiçbir başarım değerlendirilemez: EvaluateForStat
+            // katalogdaki tanımlar üzerinde dönüyor.
+            boot.AddComponent<PlayFabAchievements>().catalog =
+                Procedural.ProceduralAchievements.Load();
             boot.AddComponent<RateAppPopup>();
 
             var roomManager = boot.AddComponent<RoomManager>();
@@ -805,6 +811,8 @@ namespace DreamCar.EditorTools
             achievements.listParent = achList;
             achievements.rowPrefab = MakeRowPrefabTemplate(achPanel, "RowTemplate", 3);
             achievements.summaryLabel = achSummary;
+            // catalog atanmazsa Refresh() ilk guard'da dönüyor ve ekran hep boş kalıyordu.
+            achievements.catalog = Procedural.ProceduralAchievements.Load();
 
             // --- Coin mağazası ---
             var shopPanel = MakeUiChild(canvasGo, "CoinShopScreen");
@@ -821,6 +829,32 @@ namespace DreamCar.EditorTools
             coinShop.balanceLabel = shopBalance;
             coinShop.watchAdButton = adBtn;
             coinShop.adRewardLabel = adReward;
+
+            // packs boştu: mağazada satın alınabilecek hiçbir paket görünmüyordu,
+            // yalnızca "Reklam İzle" vardı. Ürün kimlikleri IAPManager'ın mağaza
+            // tarafında tanımlayacağı kimliklerle birebir aynı olmalı.
+            var packDefs = new[]
+            {
+                ("coins_small",  "50.000 ₺",    "₺29,99",  -60f),
+                ("coins_medium", "150.000 ₺",   "₺74,99",   10f),
+                ("coins_large",  "500.000 ₺",   "₺199,99",  80f),
+            };
+
+            var packs = new System.Collections.Generic.List<CoinShopScreen.CoinPack>();
+            foreach (var (productId, label, price, y) in packDefs)
+            {
+                var btn = MakeButton(shopPanel, "Pack_" + productId, $"{label}   {price}",
+                                     new Vector2(0f, y));
+                btn.GetComponent<RectTransform>().sizeDelta = new Vector2(520f, 110f);
+                packs.Add(new CoinShopScreen.CoinPack
+                {
+                    productId = productId,
+                    displayName = label,
+                    priceLabel = price,
+                    buyButton = btn,
+                });
+            }
+            coinShop.packs = packs.ToArray();
 
             // --- İstatistik ---
             var statsPanel = MakeUiChild(canvasGo, "StatsScreen");
@@ -840,6 +874,58 @@ namespace DreamCar.EditorTools
             stats.crashesLabel = MakeStatRow(statsPanel, "Çarpışma", -330f);
             stats.closeButton = MakeButton(statsPanel, "Close", "Kapat", new Vector2(0f, -430f));
 
+            // --- Oda kurucu ---
+            // Hiçbir sahneye eklenmiyordu: şifreli oda, mod ve harita seçimi yazılmıştı
+            // ama oyuncu bunlara hiç ulaşamıyordu, yalnızca LobbyUI'nin isimsiz
+            // CreateRoom'u vardı.
+            //
+            // DİKKAT: RoomCreatorUI.Start() bu alanların HEPSİNİ null kontrolsüz
+            // kullanıyor (ClearOptions, minValue, onClick). Biri eksik kalırsa
+            // ana menü açılışta NullReferenceException atar.
+            var createPanel = MakeUiChild(canvasGo, "RoomCreatorScreen");
+            createPanel.SetActive(false);
+            MakeText(createPanel, "Title", "Oda Kur", new Vector2(0f, 420f), 64);
+
+            var rcName = MakeInputField(createPanel, "NameInput", "Oda adı", new Vector2(0f, 300f));
+            var rcPass = MakeInputField(createPanel, "PasswordInput", "Şifre (boş = herkese açık)", new Vector2(0f, 210f));
+            var rcMode = MakeDropdown(createPanel, "ModeDropdown", new Vector2(0f, 120f));
+            var rcMap = MakeDropdown(createPanel, "MapDropdown", new Vector2(0f, 40f));
+            var rcSlider = MakeSlider(createPanel, "MaxPlayersSlider", new Vector2(0f, -50f));
+            var rcSliderLabel = MakeText(createPanel, "MaxPlayersLabel", "10 oyuncu", new Vector2(380f, -50f), 28);
+            var rcVisible = MakeToggle(createPanel, "VisibleToggle", "Oda listesinde görünsün", new Vector2(0f, -130f), true);
+            var rcCreate = MakeButton(createPanel, "CreateButton", "ODAYI KUR", new Vector2(0f, -240f));
+            var rcClose = MakeButton(createPanel, "Close", "Kapat", new Vector2(0f, -380f));
+
+            var roomCreator = createPanel.AddComponent<RoomCreatorUI>();
+            roomCreator.nameInput = rcName;
+            roomCreator.passwordInput = rcPass;
+            roomCreator.modeDropdown = rcMode;
+            roomCreator.mapDropdown = rcMap;
+            roomCreator.maxPlayersSlider = rcSlider;
+            roomCreator.maxPlayersLabel = rcSliderLabel;
+            roomCreator.visibleToggle = rcVisible;
+            roomCreator.createButton = rcCreate;
+            roomCreator.mapCatalog = Procedural.Maps.ProceduralMapGenerator.LoadMapCatalog();
+
+            // --- Bölge seçici ---
+            // PhotonConnector RegionSelector.SavedRegion'ı okuyor ama o değeri yazacak
+            // ekran hiç kurulmuyordu: herkes varsayılan bölgede kalıyordu. Türkiye'den
+            // oynayan biri için yanlış bölge doğrudan yüksek ping demek.
+            var regionPanel = MakeUiChild(canvasGo, "RegionScreen");
+            regionPanel.SetActive(false);
+            MakeText(regionPanel, "Title", "Sunucu Bölgesi", new Vector2(0f, 420f), 64);
+            var regionCurrent = MakeText(regionPanel, "Current", "-", new Vector2(0f, 300f), 32);
+            var regionDd = MakeDropdown(regionPanel, "RegionDropdown", new Vector2(0f, 180f));
+            var regionApply = MakeButton(regionPanel, "ApplyButton", "Uygula", new Vector2(0f, 40f));
+            var regionClose = MakeButton(regionPanel, "Close", "Kapat", new Vector2(0f, -380f));
+
+            var region = regionPanel.AddComponent<RegionSelector>();
+            region.panel = regionPanel;
+            region.dropdown = regionDd;
+            region.currentRegionLabel = regionCurrent;
+            region.applyButton = regionApply;
+            region.closeButton = regionClose;
+
             // --- Ana menüdeki açma butonları ---
             // DİKKAT: onClick.AddListener çalışma anında listener ekler ve sahneye
             // SERIALIZE EDİLMEZ. Sahne kaydedilip build'de yüklendiğinde bu beş
@@ -855,6 +941,15 @@ namespace DreamCar.EditorTools
             UnityEventTools.AddPersistentListener(navShop.onClick, coinShop.Open);
             var navStats = MakeButton(mainPanel, "NavStats", "İstatistik", new Vector2(600f, -300f));
             UnityEventTools.AddPersistentListener(navStats.onClick, stats.Open);
+
+            // İkinci sıra — birinci sıra beş butonla dolu.
+            // RoomCreatorUI'de Open/Close yok, panel alanı da yok — paneli doğrudan
+            // açıp kapatıyoruz. GameObject.SetActive kalıcı listener hedefi olabiliyor.
+            var navCreate = MakeButton(mainPanel, "NavCreateRoom", "Oda Kur", new Vector2(-150f, -400f));
+            UnityEventTools.AddBoolPersistentListener(navCreate.onClick, createPanel.SetActive, true);
+            UnityEventTools.AddBoolPersistentListener(rcClose.onClick, createPanel.SetActive, false);
+            var navRegion = MakeButton(mainPanel, "NavRegion", "Bölge", new Vector2(150f, -400f));
+            UnityEventTools.AddPersistentListener(navRegion.onClick, region.Open);
         }
 
         static void BuildLoadingScreen(GameObject canvasGo, GameObject boot)
@@ -960,6 +1055,40 @@ namespace DreamCar.EditorTools
             tRt.anchorMin = Vector2.zero; tRt.anchorMax = Vector2.one;
             tRt.offsetMin = Vector2.zero; tRt.offsetMax = Vector2.zero;
             return go.GetComponent<Button>();
+        }
+
+        static Toggle MakeToggle(GameObject parent, string name, string label,
+                                 Vector2 anchoredPos, bool isOn)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Toggle));
+            go.transform.SetParent(parent.transform, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchoredPosition = anchoredPos;
+            rt.sizeDelta = new Vector2(520f, 70f);
+
+            var box = new GameObject("Box", typeof(RectTransform), typeof(Image));
+            box.transform.SetParent(go.transform, false);
+            var boxRt = box.GetComponent<RectTransform>();
+            boxRt.anchorMin = new Vector2(0f, 0.5f); boxRt.anchorMax = new Vector2(0f, 0.5f);
+            boxRt.anchoredPosition = new Vector2(35f, 0f);
+            boxRt.sizeDelta = new Vector2(46f, 46f);
+            box.GetComponent<Image>().color = new Color(0.15f, 0.15f, 0.2f, 0.9f);
+
+            var check = new GameObject("Check", typeof(RectTransform), typeof(Image));
+            check.transform.SetParent(box.transform, false);
+            var checkRt = check.GetComponent<RectTransform>();
+            checkRt.anchorMin = Vector2.zero; checkRt.anchorMax = Vector2.one;
+            checkRt.offsetMin = new Vector2(8f, 8f); checkRt.offsetMax = new Vector2(-8f, -8f);
+            check.GetComponent<Image>().color = new Color(0.35f, 0.75f, 0.45f, 1f);
+
+            var text = MakeText(go, "Label", label, new Vector2(60f, 0f), 28);
+            text.alignment = TextAlignmentOptions.MidlineLeft;
+
+            var toggle = go.GetComponent<Toggle>();
+            toggle.targetGraphic = box.GetComponent<Image>();
+            toggle.graphic = check.GetComponent<Image>();
+            toggle.isOn = isOn;
+            return toggle;
         }
 
         static TMP_Dropdown MakeDropdown(GameObject parent, string name, Vector2 anchoredPos)

@@ -23,6 +23,7 @@ namespace DreamCar.EditorTools.Procedural
                 "• Texture ve materyaller\n" +
                 "• 5 araç prefab'ı (mesh dahil)\n" +
                 "• Araç kataloğu\n" +
+                "• Başarım kataloğu (12 başarım)\n" +
                 "• UI sprite'ları\n" +
                 "• Uygulama ikonları ve açılış ekranı\n" +
                 "• Post-processing profilleri (3 kalite kademesi)\n" +
@@ -67,6 +68,12 @@ namespace DreamCar.EditorTools.Procedural
 
                 EditorUtility.DisplayProgressBar("DreamCar", "Araç kataloğu kuruluyor…", 0.42f);
                 ProceduralCarGenerator.BuildCatalog();
+
+                // Sahnelerden ÖNCE: hem AchievementsScreen hem PlayFabAchievements bu
+                // kataloğa referans veriyor. Sonra üretilseydi bağlanacak varlık henüz
+                // olmaz, başarım ekranı boş kalır ve hiçbir başarım değerlendirilmezdi.
+                EditorUtility.DisplayProgressBar("DreamCar", "Başarım kataloğu…", 0.46f);
+                ProceduralAchievements.Generate();
 
                 // En uzun adım: 8 harita sahnesi. Sahnelerden ÖNCE koşmalı — MapCatalog'u
                 // üretiyor ve MainMenu ile Game sahnesindeki MapSelector ona referans
