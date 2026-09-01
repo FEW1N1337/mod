@@ -72,6 +72,13 @@ namespace DreamCar.Core
             if (_pendingDistance > 0.01f)
             {
                 PlayerStats.Instance.AddDistance(_pendingDistance);
+
+                // Başarım tarafına da bildir: PlayFabAchievements.OnDistanceTravelled
+                // projede hiçbir yerden çağrılmıyordu, yani distanceMeters istatistiği
+                // hiç artmıyor ve mesafeye bağlı başarımlar hiç açılamıyordu.
+                var ach = Backend.PlayFabAchievements.Instance;
+                if (ach) ach.OnDistanceTravelled(_pendingDistance);
+
                 _pendingDistance = 0f;
             }
             if (_pendingTime > 0.01f)

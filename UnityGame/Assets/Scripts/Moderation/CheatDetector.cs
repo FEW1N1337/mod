@@ -123,8 +123,19 @@ namespace DreamCar.Moderation
             if (showToastOnDetect)
                 UI.ToastNotification.Show($"Şüpheli hareket: {nickname}");
 
-            if (masterAutoKick && PhotonNetwork.IsMasterClient && view.Owner != null)
-                PhotonNetwork.CloseConnection(view.Owner);
+            if (!masterAutoKick || !PhotonNetwork.IsMasterClient || view.Owner == null) return;
+
+            // Düz CloseConnection hileciyi yalnızca bağlantıdan atıyordu; oyuncu
+            // saniyeler içinde aynı odaya geri girebiliyordu. BanList üzerinden
+            // geçirince kimlik kalıcı listeye yazılıyor ve OnPlayerEnteredRoom onu
+            // bir daha içeri almıyor. (BanList.Ban zaten CloseConnection çağırıyor.)
+            //
+            // Ayrıca BanList.Ban'in projede başka hiçbir çağıranı yoktu: ban listesi
+            // her zaman boş kalıyordu, yani ban sistemi bütünüyle ölüydü.
+            if (BanList.Instance && !string.IsNullOrEmpty(view.Owner.UserId))
+                BanList.Instance.Ban(view.Owner);
+            else
+                PhotonNetwork.CloseConnection(view.Owner);   // UserId yoksa eski davranış
         }
 
         static bool IsFinite(Vector3 v) =>

@@ -25,6 +25,10 @@ namespace DreamCar.Economy
             {
                 if (!def) continue;
                 var go = Instantiate(entryPrefab, listParent);
+                // entryPrefab sahnede kapalı duran bir şablon; klon da kapalı doğar ve
+                // kapalı objede GetComponentsInChildren (includeInactive olmadan) boş
+                // döner — satırlar hem görünmez hem metinsiz kalırdı.
+                go.SetActive(true);
                 var texts = go.GetComponentsInChildren<TMP_Text>();
                 if (texts.Length > 0) texts[0].text = def.displayName;
                 if (texts.Length > 1) texts[1].text = def.price.ToString("N0") + " ₺";
@@ -37,7 +41,10 @@ namespace DreamCar.Economy
                 {
                     bool owned = CarInventory.Instance && CarInventory.Instance.Owns(def.id);
                     btn.interactable = !owned;
-                    btn.GetComponentInChildren<TMP_Text>().text = owned ? "Sahip" : "Satın Al";
+                    // Butonda etiket yoksa korumasız erişim NullReferenceException atıp
+                    // döngüyü kesiyordu: o araçtan sonrakiler hiç listelenmezdi.
+                    var btnLabel = btn.GetComponentInChildren<TMP_Text>();
+                    if (btnLabel) btnLabel.text = owned ? "Sahip" : "Satın Al";
                     var d = def;
                     btn.onClick.AddListener(() =>
                     {

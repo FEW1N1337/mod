@@ -59,10 +59,39 @@ namespace DreamCar.Network
             OnRoomListChanged?.Invoke();
         }
 
+        [Tooltip("Harita kataloğu. Oda 'map' özelliğini taşıyorsa o haritanın sahnesi " +
+                 "yüklenir; katalog yoksa ya da eşleşme bulunamazsa gameSceneName'e düşülür.")]
+        public Maps.MapCatalog mapCatalog;
+
         public override void OnJoinedRoom()
         {
-            if (PhotonNetwork.IsMasterClient)
-                PhotonNetwork.LoadLevel(gameSceneName);
+            if (!PhotonNetwork.IsMasterClient) return;
+
+            // Eskiden HER ZAMAN sabit "Game" sahnesi yükleniyordu. Sonucu: üretilen
+            // sekiz harita sahnesinin hiçbiri hiç açılmıyordu ve oda kurarken yapılan
+            // harita seçimi tamamen anlamsızdı — MapSelector.LoadMap'in de projede
+            // hiçbir çağıranı yok. Oda özelliğindeki haritanın sahnesini yüklüyoruz.
+            PhotonNetwork.LoadLevel(ResolveSceneName());
+        }
+
+        string ResolveSceneName()
+        {
+            if (!mapCatalog) return gameSceneName;
+            if (!PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(
+                    Maps.MapSelector.MapPropKey, out object idObj)) return gameSceneName;
+
+            var def = mapCatalog.Find(idObj as string);
+            if (!def || string.IsNullOrEmpty(def.sceneName)) return gameSceneName;
+
+            // Sahne Build Settings'te yoksa LoadLevel sessizce başarısız olur ve
+            // oyuncular boş bir odada asılı kalırdı; o durumda bilinen sahneye dön.
+            if (!Application.CanStreamedLevelBeLoaded(def.sceneName))
+            {
+                Debug.LogWarning($"[Lobby] '{def.sceneName}' Build Settings'te yok, " +
+                                 $"'{gameSceneName}' yükleniyor.");
+                return gameSceneName;
+            }
+            return def.sceneName;
         }
 
         // OnJoinFailed event'ine projede hiçbir yerde abone olunmuyor (LobbyUI sadece

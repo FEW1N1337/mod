@@ -216,7 +216,10 @@ namespace DreamCar.EditorTools
             boot.AddComponent<GameBootstrap>();
             boot.AddComponent<PhotonConnector>();
             boot.AddComponent<ReconnectionManager>();
-            boot.AddComponent<LobbyManager>();
+            // Harita kataloğu olmadan lobi seçilen haritayı çözemez ve her zaman
+            // sabit "Game" sahnesini yükler — sekiz harita sahnesi hiç açılmazdı.
+            boot.AddComponent<LobbyManager>().mapCatalog =
+                Procedural.Maps.ProceduralMapGenerator.LoadMapCatalog();
             boot.AddComponent<LoginStreak>();
             boot.AddComponent<BanList>();
             boot.AddComponent<PlayerMoney>();
