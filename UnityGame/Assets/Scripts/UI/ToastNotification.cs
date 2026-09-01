@@ -33,7 +33,9 @@ namespace DreamCar.UI
 
         IEnumerator FadeAndKill(GameObject go)
         {
-            yield return new WaitForSeconds(lifeSeconds);
+            // PauseMenu Time.timeScale=0 yapıyor; WaitForSeconds o anda tamamen duruyor ve
+            // duraklatma sırasında çıkan toast'lar ekranda kalıcı olarak asılı kalıyordu.
+            yield return new WaitForSecondsRealtime(lifeSeconds);
             if (go) Destroy(go);
         }
     }

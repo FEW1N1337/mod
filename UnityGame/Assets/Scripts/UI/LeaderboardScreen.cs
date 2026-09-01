@@ -80,6 +80,8 @@ namespace DreamCar.UI
         {
             if (!listParent || !rowPrefab) return;
             var go = Instantiate(rowPrefab, listParent);
+            // rowPrefab sahnede kapalı duran bir şablon; klon da kapalı doğuyordu.
+            go.SetActive(true);
             var texts = go.GetComponentsInChildren<TMP_Text>();
             if (texts.Length > 0) texts[0].text = rank > 0 ? rank.ToString() : "";
             if (texts.Length > 1) texts[1].text = name;

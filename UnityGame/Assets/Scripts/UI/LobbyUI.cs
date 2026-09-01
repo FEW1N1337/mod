@@ -18,8 +18,12 @@ namespace DreamCar.UI
             if (LobbyManager.Instance)
                 LobbyManager.Instance.OnRoomListChanged += Refresh;
 
-            createButton.onClick.AddListener(() => LobbyManager.Instance?.CreateRoom(createRoomInput ? createRoomInput.text : null));
-            quickJoinButton.onClick.AddListener(() => LobbyManager.Instance?.JoinRandom());
+            // Butonlar bağlanmamışsa OnEnable NullReferenceException atıp Refresh()'e hiç
+            // gelmiyor, oda listesi de boş kalıyordu — dosyanın geri kalanındaki gibi koru.
+            if (createButton)
+                createButton.onClick.AddListener(() => LobbyManager.Instance?.CreateRoom(createRoomInput ? createRoomInput.text : null));
+            if (quickJoinButton)
+                quickJoinButton.onClick.AddListener(() => LobbyManager.Instance?.JoinRandom());
             Refresh();
         }
 
@@ -27,8 +31,8 @@ namespace DreamCar.UI
         {
             if (LobbyManager.Instance)
                 LobbyManager.Instance.OnRoomListChanged -= Refresh;
-            createButton.onClick.RemoveAllListeners();
-            quickJoinButton.onClick.RemoveAllListeners();
+            if (createButton) createButton.onClick.RemoveAllListeners();
+            if (quickJoinButton) quickJoinButton.onClick.RemoveAllListeners();
         }
 
         void Refresh()
@@ -41,6 +45,8 @@ namespace DreamCar.UI
             foreach (var kv in LobbyManager.Instance.Rooms)
             {
                 var go = Instantiate(roomEntryPrefab, roomListParent);
+                // roomEntryPrefab sahnede kapalı duran bir şablonsa klon da kapalı doğar.
+                go.SetActive(true);
                 var label = go.GetComponentInChildren<TMP_Text>();
                 if (label) label.text = $"{kv.Value.Name}  ({kv.Value.PlayerCount}/{kv.Value.MaxPlayers})";
                 var btn = go.GetComponent<Button>();
