@@ -558,6 +558,37 @@ namespace DreamCar.EditorTools.Procedural.Maps
             boot.AddComponent<DreamCar.Settings.QualityAutoDetect>();
             var tuner = boot.AddComponent<DreamCar.Core.GraphicsTuner>();
             AttachPostProcessingProfiles(tuner);
+
+            AddReflectionProbe(root, extent: arch.roadExtent * 2.2f, height: 60f);
+        }
+
+
+        // Metalik yüzeyler rengini neredeyse tamamen yansımadan alır. Sahnede
+        // yansıtacak bir şey yoksa araç boyası parlak değil, koyu ve mat görünür —
+        // "araba gibi durmuyor" hissinin başlıca sebebi budur.
+        //
+        // Gerçek zamanlı prob seçildi çünkü gün/gece döngüsü ve hava durumu
+        // gökyüzünü değiştiriyor; fırınlanmış prob o değişimi yakalayamaz.
+        // Maliyeti düşürmek için yüzler zamana yayılıyor ve GraphicsTuner düşük
+        // kademede probu tamamen kapatıyor.
+        static void AddReflectionProbe(GameObject parent, float extent, float height)
+        {
+            var go = new GameObject("~ReflectionProbe");
+            go.transform.SetParent(parent.transform, false);
+            go.transform.localPosition = new Vector3(0f, height, 0f);
+
+            var probe = go.AddComponent<ReflectionProbe>();
+            probe.mode = UnityEngine.Rendering.ReflectionProbeMode.Realtime;
+            probe.refreshMode = UnityEngine.Rendering.ReflectionProbeRefreshMode.EveryFrame;
+            // Altı yüzü tek karede çizmek pahalı; yüz başına bölerek yayıyoruz.
+            probe.timeSlicingMode = UnityEngine.Rendering.ReflectionProbeTimeSlicingMode.IndividualFaces;
+            probe.resolution = 128;          // mobil için yeterli, 256 iki kat bellek
+            probe.hdr = true;
+            probe.shadowDistance = 0f;       // yansımada gölge gerekmiyor
+            probe.cullingMask = ~0;
+            probe.size = new Vector3(extent, height * 2f, extent);
+            probe.boxProjection = false;     // açık dünya; kutu izdüşümü yanlış olur
+            probe.importance = 1;
         }
 
         // Kademe profillerini bağlar. Profiller yoksa önce onları üretir —

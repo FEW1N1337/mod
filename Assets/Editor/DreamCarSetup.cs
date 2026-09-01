@@ -455,6 +455,8 @@ namespace DreamCar.EditorTools
                 Procedural.Maps.ProceduralMapGenerator.LoadMapCatalog();
 
             // Oda içi bileşenler — sadece Game sahnesinde anlamlı.
+            AddReflectionProbe(boot, extent: 600f, height: 50f);
+
             boot.AddComponent<NetworkInterestManager>();
             boot.AddComponent<CheatDetector>();
 
@@ -1143,6 +1145,35 @@ namespace DreamCar.EditorTools
             rt.anchoredPosition = new Vector2(
                 corner.x > 0.5f ? -Mathf.Abs(offset.x) : Mathf.Abs(offset.x),
                 corner.y > 0.5f ? -Mathf.Abs(offset.y) : Mathf.Abs(offset.y));
+        }
+
+
+        // Metalik yüzeyler rengini neredeyse tamamen yansımadan alır. Sahnede
+        // yansıtacak bir şey yoksa araç boyası parlak değil, koyu ve mat görünür —
+        // "araba gibi durmuyor" hissinin başlıca sebebi budur.
+        //
+        // Gerçek zamanlı prob seçildi çünkü gün/gece döngüsü ve hava durumu
+        // gökyüzünü değiştiriyor; fırınlanmış prob o değişimi yakalayamaz.
+        // Maliyeti düşürmek için yüzler zamana yayılıyor ve GraphicsTuner düşük
+        // kademede probu tamamen kapatıyor.
+        static void AddReflectionProbe(GameObject parent, float extent, float height)
+        {
+            var go = new GameObject("~ReflectionProbe");
+            go.transform.SetParent(parent.transform, false);
+            go.transform.localPosition = new Vector3(0f, height, 0f);
+
+            var probe = go.AddComponent<ReflectionProbe>();
+            probe.mode = UnityEngine.Rendering.ReflectionProbeMode.Realtime;
+            probe.refreshMode = UnityEngine.Rendering.ReflectionProbeRefreshMode.EveryFrame;
+            // Altı yüzü tek karede çizmek pahalı; yüz başına bölerek yayıyoruz.
+            probe.timeSlicingMode = UnityEngine.Rendering.ReflectionProbeTimeSlicingMode.IndividualFaces;
+            probe.resolution = 128;          // mobil için yeterli, 256 iki kat bellek
+            probe.hdr = true;
+            probe.shadowDistance = 0f;       // yansımada gölge gerekmiyor
+            probe.cullingMask = ~0;
+            probe.size = new Vector3(extent, height * 2f, extent);
+            probe.boxProjection = false;     // açık dünya; kutu izdüşümü yanlış olur
+            probe.importance = 1;
         }
 
         static GameObject MakeToastTemplate(GameObject parent, string name)
