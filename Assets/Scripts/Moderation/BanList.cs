@@ -47,6 +47,23 @@ namespace DreamCar.Moderation
             if (IsBanned(newPlayer.UserId)) PhotonNetwork.CloseConnection(newPlayer);
         }
 
+        // Yalnızca "sonradan giren" kontrol ediliyordu. Odaya master olarak sonradan
+        // girildiğinde ya da master devredildiğinde İÇERİDE zaten duran banlı bir
+        // oyuncu hiç atılmıyordu. Bu iki anda listeyi bir kez tarıyoruz.
+        public override void OnJoinedRoom() => SweepBanned();
+        public override void OnMasterClientSwitched(Player newMaster) => SweepBanned();
+
+        void SweepBanned()
+        {
+            if (!PhotonNetwork.IsMasterClient || PhotonNetwork.CurrentRoom == null) return;
+
+            // Sözlüğün kopyası üzerinde dönüyoruz: CloseConnection oyuncu listesini
+            // değiştirebilir ve dönerken değişen koleksiyon istisna atardı.
+            var players = new List<Player>(PhotonNetwork.CurrentRoom.Players.Values);
+            foreach (var p in players)
+                if (p != null && IsBanned(p.UserId)) PhotonNetwork.CloseConnection(p);
+        }
+
         void Load()
         {
             _banned.Clear();

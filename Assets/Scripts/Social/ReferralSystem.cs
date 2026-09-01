@@ -21,8 +21,21 @@ namespace DreamCar.Social
         const string MyCodeKey = "referral.myCode";
         const string RedeemedKey = "referral.redeemed";
 
-        public string MyCode { get; private set; }
-        public bool HasRedeemed { get; private set; }
+        // PlayerPrefs'ten HER OKUMADA taze değer. Eskiden Awake'te bir kez kopyalanıp
+        // alanda tutuluyordu; PlayFabCloudSave.ApplyProfile bu anahtarları sonradan
+        // yazınca bellekteki kopya bayatlıyor ve referral bonusu ikinci kez
+        // ödenebiliyordu (çevrimdışı dal koşulsuz ödüyor).
+        public string MyCode
+        {
+            get => PlayerPrefs.GetString(MyCodeKey, "");
+            private set { PlayerPrefs.SetString(MyCodeKey, value); PlayerPrefs.Save(); }
+        }
+
+        public bool HasRedeemed
+        {
+            get => PlayerPrefs.GetInt(RedeemedKey, 0) == 1;
+            private set { PlayerPrefs.SetInt(RedeemedKey, value ? 1 : 0); PlayerPrefs.Save(); }
+        }
 
         void Awake()
         {
@@ -37,14 +50,8 @@ namespace DreamCar.Social
 
         void Load()
         {
-            MyCode = PlayerPrefs.GetString(MyCodeKey, "");
-            if (string.IsNullOrEmpty(MyCode))
-            {
-                MyCode = GenerateCode();
-                PlayerPrefs.SetString(MyCodeKey, MyCode);
-                PlayerPrefs.Save();
-            }
-            HasRedeemed = PlayerPrefs.GetInt(RedeemedKey, 0) == 1;
+            // Kod yalnızca hiç yoksa üretilir; property zaten PlayerPrefs'e yazıyor.
+            if (string.IsNullOrEmpty(MyCode)) MyCode = GenerateCode();
         }
 
         static string GenerateCode()
@@ -72,8 +79,7 @@ namespace DreamCar.Social
                 bool ok = r.FunctionResult is Newtonsoft.Json.Linq.JObject j && j["ok"] != null && (bool)j["ok"];
                 if (ok)
                 {
-                    HasRedeemed = true;
-                    PlayerPrefs.SetInt(RedeemedKey, 1);
+                    HasRedeemed = true;   // property PlayerPrefs'e de yazıyor
                     PlayerPrefs.Save();
                     if (PlayerMoney.Instance != null) PlayerMoney.Instance.Add(refereeBonus);
                     Monetization.Analytics.Event("referral_redeemed", new() { { "bonus", refereeBonus } });
@@ -82,9 +88,7 @@ namespace DreamCar.Social
                 else ToastNotification.Show("Kod geçersiz veya süresi dolmuş");
             }, err => ToastNotification.Show("Referral hatası: " + err.ErrorMessage));
 #else
-            HasRedeemed = true;
-            PlayerPrefs.SetInt(RedeemedKey, 1);
-            PlayerPrefs.Save();
+            HasRedeemed = true;   // property PlayerPrefs'e de yazıyor
             if (PlayerMoney.Instance != null) PlayerMoney.Instance.Add(refereeBonus);
             ToastNotification.Show($"(Offline) Kod kabul edildi: +{refereeBonus:N0} ₺");
 #endif
