@@ -220,7 +220,11 @@ namespace DreamCar.EditorTools
             boot.AddComponent<LoginStreak>();
             boot.AddComponent<BanList>();
             boot.AddComponent<PlayerMoney>();
-            boot.AddComponent<CarInventory>();
+            // catalog hiç atanmıyordu: garaj boş görünüyor, hiçbir araç satın
+            // alınamıyor ve RoomManager aktif aracı bulamayıp hep varsayılana
+            // düşüyordu. Araç ekonomisinin tamamı buna bağlı.
+            boot.AddComponent<CarInventory>().catalog =
+                Procedural.ProceduralCarGenerator.LoadCatalog();
             boot.AddComponent<Core.PlayerStats>();
             boot.AddComponent<Core.ObjectPool>();
             boot.AddComponent<CrashReporter>();
@@ -421,7 +425,11 @@ namespace DreamCar.EditorTools
             boot.AddComponent<PhotonConnector>();
             boot.AddComponent<ReconnectionManager>();
             boot.AddComponent<PlayerMoney>();
-            boot.AddComponent<CarInventory>();
+            // catalog hiç atanmıyordu: garaj boş görünüyor, hiçbir araç satın
+            // alınamıyor ve RoomManager aktif aracı bulamayıp hep varsayılana
+            // düşüyordu. Araç ekonomisinin tamamı buna bağlı.
+            boot.AddComponent<CarInventory>().catalog =
+                Procedural.ProceduralCarGenerator.LoadCatalog();
             boot.AddComponent<Core.PlayerStats>();
             boot.AddComponent<Core.ObjectPool>();
             boot.AddComponent<CrashReporter>();
@@ -926,6 +934,23 @@ namespace DreamCar.EditorTools
             region.applyButton = regionApply;
             region.closeButton = regionClose;
 
+            // --- Araç mağazası ---
+            // ShopUI hiçbir sahneye eklenmiyordu: oyunda araç satın almanın HİÇBİR
+            // yolu yoktu. GarageCarousel yalnızca sahip olunan aracı seçiyor, satın
+            // alma yapmıyor. Para birikiyor ama harcanacak yer yoktu.
+            var carShopPanel = MakeUiChild(canvasGo, "CarShopScreen");
+            carShopPanel.SetActive(false);
+            MakeText(carShopPanel, "Title", "Araçlar", new Vector2(0f, 420f), 64);
+            var carShopMoney = MakeText(carShopPanel, "Money", "0 ₺", new Vector2(0f, 340f), 40);
+            var carShopList = MakeListContainer(carShopPanel, "List", new Vector2(0f, -30f), new Vector2(900f, 620f));
+            var carShopClose = MakeButton(carShopPanel, "Close", "Kapat", new Vector2(0f, -420f));
+
+            var carShop = carShopPanel.AddComponent<ShopUI>();
+            carShop.catalog = Procedural.ProceduralCarGenerator.LoadCatalog();
+            carShop.listParent = carShopList;
+            carShop.moneyLabel = carShopMoney;
+            carShop.entryPrefab = MakeCarShopRowTemplate(carShopPanel, "RowTemplate");
+
             // --- Ana menüdeki açma butonları ---
             // DİKKAT: onClick.AddListener çalışma anında listener ekler ve sahneye
             // SERIALIZE EDİLMEZ. Sahne kaydedilip build'de yüklendiğinde bu beş
@@ -950,6 +975,11 @@ namespace DreamCar.EditorTools
             UnityEventTools.AddBoolPersistentListener(rcClose.onClick, createPanel.SetActive, false);
             var navRegion = MakeButton(mainPanel, "NavRegion", "Bölge", new Vector2(150f, -400f));
             UnityEventTools.AddPersistentListener(navRegion.onClick, region.Open);
+
+            // ShopUI'de Open/Close yok — paneli doğrudan açıp kapatıyoruz.
+            var navCarShop = MakeButton(mainPanel, "NavCarShop", "Araçlar", new Vector2(450f, -400f));
+            UnityEventTools.AddBoolPersistentListener(navCarShop.onClick, carShopPanel.SetActive, true);
+            UnityEventTools.AddBoolPersistentListener(carShopClose.onClick, carShopPanel.SetActive, false);
         }
 
         static void BuildLoadingScreen(GameObject canvasGo, GameObject boot)
@@ -1303,6 +1333,38 @@ namespace DreamCar.EditorTools
             probe.size = new Vector3(extent, height * 2f, extent);
             probe.boxProjection = false;     // açık dünya; kutu izdüşümü yanlış olur
             probe.importance = 1;
+        }
+
+        // Araç mağazası satırı. ShopUI.Refresh sırayla GetComponentsInChildren<TMP_Text>
+        // okuyor: [0] isim, [1] fiyat. Buton etiketi hiyerarşide sonra geldiği için
+        // [2] oluyor ve o iki indeksi bozmuyor.
+        static GameObject MakeCarShopRowTemplate(GameObject parent, string name)
+        {
+            var row = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+            row.transform.SetParent(parent.transform, false);
+            row.SetActive(false);
+            row.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 96f);
+            row.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.06f);
+            row.GetComponent<LayoutElement>().preferredHeight = 96f;
+
+            var nameText = MakeText(row, "Text0", "", Vector2.zero, 30);
+            var nameRt = nameText.GetComponent<RectTransform>();
+            nameRt.anchorMin = new Vector2(0.03f, 0f); nameRt.anchorMax = new Vector2(0.45f, 1f);
+            nameRt.offsetMin = Vector2.zero; nameRt.offsetMax = Vector2.zero;
+            nameText.alignment = TextAlignmentOptions.MidlineLeft;
+
+            var priceText = MakeText(row, "Text1", "", Vector2.zero, 28);
+            var priceRt = priceText.GetComponent<RectTransform>();
+            priceRt.anchorMin = new Vector2(0.46f, 0f); priceRt.anchorMax = new Vector2(0.70f, 1f);
+            priceRt.offsetMin = Vector2.zero; priceRt.offsetMax = Vector2.zero;
+            priceText.alignment = TextAlignmentOptions.MidlineLeft;
+
+            var buy = MakeButton(row, "BuyButton", "Satın Al", Vector2.zero);
+            var buyRt = buy.GetComponent<RectTransform>();
+            buyRt.anchorMin = new Vector2(0.72f, 0.15f); buyRt.anchorMax = new Vector2(0.97f, 0.85f);
+            buyRt.offsetMin = Vector2.zero; buyRt.offsetMax = Vector2.zero;
+
+            return row;
         }
 
         static GameObject MakeToastTemplate(GameObject parent, string name)
