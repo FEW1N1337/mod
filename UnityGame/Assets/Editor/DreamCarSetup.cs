@@ -256,6 +256,11 @@ namespace DreamCar.EditorTools
             var scaler = canvasGo.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
+            // Varsayılan 0 = yalnızca genişliğe göre ölçekle. 2340x1080 bir telefonda
+            // ölçek 1.22 olur ve görünür dikey aralık ±540 yerine ±443'e iner —
+            // ekranların "Kapat" butonları ekran dışında kalırdı. 1 (yükseklik) ise
+            // iPad 4:3'te yatay kenarları kırpar. 0.5 ikisinin ortası.
+            scaler.matchWidthOrHeight = 0.5f;
 
             // Main panel
             var mainPanel = MakeUiChild(canvasGo, "MainPanel");
@@ -420,13 +425,22 @@ namespace DreamCar.EditorTools
             var scaler = canvasGo.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
+            // Varsayılan 0 = yalnızca genişliğe göre ölçekle. 2340x1080 bir telefonda
+            // ölçek 1.22 olur ve görünür dikey aralık ±540 yerine ±443'e iner —
+            // ekranların "Kapat" butonları ekran dışında kalırdı. 1 (yükseklik) ise
+            // iPad 4:3'te yatay kenarları kırpar. 0.5 ikisinin ortası.
+            scaler.matchWidthOrHeight = 0.5f;
 
             // Speed HUD
             var hudPanel = MakeUiChild(canvasGo, "HUDPanel");
             var speedText = MakeText(hudPanel, "SpeedText", "0 km/h", new Vector2(-800f, -400f), 48);
             var playerCountText = MakeText(hudPanel, "PlayerCount", "0/16", new Vector2(800f, 400f), 32);
             var roomNameText = MakeText(hudPanel, "RoomName", "-", new Vector2(-800f, 400f), 32);
-            var leaveBtn = MakeButton(hudPanel, "LeaveButton", "Çıkış", new Vector2(800f, -400f));
+            // Sağ ALT köşe artık gaz/fren/el freni için ayrıldı; çıkış butonu orada
+            // kalsaydı gaz pedalıyla çakışırdı. Sağ üste, köşeye sabitlendi.
+            var leaveBtn = MakeButton(hudPanel, "LeaveButton", "Çıkış", Vector2.zero);
+            AnchorCorner(leaveBtn.GetComponent<RectTransform>(),
+                         new Vector2(1f, 1f), new Vector2(160f, 70f), new Vector2(240f, 100f));
 
             var hud = hudPanel.AddComponent<InGameHUD>();
             hud.speedText = speedText;
@@ -505,17 +519,35 @@ namespace DreamCar.EditorTools
             richChat.messagesText = chatMessages;
 
             // Controls (mobile touch)
+            // Sürüş kontrolleri ekranın köşelerine sabitlenir. Merkeze göre sabit
+            // piksel konumu kullanılırsa her en-boy oranında başka yere düşerler.
+            //
+            // Eski yerleşimde fren (700,-450) ile el freni (550,-400) ÇAKIŞIYORDU
+            // (x 560..690, y -440..-410); hiyerarşide sonra gelen el freni üstte
+            // kaldığı için frenin o köşesine basmak el frenini çekiyordu.
+            //
+            // Boyutlar da büyütüldü: 80 referans birim ≈ 5.3 mm, Apple HIG 44pt
+            // (~7.6 mm) ve Android 48dp (~9 mm) minimumlarının altındaydı.
             var ctrlPanel = MakeUiChild(canvasGo, "ControlsPanel");
-            var throttleBtn = MakeButton(ctrlPanel, "Throttle", "▲", new Vector2(700f, -300f));
-            var brakeBtn = MakeButton(ctrlPanel, "Brake", "▼", new Vector2(700f, -450f));
-            var handbrakeBtn = MakeButton(ctrlPanel, "Handbrake", "⛔", new Vector2(550f, -400f));
+
+            var throttleBtn = MakeButton(ctrlPanel, "Throttle", "▲", Vector2.zero);
+            AnchorCorner(throttleBtn.GetComponent<RectTransform>(),
+                         new Vector2(1f, 0f), new Vector2(-150f, 250f), new Vector2(230f, 190f));
+
+            var brakeBtn = MakeButton(ctrlPanel, "Brake", "▼", Vector2.zero);
+            AnchorCorner(brakeBtn.GetComponent<RectTransform>(),
+                         new Vector2(1f, 0f), new Vector2(-150f, 80f), new Vector2(230f, 150f));
+
+            var handbrakeBtn = MakeButton(ctrlPanel, "Handbrake", "⛔", Vector2.zero);
+            AnchorCorner(handbrakeBtn.GetComponent<RectTransform>(),
+                         new Vector2(1f, 0f), new Vector2(-390f, 80f), new Vector2(170f, 150f));
+
             var steeringPad = new GameObject("SteeringPad", typeof(RectTransform), typeof(Image));
             steeringPad.transform.SetParent(ctrlPanel.transform, false);
             var padImg = steeringPad.GetComponent<Image>();
             padImg.color = new Color(1f, 1f, 1f, 0.05f);
             var padRt = steeringPad.GetComponent<RectTransform>();
-            padRt.anchoredPosition = new Vector2(-500f, -350f);
-            padRt.sizeDelta = new Vector2(600f, 400f);
+            AnchorCorner(padRt, new Vector2(0f, 0f), new Vector2(380f, 230f), new Vector2(700f, 420f));
 
             var touch = ctrlPanel.AddComponent<DreamCar.InputSystemMobile.MobileTouchInput>();
             touch.throttleButton = throttleBtn;
@@ -619,6 +651,15 @@ namespace DreamCar.EditorTools
             pauseScript.settingsButton = settingsBtn;
             pauseScript.leaveRoomButton = leaveRoomBtn;
             pauseScript.mainMenuButton = mainMenuBtn;
+
+            // PauseMenu yalnızca Escape tuşunu dinliyor. Android'de geri tuşu bunu
+            // karşılar ama iOS'ta karşılığı yok — duraklatma menüsü iPhone'da
+            // tamamen erişilemezdi. HUD'a bir buton ekliyoruz.
+            // Persistent listener şart: onClick.AddListener sahneye serialize edilmez.
+            var pauseBtn = MakeButton(hudPanel, "PauseButton", "❚❚", Vector2.zero);
+            AnchorCorner(pauseBtn.GetComponent<RectTransform>(),
+                         new Vector2(1f, 1f), new Vector2(400f, 70f), new Vector2(120f, 100f));
+            UnityEventTools.AddPersistentListener(pauseBtn.onClick, pauseScript.Toggle);
 
             EditorSceneManager.SaveScene(scene, GamePath);
             AssetDatabase.SaveAssets();
@@ -1025,6 +1066,20 @@ namespace DreamCar.EditorTools
 
         // Liste satırı şablonu — sahnede kapalı durur, script Instantiate eder.
         // Toast satırı şablonu — sahnede kapalı durur, ToastNotification Instantiate eder.
+        // Bir RectTransform'u ekran köşesine sabitler. corner: (0,0) sol-alt,
+        // (1,0) sağ-alt, (0,1) sol-üst, (1,1) sağ-üst. offset o köşeden içeri doğru
+        // (x sağa, y yukarı pozitif) — sağ/üst köşelerde işareti otomatik çevrilir.
+        static void AnchorCorner(RectTransform rt, Vector2 corner, Vector2 offset, Vector2 size)
+        {
+            rt.anchorMin = corner;
+            rt.anchorMax = corner;
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = size;
+            rt.anchoredPosition = new Vector2(
+                corner.x > 0.5f ? -Mathf.Abs(offset.x) : Mathf.Abs(offset.x),
+                corner.y > 0.5f ? -Mathf.Abs(offset.y) : Mathf.Abs(offset.y));
+        }
+
         static GameObject MakeToastTemplate(GameObject parent, string name)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(LayoutElement));
