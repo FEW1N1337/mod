@@ -7,16 +7,22 @@ namespace DreamCar.Vehicle
     // ise +throttle, üstünde ise 0). Fren/nitro/handbrake basılırsa iptal.
     public class CruiseControl : MonoBehaviour
     {
-        public CarController car;
+        // Somut sürücü tipi yerine IDriveInput: araç RCCP ile sürülüyorsa üzerinde bizim
+        // WheelCollider denetleyicimiz değil RCCPCarAdapter olur, ikisi de bu arayüzü sunar.
+        // Not: Unity arayüz alanlarını serialize etmez, bu alan Inspector'da görünmez —
+        // aynı GameObject'teyse Awake kendisi bulur, değilse koddan atanmalı.
+        public IDriveInput car;
         public float defaultTargetKmh = 80f;
         public KeyCode toggleKey = KeyCode.C;
 
         public bool Active { get; private set; }
         public float TargetKmh { get; set; }
 
-        void Awake() { if (!car) car = GetComponent<CarController>(); TargetKmh = defaultTargetKmh; }
+        // Arayüz referansı UnityEngine.Object olmadığı için "!car" / "car ? :" kısayolları
+        // kullanılamaz; açık null karşılaştırması gerekiyor. GetComponent arayüzleri çözer.
+        void Awake() { if (car == null) car = GetComponent<IDriveInput>(); TargetKmh = defaultTargetKmh; }
 
-        public void Toggle() { Active = !Active; if (Active) TargetKmh = Mathf.Max(car ? car.SpeedKmh : defaultTargetKmh, defaultTargetKmh); }
+        public void Toggle() { Active = !Active; if (Active) TargetKmh = Mathf.Max(car != null ? car.SpeedKmh : defaultTargetKmh, defaultTargetKmh); }
         public void Cancel() => Active = false;
 
         void Update()
@@ -30,13 +36,13 @@ namespace DreamCar.Vehicle
         // Update'lerden sonra çalışır, yani yazdığımız değer bu kare içinde ezilmez.
         void LateUpdate()
         {
-            if (!Active || !car) return;
+            if (!Active || car == null) return;
 
-            if (car.brakeInput > 0.01f || car.handbrake) { Cancel(); return; }
+            if (car.BrakeInput > 0.01f || car.Handbrake) { Cancel(); return; }
 
             float diff = TargetKmh - car.SpeedKmh;
             float throttle = Mathf.Clamp(diff * 0.05f, -0.5f, 1f);
-            car.Move(throttle, 0f, car.steerInput, false);
+            car.Move(throttle, 0f, car.SteerInput, false);
         }
     }
 }
