@@ -48,6 +48,10 @@ namespace DreamCar.UI
                 if (isUnlocked) unlocked++;
 
                 var go = Instantiate(rowPrefab, listParent);
+                // rowPrefab sahnede kapalı duran bir şablon; klon da kapalı doğuyor ve
+                // satırlar hiç görünmüyordu. Ayrıca kapalı obje GetComponentsInChildren'da
+                // includeInactive olmadan bulunmaz.
+                go.SetActive(true);
                 var texts = go.GetComponentsInChildren<TMP_Text>();
                 if (texts.Length > 0) texts[0].text = def.displayName;
                 if (texts.Length > 1) texts[1].text = def.description;

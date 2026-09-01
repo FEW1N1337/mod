@@ -14,25 +14,27 @@ namespace DreamCar.UI
 
         void Start()
         {
-            nicknameInput.text = NicknameManager.Load();
+            if (nicknameInput) nicknameInput.text = NicknameManager.Load();
             NicknameManager.Apply();
 
-            playButton.onClick.AddListener(OnPlay);
+            if (playButton) playButton.onClick.AddListener(OnPlay);
             if (statusText) statusText.text = "Connecting...";
         }
 
         void Update()
         {
-            if (!statusText) return;
-            statusText.text = PhotonConnector.Instance && PhotonConnector.Instance.IsConnected
-                ? "Online"
-                : "Connecting...";
-            playButton.interactable = PhotonConnector.Instance && PhotonConnector.Instance.IsConnected;
+            bool online = PhotonConnector.Instance && PhotonConnector.Instance.IsConnected;
+
+            // Eskiden "if (!statusText) return;" tek erken çıkışı playButton satırını da
+            // kesiyordu: statusText bağlı olmadığında OYNA butonu hiç aktifleşmiyor,
+            // oyuncu oyuna giremiyordu. İki alan artık ayrı ayrı korunuyor.
+            if (statusText) statusText.text = online ? "Online" : "Connecting...";
+            if (playButton) playButton.interactable = online;
         }
 
         void OnPlay()
         {
-            NicknameManager.Save(nicknameInput.text);
+            if (nicknameInput) NicknameManager.Save(nicknameInput.text);
             if (lobbyPanel) lobbyPanel.SetActive(true);
             gameObject.SetActive(false);
         }

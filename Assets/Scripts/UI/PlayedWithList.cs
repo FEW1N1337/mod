@@ -66,6 +66,8 @@ namespace DreamCar.UI
             foreach (var e in Entries)
             {
                 var go = Instantiate(entryPrefab, listParent);
+                // entryPrefab sahnede kapalı duran bir şablonsa klon da kapalı doğar.
+                go.SetActive(true);
                 var label = go.GetComponentInChildren<TMP_Text>();
                 if (label) label.text = $"{e.nickname}  <size=70%>({e.lastRoom})</size>";
 

@@ -19,9 +19,24 @@ namespace DreamCar.UI
         [Range(0f, 1f)] public float criticalThreshold = 0.15f;
 
         bool _warnedCritical;
+        float _nextScan;
 
         void Update()
         {
+            // fuel alanı Editor'de bağlanamıyor: FuelSystem yerel araçta duruyor ve araç
+            // ancak odaya girilince PhotonNetwork.Instantiate ile doğuyor. RoomManager
+            // Minimap/MobileTouchInput'u bağlıyor ama FuelMeter'ı unutmuş — bu yüzden
+            // yakıt barı oyun boyunca boş kalıyordu. InGameHUD'daki kalıpla kendimiz buluruz.
+            if (!fuel && Time.unscaledTime >= _nextScan)
+            {
+                _nextScan = Time.unscaledTime + 0.5f; // her karede FindObjectsByType mobilde pahalı
+                foreach (var f in FindObjectsByType<FuelSystem>(FindObjectsSortMode.None))
+                {
+                    var pv = f.GetComponent<Photon.Pun.PhotonView>();
+                    if (pv && pv.IsMine) { fuel = f; break; }
+                }
+            }
+
             if (!fuel) return;
             float p = fuel.Percent;
             if (fill) fill.fillAmount = p;

@@ -23,7 +23,7 @@ namespace DreamCar.UI
         {
             if (panel) panel.SetActive(false);
             if (resumeButton) resumeButton.onClick.AddListener(Resume);
-            if (settingsButton) settingsButton.onClick.AddListener(() => { if (settingsPanel) settingsPanel.SetActive(true); });
+            if (settingsButton) settingsButton.onClick.AddListener(OpenSettings);
             if (leaveRoomButton) leaveRoomButton.onClick.AddListener(LeaveRoom);
             if (mainMenuButton) mainMenuButton.onClick.AddListener(GoMainMenu);
         }
@@ -45,6 +45,24 @@ namespace DreamCar.UI
             Time.timeScale = 1f;
             if (panel) panel.SetActive(false);
             if (settingsPanel) settingsPanel.SetActive(false);
+        }
+
+        void OpenSettings()
+        {
+            if (settingsPanel) { settingsPanel.SetActive(true); return; }
+
+            // settingsPanel bağlı değilse "Ayarlar" butonu sessizce hiçbir şey yapıyordu.
+            // Sahnede kapalı duran bir SettingsScreen varsa onu açalım (bileşen kendi
+            // panelinin üzerinde ve panel kapalı başladığı için Include şart).
+            var screen = FindFirstObjectByType<SettingsScreen>(FindObjectsInactive.Include);
+            if (screen) screen.Open();
+        }
+
+        // Duraklatılmışken sahne değişirse (disconnect, kick, PhotonNetwork.LoadLevel)
+        // Time.timeScale 0'da kalıyor ve açılan yeni sahne tamamen donuyordu.
+        void OnDestroy()
+        {
+            if (_paused) Time.timeScale = 1f;
         }
 
         void LeaveRoom()
