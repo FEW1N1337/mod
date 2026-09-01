@@ -300,8 +300,14 @@ Fizik motoru olarak RCCP'yi (Realistic Car Controller Pro, BoneCracker Games) ku
 2. Editor'de import et.
 3. Player Settings → Other Settings → **Scripting Define Symbols** → `RCCP_INSTALLED` ekle.
 4. Test aracına RCCP prefab'ını hazırla (BoneCracker demo aracı temel alınabilir).
-5. Aynı GameObject'e ek olarak `RCCPCarAdapter` + `RCCPNitroBridge` + `RCCPDamageBridge` + `RCCPDetachableBridge` bileşenlerini ekle. Bunlar RCCP API'sini bizim `IDriveInput` arayüzümüz altında sarar; `MobileTouchInput`, `NitroBar`, damage HUD hepsi RCCP moduyla otomatik çalışır.
+5. **RCCP denetleyicisiyle aynı GameObject'e** `RCCPCarAdapter` ekle. İstersen `RCCPNitroBridge`, `RCCPDamageBridge`, `RCCPDetachableBridge` de eklenebilir — bunlar opsiyonel. Köprüler RCCP API'sini bizim `IDriveInput` arayüzümüz altında sarar; `MobileTouchInput`, `NitroBar`, hasar HUD'u hepsi RCCP moduyla otomatik çalışır.
 6. `RCCPWheelGlowBridge` bileşeni de eklenirse bizim `WheelGlow.cs`'i devre dışı bırakır (çift emissive olmasın).
+
+> **Köprüler RCCP tipine doğrudan bağlanmaz.** Bu kod RCCP'nin gerçek API'si görülmeden yazıldı; adlar tahmindi ve yanlış tahmin, define eklendiği anda projenin derlenmemesi demekti. Bunun yerine tip ve üye adları çalışma anında aranıyor (`RCCPReflection`). Bir ad tutmazsa proje yine derlenir; Console'a **RCCP'nin gerçek üye adlarını listeleyen** bir uyarı düşer. O listeyi geliştiriciye gönder, köprü adları tek turda düzeltilir.
+>
+> Zorunlu olan yalnızca gaz ve direksiyon. Nitro, hasar ve parça düşürme köprüleri bulunamazsa uyarı basıp devre dışı kalır — oyun çalışmaya devam eder.
+
+**RCCP Tuner ayrı bir eklentidir**, temel RCCP'nin kurulu olmasını gerektirir ve tek başına çalışmaz. Görsel özelleştirme (body kit, spoiler, jant) ekler. Şart değil; köprü katmanı temel RCCP'ye göre yazıldı, Tuner ayrı bir entegrasyon işidir.
 
 RCCP alma → adapter aktif; almazsan mevcut `CarController` (WheelCollider tabanlı) çalışmaya devam eder. Her ikisi de `IDriveInput` arayüzünü uyguladığı için oyunun geri kalanı fizik motorundan bağımsız.
 
