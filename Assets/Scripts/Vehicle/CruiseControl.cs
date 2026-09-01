@@ -22,6 +22,14 @@ namespace DreamCar.Vehicle
         void Update()
         {
             if (Input.GetKeyDown(toggleKey)) Toggle();
+        }
+
+        // LateUpdate: MobileTouchInput gaz/fren/direksiyonu Update'te yazıyor ve iki bileşen
+        // arasında Update sırası garanti değil — sabit hız Update'te uygulandığında oyuncu
+        // input'u tarafından eziliyor, yani hiçbir şey yapmıyordu. LateUpdate her zaman tüm
+        // Update'lerden sonra çalışır, yani yazdığımız değer bu kare içinde ezilmez.
+        void LateUpdate()
+        {
             if (!Active || !car) return;
 
             if (car.brakeInput > 0.01f || car.handbrake) { Cancel(); return; }

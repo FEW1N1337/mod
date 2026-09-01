@@ -26,6 +26,11 @@ namespace DreamCar.Car
 
             if (!photonView.IsMine)
             {
+                // Kinematik Rigidbody yalnızca ContinuousSpeculative destekler; CarController
+                // Awake'te ContinuousDynamic'e çekmiş olabileceğinden (Awake sırası garanti
+                // değil) isKinematic'ten ÖNCE güvenli moda alıyoruz, yoksa Unity her uzak
+                // araç için hata basıyor.
+                _rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
                 _rb.isKinematic = true;
                 _car.enabled = false;
             }

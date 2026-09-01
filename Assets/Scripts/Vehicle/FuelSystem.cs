@@ -27,11 +27,11 @@ namespace DreamCar.Vehicle
             if (!_car) return;
             float drain = baseDrainPerSecond + Mathf.Abs(_car.throttleInput) * throttleDrainMultiplier;
             current = Mathf.Max(0f, current - drain * Time.deltaTime);
-            if (IsEmpty)
-            {
-                _car.throttleInput = 0f;
-                _car.brakeInput = 1f;
-            }
+            // Eskiden doğrudan _car.throttleInput/_car.brakeInput'a yazıyordu; MobileTouchInput
+            // her karede Move() ile aynı alanları ezdiği ve Update sırası garanti olmadığı için
+            // yakıt bitince çoğu zaman hiçbir şey olmuyordu. Artık CarController FixedUpdate'te
+            // okuduğu kesme bayrağını set ediyoruz.
+            _car.engineCutoff = IsEmpty;
         }
 
         public bool TryRefuel(float liters)

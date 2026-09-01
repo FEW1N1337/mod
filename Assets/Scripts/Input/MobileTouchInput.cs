@@ -20,6 +20,14 @@ namespace DreamCar.InputSystemMobile
         public bool useKeyboardFallback = true;
 
         bool _throttleHeld, _brakeHeld, _handbrakeHeld;
+
+        // Ayarlar ekranındaki direksiyon hassasiyeti sürgüsü GameSettings.SteeringSensitivity'ye
+        // yazıyor ve bulut kaydına giriyordu, ama burada hiç okunmuyordu: sürgü hiçbir şey
+        // yapmıyordu. Çarpanı burada uyguluyoruz. PlayerPrefs okuması ucuz olsa da sürükleme
+        // boyunca her karede yapılmasın diye kısa aralıklarla tazeliyoruz (ayar oyun içinde
+        // değişebilir, OnEnable'da bir kez okumak bayat kalırdı).
+        float _sensMultiplier = 1f;
+        float _sensRefreshTimer;
         float _steer;
         int _steerFingerId = -1;
         Vector2 _steerStart;
@@ -34,6 +42,14 @@ namespace DreamCar.InputSystemMobile
         void Update()
         {
             if (!car) return;
+
+            _sensRefreshTimer -= Time.unscaledDeltaTime;
+            if (_sensRefreshTimer <= 0f)
+            {
+                _sensRefreshTimer = 0.5f;
+                var gs = DreamCar.Settings.GameSettings.Instance;
+                _sensMultiplier = gs ? Mathf.Max(0.05f, gs.SteeringSensitivity) : 1f;
+            }
 
             HandleSteerTouch();
 
@@ -80,7 +96,12 @@ namespace DreamCar.InputSystemMobile
                     }
                     else
                     {
-                        _steer = Mathf.Clamp((t.position.x - _steerStart.x) * steeringSensitivity, -1f, 1f);
+                        // Hassasiyet çarpanı ham sürükleme mesafesine uygulanır: kullanıcı
+                        // "tam kilit için ne kadar sürüklemeliyim"i ayarlıyor. Clamp sonrası
+                        // çarpmak sadece uçları doyurur, ayarı işlevsiz bırakırdı.
+                        _steer = Mathf.Clamp(
+                            (t.position.x - _steerStart.x) * steeringSensitivity * _sensMultiplier,
+                            -1f, 1f);
                     }
                 }
             }
