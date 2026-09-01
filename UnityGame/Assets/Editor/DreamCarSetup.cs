@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System.IO;
 using UnityEditor;
+using UnityEditor.Events;   // AddPersistentListener
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -277,22 +278,40 @@ namespace DreamCar.EditorTools
             var quickJoinBtn = MakeButton(lobbyPanel, "QuickJoinButton", "Hızlı Katıl", new Vector2(400f, 400f));
             var createNameInput = MakeInputField(lobbyPanel, "CreateRoomInput", "Yeni oda adı", new Vector2(400f, 300f));
             var createBtn = MakeButton(lobbyPanel, "CreateButton", "OLUŞTUR", new Vector2(400f, 200f));
-            var roomListParent = new GameObject("RoomList");
-            var rlRt = roomListParent.AddComponent<RectTransform>();
-            rlRt.SetParent(lobbyPanel.transform, false);
-            rlRt.anchoredPosition = new Vector2(-400f, 0f);
-            rlRt.sizeDelta = new Vector2(600f, 700f);
+            // Düz bir RectTransform'du: satırların hepsi üst üste biniyor ve liste
+            // taşınca kaydırılamıyordu. Diğer ekranlarla aynı kaydırılabilir kabı kullan.
+            var roomListParent = MakeListContainer(lobbyPanel, "RoomList",
+                new Vector2(-400f, 0f), new Vector2(600f, 700f));
 
             var lobbyUI = lobbyPanel.AddComponent<LobbyUI>();
             lobbyUI.createRoomInput = createNameInput;
             lobbyUI.createButton = createBtn;
             lobbyUI.quickJoinButton = quickJoinBtn;
-            lobbyUI.roomListParent = roomListParent.transform;
+            lobbyUI.roomListParent = roomListParent;
+            // roomEntryPrefab hiç atanmıyordu: Refresh() erken çıkıyor, oda listesi
+            // hep boş kalıyor ve oyuncu hiçbir odaya giremiyordu.
+            lobbyUI.roomEntryPrefab = MakeRoomEntryTemplate(lobbyPanel, "RoomEntryTemplate");
 
             // Toast stack
             var toastRoot = MakeUiChild(canvasGo, "ToastStack");
+            // MakeUiChild tam ekran gerdiriyor ve düzen bileşeni yok — toast'lar üst
+            // üste binerdi. Alt ortada sınırlı bir alana al ve dikey yığ.
+            var toastRt = toastRoot.GetComponent<RectTransform>();
+            toastRt.anchorMin = new Vector2(0.5f, 0f); toastRt.anchorMax = new Vector2(0.5f, 0f);
+            toastRt.pivot = new Vector2(0.5f, 0f);
+            toastRt.anchoredPosition = new Vector2(0f, 140f);
+            toastRt.sizeDelta = new Vector2(900f, 400f);
+            var toastLayout = toastRoot.AddComponent<VerticalLayoutGroup>();
+            toastLayout.spacing = 8f;
+            toastLayout.childAlignment = TextAnchor.LowerCenter;
+            toastLayout.childControlHeight = false; toastLayout.childForceExpandHeight = false;
+            toastLayout.childControlWidth = true;   toastLayout.childForceExpandWidth = true;
+
             var toast = boot.AddComponent<ToastNotification>();
-            toast.stackParent = toastRoot.GetComponent<RectTransform>();
+            toast.stackParent = toastRt;
+            // toastPrefab hiç atanmıyordu: ShowInternal ilk satırda erken çıkıyor ve
+            // projedeki bütün ToastNotification.Show() çağrıları sessizce düşüyordu.
+            toast.toastPrefab = MakeToastTemplate(canvasGo, "ToastTemplate");
 
             // Ek ekranlar (Ayarlar / Liderlik / Başarımlar / Mağaza / İstatistik)
             BuildSecondaryScreens(canvasGo, mainPanel);
@@ -455,8 +474,24 @@ namespace DreamCar.EditorTools
 
             // Toast stack
             var toastRoot = MakeUiChild(canvasGo, "ToastStack");
+            // MakeUiChild tam ekran gerdiriyor ve düzen bileşeni yok — toast'lar üst
+            // üste binerdi. Alt ortada sınırlı bir alana al ve dikey yığ.
+            var toastRt = toastRoot.GetComponent<RectTransform>();
+            toastRt.anchorMin = new Vector2(0.5f, 0f); toastRt.anchorMax = new Vector2(0.5f, 0f);
+            toastRt.pivot = new Vector2(0.5f, 0f);
+            toastRt.anchoredPosition = new Vector2(0f, 140f);
+            toastRt.sizeDelta = new Vector2(900f, 400f);
+            var toastLayout = toastRoot.AddComponent<VerticalLayoutGroup>();
+            toastLayout.spacing = 8f;
+            toastLayout.childAlignment = TextAnchor.LowerCenter;
+            toastLayout.childControlHeight = false; toastLayout.childForceExpandHeight = false;
+            toastLayout.childControlWidth = true;   toastLayout.childForceExpandWidth = true;
+
             var toast = boot.AddComponent<ToastNotification>();
-            toast.stackParent = toastRoot.GetComponent<RectTransform>();
+            toast.stackParent = toastRt;
+            // toastPrefab hiç atanmıyordu: ShowInternal ilk satırda erken çıkıyor ve
+            // projedeki bütün ToastNotification.Show() çağrıları sessizce düşüyordu.
+            toast.toastPrefab = MakeToastTemplate(canvasGo, "ToastTemplate");
 
             // Chat
             var chatPanel = MakeUiChild(canvasGo, "ChatPanel");
@@ -704,16 +739,20 @@ namespace DreamCar.EditorTools
             stats.closeButton = MakeButton(statsPanel, "Close", "Kapat", new Vector2(0f, -430f));
 
             // --- Ana menüdeki açma butonları ---
+            // DİKKAT: onClick.AddListener çalışma anında listener ekler ve sahneye
+            // SERIALIZE EDİLMEZ. Sahne kaydedilip build'de yüklendiğinde bu beş
+            // butonun hiçbiri çalışmazdı — ana menü navigasyonunun tamamı ölüydü.
+            // Editörden kurulan bağlantılar kalıcı (persistent) olmak zorunda.
             var navSettings = MakeButton(mainPanel, "NavSettings", "Ayarlar", new Vector2(-600f, -300f));
-            navSettings.onClick.AddListener(settings.Open);
+            UnityEventTools.AddPersistentListener(navSettings.onClick, settings.Open);
             var navLeaderboard = MakeButton(mainPanel, "NavLeaderboard", "Liderlik", new Vector2(-300f, -300f));
-            navLeaderboard.onClick.AddListener(leaderboard.Open);
+            UnityEventTools.AddPersistentListener(navLeaderboard.onClick, leaderboard.Open);
             var navAchievements = MakeButton(mainPanel, "NavAchievements", "Başarımlar", new Vector2(0f, -300f));
-            navAchievements.onClick.AddListener(achievements.Open);
+            UnityEventTools.AddPersistentListener(navAchievements.onClick, achievements.Open);
             var navShop = MakeButton(mainPanel, "NavShop", "Mağaza", new Vector2(300f, -300f));
-            navShop.onClick.AddListener(coinShop.Open);
+            UnityEventTools.AddPersistentListener(navShop.onClick, coinShop.Open);
             var navStats = MakeButton(mainPanel, "NavStats", "İstatistik", new Vector2(600f, -300f));
-            navStats.onClick.AddListener(stats.Open);
+            UnityEventTools.AddPersistentListener(navStats.onClick, stats.Open);
         }
 
         static void BuildLoadingScreen(GameObject canvasGo, GameObject boot)
@@ -985,6 +1024,44 @@ namespace DreamCar.EditorTools
         }
 
         // Liste satırı şablonu — sahnede kapalı durur, script Instantiate eder.
+        // Toast satırı şablonu — sahnede kapalı durur, ToastNotification Instantiate eder.
+        static GameObject MakeToastTemplate(GameObject parent, string name)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+            go.transform.SetParent(parent.transform, false);
+            go.SetActive(false);
+            go.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 72f);
+            go.GetComponent<Image>().color = new Color(0.08f, 0.09f, 0.13f, 0.92f);
+            go.GetComponent<LayoutElement>().preferredHeight = 72f;
+
+            var label = MakeText(go, "Label", "", Vector2.zero, 30);
+            var lRt = label.GetComponent<RectTransform>();
+            lRt.anchorMin = Vector2.zero; lRt.anchorMax = Vector2.one;
+            lRt.offsetMin = new Vector2(20f, 0f); lRt.offsetMax = new Vector2(-20f, 0f);
+            label.alignment = TextAlignmentOptions.Midline;
+            return go;
+        }
+
+        // Oda listesi satırı — kök Button taşımalı: LobbyUI.Refresh
+        // GetComponent<Button>() arıyor, GetComponentInChildren değil.
+        static GameObject MakeRoomEntryTemplate(GameObject parent, string name)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image),
+                                    typeof(Button), typeof(LayoutElement));
+            go.transform.SetParent(parent.transform, false);
+            go.SetActive(false);
+            go.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 76f);
+            go.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.08f);
+            go.GetComponent<LayoutElement>().preferredHeight = 76f;
+
+            var label = MakeText(go, "Label", "", Vector2.zero, 28);
+            var lRt = label.GetComponent<RectTransform>();
+            lRt.anchorMin = Vector2.zero; lRt.anchorMax = Vector2.one;
+            lRt.offsetMin = new Vector2(20f, 0f); lRt.offsetMax = new Vector2(-20f, 0f);
+            label.alignment = TextAlignmentOptions.MidlineLeft;
+            return go;
+        }
+
         static GameObject MakeRowPrefabTemplate(GameObject parent, string name, int textCount)
         {
             var row = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(LayoutElement));
