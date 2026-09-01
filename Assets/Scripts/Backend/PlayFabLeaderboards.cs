@@ -36,7 +36,10 @@ namespace DreamCar.Backend
             PlayFabClientAPI.GetLeaderboard(req, r =>
             {
                 var rows = new List<(string, int)>();
-                foreach (var e in r.Leaderboard) rows.Add((e.DisplayName ?? e.PlayFabId, e.StatValue));
+                // Liste boşken null gelebiliyor; korumasız foreach callback'i NRE ile
+                // düşürür ve onResult hiç çağrılmazdı (ekran sonsuz "yükleniyor").
+                if (r.Leaderboard != null)
+                    foreach (var e in r.Leaderboard) rows.Add((e.DisplayName ?? e.PlayFabId, e.StatValue));
                 onResult?.Invoke(rows);
             }, err => Debug.LogWarning("[PlayFab] Leaderboard fetch failed: " + err.ErrorMessage));
 #else

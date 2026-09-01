@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using DreamCar.Economy;
 using DreamCar.Social;
@@ -18,6 +19,9 @@ namespace DreamCar.Backend
         public static PlayFabAchievements Instance { get; private set; }
         public AchievementCatalog catalog;
 
+        const string UnlockedKey = "ach.unlocked";
+        const string ProgressKey = "ach.progress.v1";
+
         readonly HashSet<string> _unlocked = new();
         readonly Dictionary<string, int> _progress = new();
 
@@ -31,7 +35,13 @@ namespace DreamCar.Backend
 
         void Start()
         {
-            if (PlayFabAuth.Instance != null) PlayFabAuth.Instance.OnLoggedIn += PullProgress;
+            if (PlayFabAuth.Instance != null)
+            {
+                PlayFabAuth.Instance.OnLoggedIn += PullProgress;
+                // Login daha önce tamamlandıysa event bir daha gelmez; sunucudaki
+                // ilerleme hiç okunmazdı.
+                if (PlayFabAuth.Instance.IsLoggedIn) PullProgress();
+            }
         }
 
         public void OnRaceFinished(bool won)
@@ -95,22 +105,61 @@ namespace DreamCar.Backend
 #if PLAYFAB_INSTALLED
             PlayFabClientAPI.GetPlayerStatistics(new GetPlayerStatisticsRequest(), r =>
             {
-                foreach (var s in r.Statistics) { _progress[s.StatisticName] = s.Value; EvaluateForStat(s.StatisticName, s.Value); }
+                if (r.Statistics == null) return;
+                foreach (var s in r.Statistics)
+                {
+                    // Buluttaki değeri düz atamak, çevrimdışıyken biriken ilerlemeyi
+                    // geri alıyordu; PlayerStats.FromJson ile aynı kural: büyüğü kazanır.
+                    int local = _progress.TryGetValue(s.StatisticName, out int v) ? v : 0;
+                    int merged = Mathf.Max(local, s.Value);
+                    _progress[s.StatisticName] = merged;
+                    EvaluateForStat(s.StatisticName, merged);
+                }
+                SaveLocalCache();
             }, err => Debug.LogWarning("[Achievements] Pull failed: " + err.ErrorMessage));
 #endif
         }
 
+        // Bulut senkronu PlayerPrefs'teki listeyi güncelledikten sonra bellek içi
+        // kopyayı tazelemek için (yoksa sonraki SaveLocalCache buluttan geleni ezer).
+        public void ReloadLocalCache() => LoadLocalCache();
+
         void LoadLocalCache()
         {
             _unlocked.Clear();
-            var raw = PlayerPrefs.GetString("ach.unlocked", "");
+            var raw = PlayerPrefs.GetString(UnlockedKey, "");
             foreach (var s in raw.Split(',')) if (!string.IsNullOrWhiteSpace(s)) _unlocked.Add(s.Trim());
+
+            // İlerleme sayaçları hiç saklanmıyordu: SDK yokken (veya çevrimdışı)
+            // _progress her açılışta sıfırdan başlıyor, kümülatif başarımlar
+            // (mesafe, yarış sayısı) eşiğe hiç ulaşmıyordu.
+            _progress.Clear();
+            var progressRaw = PlayerPrefs.GetString(ProgressKey, "");
+            if (string.IsNullOrEmpty(progressRaw)) return;
+            try
+            {
+                var cache = JsonUtility.FromJson<ProgressCache>(progressRaw);
+                if (cache?.keys == null || cache.values == null) return;
+                for (int i = 0; i < cache.keys.Count && i < cache.values.Count; i++)
+                    _progress[cache.keys[i]] = cache.values[i];
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[Achievements] İlerleme cache'i okunamadı: " + e.Message);
+            }
         }
 
         void SaveLocalCache()
         {
-            PlayerPrefs.SetString("ach.unlocked", string.Join(",", _unlocked));
+            PlayerPrefs.SetString(UnlockedKey, string.Join(",", _unlocked));
+
+            var cache = new ProgressCache { keys = new List<string>(), values = new List<int>() };
+            foreach (var kv in _progress) { cache.keys.Add(kv.Key); cache.values.Add(kv.Value); }
+            PlayerPrefs.SetString(ProgressKey, JsonUtility.ToJson(cache));
+
             PlayerPrefs.Save();
         }
+
+        [Serializable] class ProgressCache { public List<string> keys; public List<int> values; }
     }
 }
