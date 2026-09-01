@@ -130,7 +130,9 @@ jobs:
             || echo "Değişiklik yok, commit atlandı."
 
       - name: Hedef depoya gönder
+        id: push
         env:
+          CI_COMMIT_SUBJECT: 'CI: workflow yolları kök dizine göre ayarlandı'
           TOKEN: ${{ secrets.GAME_REPO_TOKEN }}
           TARGET_REPO: ${{ inputs.target_repo }}
           TARGET_BRANCH: ${{ inputs.target_branch }}
@@ -155,10 +157,53 @@ jobs:
             echo "::warning::Force push açık — hedef daldaki mevcut geçmiş silinecek."
           fi
 
-          git -c "http.https://github.com/.extraheader=Authorization: Basic ${AUTH}" \
-              push $PUSH_ARGS target "HEAD:refs/heads/${TARGET_BRANCH}"
+          push_to_target() {
+            git -c "http.https://github.com/.extraheader=Authorization: Basic ${AUTH}" \
+                push $PUSH_ARGS target "HEAD:refs/heads/${TARGET_BRANCH}" 2>&1
+          }
 
-          echo "Gönderildi."
+          # İlk deneme: CI dosyaları dahil.
+          if OUTPUT=$(push_to_target); then
+            echo "$OUTPUT"
+            echo "ci_included=true" >> "$GITHUB_OUTPUT"
+            echo "Gönderildi (CI dosyaları dahil)."
+            exit 0
+          fi
+
+          echo "$OUTPUT"
+
+          # GitHub, bir PAT'in .github/workflows/ altına yazmasına ayrı bir izin
+          # olmadan asla izin vermiyor (fine-grained token'da "Workflows: Read and
+          # write"). Bu bir güvenlik politikası, kod tarafında aşılamaz.
+          #
+          # Oyunun taşınması CI dosyalarına bağlı olmamalı: o commit'i geri alıp
+          # yalnızca oyunu gönderiyoruz. CI sonradan, izin verilince eklenebilir.
+          if ! echo "$OUTPUT" | grep -q 'without .workflow. scope'; then
+            echo "::error::Push başarısız oldu ve sebebi workflow izni değil."
+            exit 1
+          fi
+
+          echo "::warning::Token'da 'Workflows' izni yok — CI dosyaları olmadan taşınıyor."
+
+          # Geri almadan önce son commit'in GERÇEKTEN CI commit'i olduğunu doğrula.
+          # CI adımı "değişiklik yok" deyip commit atlamış olabilir; o durumda
+          # HEAD~1 oyunun kendi commit'ini silerdi.
+          if [ "$(git log -1 --pretty=%s)" != "$CI_COMMIT_SUBJECT" ]; then
+            echo "::error::Son commit CI commit'i değil — geri alma güvenli değil."
+            echo "Son commit: $(git log -1 --pretty=%s)"
+            exit 1
+          fi
+          git reset --hard HEAD~1
+
+          if ! OUTPUT=$(push_to_target); then
+            echo "$OUTPUT"
+            echo "::error::CI dosyaları çıkarıldıktan sonra da push başarısız."
+            exit 1
+          fi
+
+          echo "$OUTPUT"
+          echo "ci_included=false" >> "$GITHUB_OUTPUT"
+          echo "Gönderildi (CI dosyaları hariç)."
 
       - name: Sonuç
         run: |
@@ -168,10 +213,23 @@ jobs:
             echo ""
             echo "👉 https://github.com/${{ inputs.target_repo }}"
             echo ""
-            echo "Yeni depoda yapılacaklar:"
-            echo "1. Settings → Secrets → \`UNITY_LICENSE\` ekle"
-            echo "2. Settings → Variables → \`UNITY_CI_ENABLED\` = \`true\`"
-            echo "3. Actions → Unity Android Build → Run workflow → APK indir"
+            if [ "${{ steps.push.outputs.ci_included }}" = "true" ]; then
+              echo "CI dosyaları da taşındı."
+              echo ""
+              echo "Yeni depoda yapılacaklar:"
+              echo "1. Settings → Secrets → \`UNITY_LICENSE\` ekle"
+              echo "2. Settings → Variables → \`UNITY_CI_ENABLED\` = \`true\`"
+              echo "3. Actions → Unity Android Build → Run workflow → APK indir"
+            else
+              echo "⚠️ **CI dosyaları taşınmadı.** Token'da \`Workflows\` izni yok;"
+              echo "GitHub bir PAT'in \`.github/workflows/\` altına yazmasına izin vermiyor."
+              echo ""
+              echo "Oyun tam olarak taşındı, CI istersen sonradan eklenebilir:"
+              echo "1. Token ayarları → \`dreamcar-migration\` → Permissions →"
+              echo "   **Workflows: Read and write** → Update token"
+              echo "   (token değeri değişmez, secret geçerli kalır)"
+              echo "2. Bu workflow'u tekrar çalıştır"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
 # ============================================================================
