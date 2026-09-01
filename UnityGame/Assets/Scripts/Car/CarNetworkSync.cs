@@ -3,8 +3,10 @@ using UnityEngine;
 
 namespace DreamCar.Car
 {
+    // CarController'a RequireComponent KOYMUYORUZ: RCCP'li araçta sürücü
+    // RCCPCarAdapter, Unity eksik bileşeni otomatik eklerdi ve iki sürücü
+    // aynı Rigidbody'yi sürerdi. Sürücüyü IDriveInput üzerinden buluyoruz.
     [RequireComponent(typeof(PhotonView))]
-    [RequireComponent(typeof(CarController))]
     [RequireComponent(typeof(Rigidbody))]
     public class CarNetworkSync : MonoBehaviourPun, IPunObservable
     {
@@ -12,7 +14,7 @@ namespace DreamCar.Car
         public float interpSpeed = 12f;
 
         Rigidbody _rb;
-        CarController _car;
+        IDriveInput _car;
         Vector3 _netPos;
         Quaternion _netRot = Quaternion.identity;
         Vector3 _netVel;
@@ -20,19 +22,23 @@ namespace DreamCar.Car
         void Awake()
         {
             _rb = GetComponent<Rigidbody>();
-            _car = GetComponent<CarController>();
+            _car = GetComponent<IDriveInput>();
             _netPos = transform.position;
             _netRot = transform.rotation;
 
             if (!photonView.IsMine)
             {
-                // Kinematik Rigidbody yalnızca ContinuousSpeculative destekler; CarController
-                // Awake'te ContinuousDynamic'e çekmiş olabileceğinden (Awake sırası garanti
-                // değil) isKinematic'ten ÖNCE güvenli moda alıyoruz, yoksa Unity her uzak
-                // araç için hata basıyor.
+                // Kinematik Rigidbody yalnızca ContinuousSpeculative destekler; sürücü
+                // bileşeni Awake'te ContinuousDynamic'e çekmiş olabileceğinden (Awake sırası
+                // garanti değil) isKinematic'ten ÖNCE güvenli moda alıyoruz, yoksa Unity her
+                // uzak araç için hata basıyor.
                 _rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
                 _rb.isKinematic = true;
-                _car.enabled = false;
+
+                // IDriveInput arayüzünde 'enabled' yok; kapatmak için somut bileşene
+                // iniyoruz. Sürücü bulunamamışsa (prefab eksik kurulmuşsa) sessiz geçiyoruz.
+                var carBehaviour = _car as MonoBehaviour;
+                if (carBehaviour) carBehaviour.enabled = false;
             }
         }
 
