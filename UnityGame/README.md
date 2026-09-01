@@ -1062,6 +1062,9 @@ Ormanda ~1200 prop var. Prop başına GameObject mobilde ölümcül olurdu, bu y
 ## Sorun giderme
 
 - **"The type or namespace name 'Photon' could not be found"**: PUN 2 import edilmemiş — Adım 2'yi tekrar yap.
+- **Photon App Id oluştururken SDK seçimi**: "Select Photon SDK" mutlaka **PUN**, sürüm **PUN 2** olmalı. Varsayılan olarak **Fusion** seçili gelir ve Fusion App Id'si PUN ile ÇALIŞMAZ — bağlantı sessizce kurulmaz.
+- **"The name 'ScreenCapture' does not exist in the current context"** (RCCP_PhotoMode.cs): `com.unity.modules.screencapture` built-in modülü kapalı. Depodaki `Packages/manifest.json`'da artık ekli; eski bir klondaysan `Window → Package Manager → Packages: Built-in → Screen Capture → Enable`.
+  Genel kural: Asset Store asset'leri (RCCP gibi `Assets/` altına düz `.cs` olarak gelenler) ihtiyaç duydukları built-in modülü bildiremez — UPM paketlerinin aksine. Bir asset `CS0103: The name 'X' does not exist` veriyorsa önce ilgili modülün açık olup olmadığına bak.
 - **Oda yaratıp katılamama**: AppId boş → PhotonServerSettings kontrol et.
 - **Araba dönmüyor**: WheelCollider'ların Y ekseni doğru mu, Rigidbody mass 1200 mü, center of mass -0.6 Y mi.
 - **Multiplayer'da diğer araba titriyor**: `CarNetworkSync.interpSpeed` değerini artır (12 → 20).
