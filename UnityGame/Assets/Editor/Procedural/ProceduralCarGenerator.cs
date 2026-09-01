@@ -700,6 +700,43 @@ namespace DreamCar.EditorTools.Procedural
             // serileştirmiyor, değer prefab'a kaydedilmezdi. InteriorCamera aracın
             // üzerinde durduğu için Awake'te kendisi buluyor.
             root.AddComponent<InteriorCamera>();
+
+            // Plaka hiçbir prefaba eklenmiyordu ve plaka geometrisi de
+            // üretilmiyordu — Dream Road'un imza özelliklerinden biri oyunda
+            // hiç yoktu. (LicensePlate'in yazı tipi de gerçek harf çizmiyordu;
+            // o ayrıca düzeltildi.)
+            var plateMat = ProceduralTextures.CreatePlateMaterial();
+            var plate = root.AddComponent<LicensePlate>();
+            plate.plateRenderers = new[]
+            {
+                MakePlateQuad(root, "Plate_Front", plateMat,
+                    new Vector3(0f, frontSection.centerY - 0.16f, frontSection.z + 0.03f), 0f),
+                MakePlateQuad(root, "Plate_Rear", plateMat,
+                    new Vector3(0f, rearSection.centerY - 0.14f, rearSection.z - 0.03f), 180f),
+            };
+        }
+
+        // Plaka yüzeyi. Doku 512x128 (4:1), quad da o oranda.
+        static Renderer MakePlateQuad(GameObject root, string name, Material mat,
+                                      Vector3 localPosition, float yawDegrees)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            go.name = name;
+            go.transform.SetParent(root.transform, false);
+            go.transform.localPosition = localPosition;
+            // Quad'ın normali +Z; ön plaka ileri, arka plaka geriye baksın.
+            go.transform.localRotation = Quaternion.Euler(0f, yawDegrees, 0f);
+            go.transform.localScale = new Vector3(0.52f, 0.13f, 1f);
+
+            // CreatePrimitive collider de ekliyor: aracın çarpışma kutusuna
+            // yapışık ikinci bir yüzey hem gereksiz hem fizik gürültüsü.
+            var col = go.GetComponent<Collider>();
+            if (col) Object.DestroyImmediate(col);
+
+            var r = go.GetComponent<MeshRenderer>();
+            r.sharedMaterial = mat;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            return r;
         }
 
         // NOS alev püskürtücüsü. CarNitro Play()/Stop() çağırdığı için

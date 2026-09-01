@@ -571,9 +571,38 @@ namespace DreamCar.EditorTools
             // telefonda görünmüyordu.
             var hudPanel = MakeUiChild(canvasGo, "HUDPanel");
 
-            var speedText = MakeText(hudPanel, "SpeedText", "0 km/h", Vector2.zero, 48);
+            // Analog kilometre saati. SpeedometerNeedle yazılmıştı ve hiçbir
+            // sahneye eklenmiyordu (Util.GameMath.SpeedometerAngle yalnızca
+            // onun için var); HUD'da hız sadece bir sayıydı.
+            var gaugeGo = new GameObject("SpeedGauge", typeof(RectTransform), typeof(Image));
+            gaugeGo.transform.SetParent(hudPanel.transform, false);
+            var gaugeImg = gaugeGo.GetComponent<Image>();
+            Skin(gaugeImg, "ring", Palette.AccentDim);
+            gaugeImg.raycastTarget = false;
+            AnchorTo(gaugeGo.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 210f), new Vector2(280f, 280f));
+
+            // İğne göstergenin MERKEZİNDE duruyor ama pivotu tabanında: dönüş
+            // ekseni merkez olsun diye. sizeDelta yüksekliği yarıçapı belirliyor.
+            var needleGo = new GameObject("Needle", typeof(RectTransform), typeof(Image));
+            needleGo.transform.SetParent(gaugeGo.transform, false);
+            var needleRt = needleGo.GetComponent<RectTransform>();
+            needleRt.anchorMin = new Vector2(0.5f, 0.5f);
+            needleRt.anchorMax = new Vector2(0.5f, 0.5f);
+            needleRt.pivot = new Vector2(0.5f, 0.08f);
+            needleRt.anchoredPosition = Vector2.zero;
+            needleRt.sizeDelta = new Vector2(10f, 120f);
+            var needleImg = needleGo.GetComponent<Image>();
+            Skin(needleImg, "pill", Palette.Accent);
+            needleImg.raycastTarget = false;
+
+            // car alanı serileştirilemiyor (arayüz tipi); bileşen yerel aracı
+            // kendisi buluyor.
+            hudPanel.AddComponent<SpeedometerNeedle>().needle = needleRt;
+
+            var speedText = MakeText(hudPanel, "SpeedText", "0 km/h", Vector2.zero, 44);
             AnchorTo(speedText.GetComponent<RectTransform>(),
-                     new Vector2(0.5f, 0f), new Vector2(0f, 90f), new Vector2(420f, 110f));
+                     new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(240f, 70f));
 
             var playerCountText = MakeText(hudPanel, "PlayerCount", "0/16", Vector2.zero, 32);
             AnchorCorner(playerCountText.GetComponent<RectTransform>(),
@@ -634,8 +663,9 @@ namespace DreamCar.EditorTools
             // hesaplanıyordu ama HİÇBİRİNİN ekran tüketicisi yoktu; yarış
             // sıralama tablosu (LeaderboardUI) da hiçbir sahneye eklenmiyordu.
             var gearLabel = MakeText(hudPanel, "GearLabel", "N", Vector2.zero, 44);
+            // Göstergenin sağına: (0,200) iğnenin tam üstüne denk geliyordu.
             AnchorTo(gearLabel.GetComponent<RectTransform>(),
-                     new Vector2(0.5f, 0f), new Vector2(0f, 200f), new Vector2(140f, 70f));
+                     new Vector2(0.5f, 0f), new Vector2(215f, 130f), new Vector2(120f, 70f));
 
             var driftLabel = MakeText(hudPanel, "DriftScore", "", Vector2.zero, 36);
             AnchorTo(driftLabel.GetComponent<RectTransform>(),

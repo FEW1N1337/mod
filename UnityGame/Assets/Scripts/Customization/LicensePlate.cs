@@ -60,25 +60,95 @@ namespace DreamCar.Customization
             _tex.Apply(false);
         }
 
+        // 5x7 bit eşlemli yazı tipi. Buradaki eski kod bir yazı tipi DEĞİLDİ:
+        //   ink = ((x + y + text[c]) % 5) == 0 || y == 0 || y == charH - 1
+        // yani harf yerine çapraz taramalı dikdörtgenler çiziyordu ("prod'da
+        // TMP → RenderTexture kullan" notuyla). Plaka bu haliyle bağlansaydı
+        // araçlara okunamayan çizgili kutular yapıştırırdı.
+        //
+        // Her glif 7 satır x 5 sütun; '#' mürekkep. Harici bir font varlığına
+        // ihtiyaç duymuyor (projede zaten yok) ve plaka metni gerçekten okunuyor.
+        const string Charset = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+        // Her glif 7 satır x 5 sütun, satırlar üstten alta; '#' mürekkep.
+        static readonly string[] Glyphs =
+        {
+            "     " + "     " + "     " + "     " + "     " + "     " + "     ", // boşluk
+            ".###." + "#...#" + "#..##" + "#.#.#" + "##..#" + "#...#" + ".###.", // 0
+            "..#.." + ".##.." + "..#.." + "..#.." + "..#.." + "..#.." + ".###.", // 1
+            ".###." + "#...#" + "....#" + "...#." + "..#.." + ".#..." + "#####", // 2
+            "#####" + "...#." + "..#.." + "...#." + "....#" + "#...#" + ".###.", // 3
+            "...#." + "..##." + ".#.#." + "#..#." + "#####" + "...#." + "...#.", // 4
+            "#####" + "#...." + "####." + "....#" + "....#" + "#...#" + ".###.", // 5
+            "..##." + ".#..." + "#...." + "####." + "#...#" + "#...#" + ".###.", // 6
+            "#####" + "....#" + "...#." + "..#.." + ".#..." + ".#..." + ".#...", // 7
+            ".###." + "#...#" + "#...#" + ".###." + "#...#" + "#...#" + ".###.", // 8
+            ".###." + "#...#" + "#...#" + ".####" + "....#" + "...#." + ".##..", // 9
+            ".###." + "#...#" + "#...#" + "#####" + "#...#" + "#...#" + "#...#", // A
+            "####." + "#...#" + "#...#" + "####." + "#...#" + "#...#" + "####.", // B
+            ".###." + "#...#" + "#...." + "#...." + "#...." + "#...#" + ".###.", // C
+            "###.." + "#..#." + "#...#" + "#...#" + "#...#" + "#..#." + "###..", // D
+            "#####" + "#...." + "#...." + "####." + "#...." + "#...." + "#####", // E
+            "#####" + "#...." + "#...." + "####." + "#...." + "#...." + "#....", // F
+            ".###." + "#...#" + "#...." + "#.###" + "#...#" + "#...#" + ".####", // G
+            "#...#" + "#...#" + "#...#" + "#####" + "#...#" + "#...#" + "#...#", // H
+            ".###." + "..#.." + "..#.." + "..#.." + "..#.." + "..#.." + ".###.", // I
+            "..###" + "...#." + "...#." + "...#." + "...#." + "#..#." + ".##..", // J
+            "#...#" + "#..#." + "#.#.." + "##..." + "#.#.." + "#..#." + "#...#", // K
+            "#...." + "#...." + "#...." + "#...." + "#...." + "#...." + "#####", // L
+            "#...#" + "##.##" + "#.#.#" + "#.#.#" + "#...#" + "#...#" + "#...#", // M
+            "#...#" + "##..#" + "##..#" + "#.#.#" + "#..##" + "#..##" + "#...#", // N
+            ".###." + "#...#" + "#...#" + "#...#" + "#...#" + "#...#" + ".###.", // O
+            "####." + "#...#" + "#...#" + "####." + "#...." + "#...." + "#....", // P
+            ".###." + "#...#" + "#...#" + "#...#" + "#.#.#" + "#..#." + ".##.#", // Q
+            "####." + "#...#" + "#...#" + "####." + "#.#.." + "#..#." + "#...#", // R
+            ".####" + "#...." + "#...." + ".###." + "....#" + "....#" + "####.", // S
+            "#####" + "..#.." + "..#.." + "..#.." + "..#.." + "..#.." + "..#..", // T
+            "#...#" + "#...#" + "#...#" + "#...#" + "#...#" + "#...#" + ".###.", // U
+            "#...#" + "#...#" + "#...#" + "#...#" + "#...#" + ".#.#." + "..#..", // V
+            "#...#" + "#...#" + "#...#" + "#.#.#" + "#.#.#" + "##.##" + "#...#", // W
+            "#...#" + "#...#" + ".#.#." + "..#.." + ".#.#." + "#...#" + "#...#", // X
+            "#...#" + "#...#" + ".#.#." + "..#.." + "..#.." + "..#.." + "..#..", // Y
+            "#####" + "....#" + "...#." + "..#.." + ".#..." + "#...." + "#####", // Z
+        };
+
         void StampPixelText(string text)
         {
-            // Placeholder 5x7 piksel yazı (minimalist). Prod'da TMP → RenderTexture kullan.
-            int charW = 32, charH = 56;
-            int startX = (textureWidth - text.Length * charW) / 2;
-            int startY = (textureHeight - charH) / 2;
+            const int gw = 5, gh = 7;              // glif ızgarası
+            int scaleY = Mathf.Max(1, (textureHeight - 24) / gh);
+            int scaleX = Mathf.Max(1, scaleY - 2); // hafif dar: plaka yazısı böyle
+            int cellW = gw * scaleX + scaleX;      // gliflerin arasına bir sütun boşluk
+
+            text = text.ToUpperInvariant();
+            int totalW = text.Length * cellW;
+            int startX = (textureWidth - totalW) / 2;
+            int startY = (textureHeight - gh * scaleY) / 2;
 
             for (int c = 0; c < text.Length; c++)
             {
-                for (int x = 0; x < charW - 4; x++)
-                    for (int y = 0; y < charH; y++)
+                int gi = Charset.IndexOf(text[c]);
+                if (gi < 0) continue;              // desteklenmeyen karakter: boş bırak
+                string glyph = Glyphs[gi];
+
+                for (int gy = 0; gy < gh; gy++)
+                for (int gx = 0; gx < gw; gx++)
+                {
+                    if (glyph[gy * gw + gx] == ' ') continue;
+
+                    // Doku kaynağı ALTTAN yukarı; glif satırları ÜSTTEN aşağı.
+                    int baseX = startX + c * cellW + gx * scaleX;
+                    int baseY = startY + (gh - 1 - gy) * scaleY;
+
+                    for (int sy = 0; sy < scaleY; sy++)
+                    for (int sx = 0; sx < scaleX; sx++)
                     {
-                        int px = startX + c * charW + x;
-                        int py = startY + y;
+                        int px = baseX + sx, py = baseY + sy;
                         if (px < 0 || px >= textureWidth || py < 0 || py >= textureHeight) continue;
-                        bool ink = ((x + y + text[c]) % 5) == 0 || (y == 0 || y == charH - 1);
-                        if (ink) _tex.SetPixel(px, py, plateFg);
+                        _tex.SetPixel(px, py, plateFg);
                     }
+                }
             }
         }
+
     }
 }
