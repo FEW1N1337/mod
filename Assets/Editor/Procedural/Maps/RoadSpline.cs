@@ -103,7 +103,11 @@ namespace DreamCar.EditorTools.Procedural.Maps
         // --- Örnekleme ---
 
         // Spline'ı yaklaşık `spacing` metre aralıkla örnekler.
-        public List<Sample> Sample(float spacing)
+        //
+        // Adı "Sample" DEĞİL: bu tipin içinde zaten "Sample" adlı bir struct var
+        // (yukarıda) ve C# aynı tipte aynı ada sahip iki üyeye izin vermiyor —
+        // derleyici CS0102 veriyor. Metot adı SampleAlong.
+        public List<Sample> SampleAlong(float spacing)
         {
             var samples = new List<Sample>();
             if (_points.Count < 2) return samples;
