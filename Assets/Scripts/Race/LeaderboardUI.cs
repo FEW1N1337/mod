@@ -15,8 +15,20 @@ namespace DreamCar.Race
 
         void Update()
         {
-            if (Time.time < _next || !race || !label || !PhotonNetwork.InRoom) return;
+            if (Time.time < _next || !label || !PhotonNetwork.InRoom) return;
             _next = Time.time + refreshInterval;
+
+            // RaceManager Editor'de bağlanamıyor: yarış modunda GameModeManager
+            // onu çalışma anında AddComponent ediyor. Alan atanmadığı için
+            // Update eskiden ilk satırda dönüyordu — tablo hiç dolmazdı.
+            // Yarış modu dışında hiç yok, o durumda paneli gizliyoruz.
+            if (!race) race = FindFirstObjectByType<RaceManager>();
+            if (!race)
+            {
+                if (label.gameObject.activeSelf) label.gameObject.SetActive(false);
+                return;
+            }
+            if (!label.gameObject.activeSelf) label.gameObject.SetActive(true);
 
             List<(string name, int lap, float best)> rows = new();
             foreach (var kv in PhotonNetwork.CurrentRoom.Players)

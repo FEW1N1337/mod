@@ -595,6 +595,38 @@ namespace DreamCar.EditorTools
             hud.roomNameText = roomNameText;
             hud.leaveButton = leaveBtn;
 
+            // --- Vites / drift / sıralama göstergeleri ---
+            // Vites etiketi, drift skoru+combo ve drift seansı sayacı
+            // hesaplanıyordu ama HİÇBİRİNİN ekran tüketicisi yoktu; yarış
+            // sıralama tablosu (LeaderboardUI) da hiçbir sahneye eklenmiyordu.
+            var gearLabel = MakeText(hudPanel, "GearLabel", "N", Vector2.zero, 44);
+            AnchorTo(gearLabel.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 200f), new Vector2(140f, 70f));
+
+            var driftLabel = MakeText(hudPanel, "DriftScore", "", Vector2.zero, 36);
+            AnchorTo(driftLabel.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 1f), new Vector2(0f, -110f), new Vector2(520f, 60f));
+
+            var driftTimer = MakeText(hudPanel, "DriftTimer", "", Vector2.zero, 40);
+            AnchorTo(driftTimer.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 1f), new Vector2(0f, -50f), new Vector2(260f, 60f));
+
+            var driveHud = hudPanel.AddComponent<DriveHud>();
+            driveHud.gearLabel = gearLabel;
+            driveHud.driftLabel = driftLabel;
+            driveHud.driftTimerLabel = driftTimer;
+
+            // Sıralama tablosu sağ üstte, minimap'in altında. Etiket AYRI bir
+            // çocuk: LeaderboardUI yarış modu dışında etiketi gizliyor ve
+            // bileşen etiketin üzerinde olsaydı kendini kapatıp bir daha
+            // açılamazdı.
+            var lbText = MakeText(hudPanel, "RaceStandings", "", Vector2.zero, 24);
+            lbText.alignment = TextAlignmentOptions.TopRight;
+            AnchorCorner(lbText.GetComponent<RectTransform>(),
+                         new Vector2(1f, 1f), new Vector2(230f, 720f), new Vector2(420f, 260f));
+            var standings = hudPanel.AddComponent<Race.LeaderboardUI>();
+            standings.label = lbText;
+
             // --- Araç aksiyonları (kamera / korna / sinyal / emote) ---
             // Bu sistemlerin kodu ve RPC altyapısı yazılmıştı ama hiçbirini
             // ÇAĞIRAN YOKTU: korna butonu yoktu, sinyal yoktu, emote yoktu ve
