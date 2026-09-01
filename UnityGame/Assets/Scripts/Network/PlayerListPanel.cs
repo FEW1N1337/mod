@@ -15,7 +15,16 @@ namespace DreamCar.Network
 
         float _next;
 
-        void OnEnable() => Refresh();
+        // "void OnEnable()" taban sınıfın "public virtual void OnEnable()"
+        // metodunu gizliyordu; o metot PhotonNetwork.AddCallbackTarget(this)
+        // çağırıyor. Gizlendiği için oyuncu giriş/çıkış callback'leri hiç
+        // tetiklenmiyordu: liste yalnızca panel açıldığı anda dolup sonra
+        // donuyordu.
+        public override void OnEnable()
+        {
+            base.OnEnable();
+            Refresh();
+        }
         void Update() { if (Time.time >= _next) { _next = Time.time + refreshInterval; Refresh(); } }
 
         public override void OnPlayerEnteredRoom(Player p) => Refresh();

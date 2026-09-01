@@ -15,9 +15,37 @@ namespace DreamCar.UI
 
         readonly Queue<GameObject> _live = new();
 
-        void Awake() { Instance = this; }
+        // Yinelenen guard'ı YOK — ve olmamalı. ~Bootstrap üzerindeki başka
+        // bileşenler DontDestroyOnLoad çağırdığı için ana menünün
+        // ToastNotification'ı harita sahnesine kadar hayatta kalıyor; ama
+        // stackParent ile toastPrefab ana menü Canvas'ının çocuğuydu ve o
+        // Canvas sahneyle birlikte yok edildi. Yani hayatta kalan örnek
+        // ÇALIŞMAYAN bir örnek. Kazanan, referansları CANLI olan olmalı.
+        void Awake() { if (stackParent || !Instance) Instance = this; }
 
-        public static void Show(string message) { if (Instance) Instance.ShowInternal(message); }
+        public static void Show(string message)
+        {
+            var inst = Resolve();
+            if (inst) inst.ShowInternal(message);
+        }
+
+        // Önbellekteki örnek iki şekilde işe yaramaz hale gelebiliyor:
+        // sahnesiyle birlikte yok edilmiş olabilir (Unity sahte-null), ya da
+        // kendisi yaşıyor ama gösterdiği UI önceki sahneyle gitmiş olabilir.
+        // İkisinde de projedeki 40 Show() çağrısı sessizce düşüyordu — yarış
+        // sayacı, ödül bildirimi, yakıt uyarısı, yeniden bağlanma durumu…
+        static ToastNotification Resolve()
+        {
+            if (Instance && Instance.stackParent && Instance.toastPrefab) return Instance;
+
+            // Yalnızca önbellek geçersizken çalışır, her Show()'da değil.
+            var all = FindObjectsByType<ToastNotification>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var t in all)
+                if (t && t.stackParent && t.toastPrefab) { Instance = t; return t; }
+
+            return null;
+        }
 
         void ShowInternal(string msg)
         {
