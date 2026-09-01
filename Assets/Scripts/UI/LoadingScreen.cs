@@ -44,6 +44,17 @@ namespace DreamCar.UI
             if (Instance && Instance != this) { Destroy(this); return; }
             Instance = this;
             DontDestroyOnLoad(gameObject);
+
+            // Panel AYRI bir Canvas'ın altında ve o Canvas da hayatta kalmalı:
+            // aksi halde bu bileşen sahne geçişinden sağ çıkar ama gösterdiği
+            // UI yok edilir ve yükleme ekranı tam da gerektiği anda (sahne
+            // geçişinde) çalışmayan bir referansa dönerdi.
+            if (panel)
+            {
+                var root = panel.transform.root.gameObject;
+                if (root != gameObject) DontDestroyOnLoad(root);
+            }
+
             HideImmediate();
         }
 

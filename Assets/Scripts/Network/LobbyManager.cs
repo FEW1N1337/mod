@@ -94,6 +94,12 @@ namespace DreamCar.Network
 
         public override void OnJoinedRoom()
         {
+            // LoadingScreen kuruluyordu ve proje genelinde SIFIR çağıranı vardı:
+            // sahne yüklenirken oyuncu donmuş bir ekrana bakıyordu. Master
+            // dışındakiler de yüklüyor (AutomaticallySyncScene), o yüzden çağrı
+            // master kontrolünden ÖNCE.
+            if (UI.LoadingScreen.Instance) UI.LoadingScreen.Instance.ShowForPhotonLoad();
+
             if (!PhotonNetwork.IsMasterClient) return;
 
             // Eskiden HER ZAMAN sabit "Game" sahnesi yükleniyordu. Sonucu: üretilen
