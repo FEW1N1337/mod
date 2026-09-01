@@ -11,6 +11,12 @@ namespace DreamCar.Network
     {
         public Transform listParent;
         public GameObject entryPrefab;
+        // Rapor akışı ve ses susturma buradan tetikleniyor. ReportPlayer'ın
+        // Open(Player)'ının ve PlayerVoiceMute.ToggleMute'un proje genelinde
+        // hiçbir çağıranı yoktu; bu panel de hiçbir sahnede yoktu, yani
+        // oyuncuyu atmanın, raporlamanın ya da susturmanın hiçbir yolu
+        // bulunmuyordu. Mağaza incelemesi için rapor akışı gerekiyor.
+        public Moderation.ReportPlayer report;
         public float refreshInterval = 1f;
 
         float _next;
@@ -41,6 +47,9 @@ namespace DreamCar.Network
             {
                 var p = kv.Value;
                 var go = Instantiate(entryPrefab, listParent);
+                // entryPrefab sahnede kapalı duran bir şablon; klon da kapalı
+                // doğar ve satırlar hem görünmez hem metinsiz kalırdı.
+                go.SetActive(true);
                 var label = go.GetComponentInChildren<TMP_Text>();
                 if (label)
                 {
@@ -49,15 +58,53 @@ namespace DreamCar.Network
                     label.text = $"{p.NickName}{master}  ({ping})";
                 }
 
-                var btn = go.GetComponentInChildren<Button>();
-                if (btn)
+                var target = p;
+
+                // Butonlar ADIYLA bulunuyor: satırda üç tane var ve
+                // GetComponentInChildren<Button>() hep ilkini döndürürdü.
+                var kick = FindButton(go, "KickButton");
+                if (kick)
                 {
                     bool canKick = PhotonNetwork.IsMasterClient && !p.IsLocal;
-                    btn.gameObject.SetActive(canKick);
-                    var target = p;
-                    btn.onClick.AddListener(() => PhotonNetwork.CloseConnection(target));
+                    kick.gameObject.SetActive(canKick);
+                    kick.onClick.AddListener(() => PhotonNetwork.CloseConnection(target));
+                }
+
+                var reportBtn = FindButton(go, "ReportButton");
+                if (reportBtn)
+                {
+                    reportBtn.gameObject.SetActive(!p.IsLocal);
+                    reportBtn.onClick.AddListener(() => { if (report) report.Open(target); });
+                }
+
+                var muteBtn = FindButton(go, "MuteButton");
+                if (muteBtn)
+                {
+                    muteBtn.gameObject.SetActive(!p.IsLocal);
+                    var muteLabel = muteBtn.GetComponentInChildren<TMP_Text>();
+                    RefreshMuteLabel(muteLabel, target);
+                    muteBtn.onClick.AddListener(() =>
+                    {
+                        var vm = Voice.PlayerVoiceMute.Instance;
+                        if (!vm) return;
+                        vm.ToggleMute(target);
+                        RefreshMuteLabel(muteLabel, target);
+                    });
                 }
             }
+        }
+
+        static void RefreshMuteLabel(TMP_Text label, Photon.Realtime.Player p)
+        {
+            if (!label) return;
+            var vm = Voice.PlayerVoiceMute.Instance;
+            label.text = vm && vm.IsMuted(p) ? "Aç" : "Sustur";
+        }
+
+        static Button FindButton(GameObject row, string name)
+        {
+            var t = row.transform.Find(name);
+            return t ? t.GetComponent<Button>() : null;
         }
     }
 }

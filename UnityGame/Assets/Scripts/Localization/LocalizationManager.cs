@@ -106,7 +106,13 @@ namespace DreamCar.Localization
             PlayerPrefs.SetString("lang", code);
             PlayerPrefs.Save();
 
-            foreach (var l in FindObjectsByType<LocalizedText>(FindObjectsSortMode.None)) l.Refresh();
+            // KAPALI panellerdekiler de yenilenmeli: ikincil ekranların çoğu
+            // kapalı duruyor ve dil değiştikten sonra açıldıklarında eski dilde
+            // kalırlardı. (LocalizedText.Start() de yeniliyor ama yalnızca ilk
+            // etkinleşmede; bir kez açılıp kapanmış panel için geç kalıyor.)
+            foreach (var l in FindObjectsByType<LocalizedText>(
+                         FindObjectsInactive.Include, FindObjectsSortMode.None))
+                l.Refresh();
             OnLanguageChanged?.Invoke();
         }
 

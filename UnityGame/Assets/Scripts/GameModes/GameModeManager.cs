@@ -15,6 +15,17 @@ namespace DreamCar.GameModes
 
         public void SpawnForRoom()
         {
+            // Eski mod bileşeni kaldırılmıyordu. Bugün patlamıyor çünkü
+            // SpawnForRoom'un tek çağrısı Start(); ama metot public ve ikinci
+            // bir çağrı iki mod bileşeni + iki OnModeStart coroutine'i bırakır
+            // (OnModeEnd de hiç çağrılmaz). Gizli bir tuzak, kapatalım.
+            if (Active)
+            {
+                Active.OnModeEnd();
+                Destroy(Active);
+                Active = null;
+            }
+
             int modeInt = 0;
             if (PhotonNetwork.InRoom &&
                 PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(ModePropKey, out object v) && v is int i)

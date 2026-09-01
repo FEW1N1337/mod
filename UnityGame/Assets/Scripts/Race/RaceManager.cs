@@ -133,8 +133,13 @@ namespace DreamCar.Race
             float total = Time.time - s.startTime;
             Debug.Log($"[Race] Player {actor} finished in {total:F2}s (best lap {s.bestLapTime:F2}s)");
             bool isLocal = PhotonNetwork.LocalPlayer.ActorNumber == actor;
+            // RemoteConfig PlayFab TitleData'yı çekip önbelleğe alıyor ve
+            // GetInt/GetLong/... ailesinin proje genelinde SIFIR çağrısı vardı:
+            // reklamı yapılan canlı ayar yeteneği pratikte yoktu, ödüller kodda
+            // sabitti. Anahtar yoksa alanın değeri geçerli kalıyor.
+            long reward = Backend.RemoteConfig.GetLong("race.winReward", winReward);
             if (isLocal && PlayerMoney.Instance)
-                PlayerMoney.Instance.Add(winReward);
+                PlayerMoney.Instance.Add(reward);
 
             if (isLocal)
             {
@@ -159,7 +164,7 @@ namespace DreamCar.Race
                 // Bitişin tek geri bildirimi Debug.Log'du — oyuncu ekranda hiçbir şey görmüyordu.
                 string head = won ? "Yarışı kazandın!" : "Yarış bitti";
                 UI.ToastNotification.Show(
-                    $"{head} Süre {total:F2}s · En iyi tur {s.bestLapTime:F2}s · +{winReward:N0}");
+                    $"{head} Süre {total:F2}s · En iyi tur {s.bestLapTime:F2}s · +{reward:N0}");
             }
             // Durumu silmek yerine işaretle: silinince oyuncu çizgiden tekrar geçtiğinde
             // sıfırdan yeni bir yarış başlatıp ödülü defalarca alabiliyordu.
