@@ -195,6 +195,20 @@ namespace DreamCar.EditorTools.Procedural
             return mat;
         }
 
+        // Plaka: matbaa beyazı, yansımasız. Dokuyu LicensePlate çalışma anında
+        // _BaseMap'e yazıyor (oyuncunun plaka metni).
+        public static Material CreatePlateMaterial()
+        {
+            const string name = "car_plate";
+            var mat = NewMaterial(name);
+            SetColor(mat, Color.white);
+            SetFloat(mat, "_Metallic", 0f);
+            SetFloat(mat, "_Smoothness", 0.25f);
+            SetFloat(mat, "_Glossiness", 0.25f);
+            SaveMaterial(mat, name);
+            return mat;
+        }
+
         public static Material CreateGlassMaterial(string name)
         {
             var mat = NewMaterial(name);
