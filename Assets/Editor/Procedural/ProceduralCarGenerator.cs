@@ -693,6 +693,10 @@ namespace DreamCar.EditorTools.Procedural
             Debug.Log($"[Procedural] Katalog: {catalogFolder}/CarCatalog.asset");
         }
 
+        public static Economy.CarCatalog LoadCatalog() =>
+            AssetDatabase.LoadAssetAtPath<Economy.CarCatalog>(
+                "Assets/Generated/Catalog/CarCatalog.asset");
+
         static void SaveMesh(Mesh mesh, string name)
         {
             string path = $"{MeshFolder}/{name}.asset";
