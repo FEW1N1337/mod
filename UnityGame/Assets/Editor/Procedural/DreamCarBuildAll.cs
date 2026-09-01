@@ -59,27 +59,31 @@ namespace DreamCar.EditorTools.Procedural
                 EditorUtility.DisplayProgressBar("DreamCar", "Araç kataloğu kuruluyor…", 0.42f);
                 ProceduralCarGenerator.BuildCatalog();
 
-                EditorUtility.DisplayProgressBar("DreamCar", "Ana menü sahnesi…", 0.48f);
+                // En uzun adım: 8 harita sahnesi. Sahnelerden ÖNCE koşmalı — MapCatalog'u
+                // üretiyor ve MainMenu ile Game sahnesindeki MapSelector ona referans
+                // veriyor. Sonra koşsaydı bağlanacak varlık henüz var olmazdı ve harita
+                // varyantları (gündüz/gece/yağmur) hiç uygulanmazdı.
+                EditorUtility.DisplayProgressBar("DreamCar", "Haritalar üretiliyor…", 0.50f);
+                ProceduralMapGenerator.GenerateAll(confirm: false);
+
+                EditorUtility.DisplayProgressBar("DreamCar", "Ana menü sahnesi…", 0.70f);
                 DreamCarSetup.CreateMainMenu();
 
-                EditorUtility.DisplayProgressBar("DreamCar", "Oyun sahnesi…", 0.54f);
+                EditorUtility.DisplayProgressBar("DreamCar", "Oyun sahnesi…", 0.76f);
                 DreamCarSetup.CreateGameScene();
 
-                EditorUtility.DisplayProgressBar("DreamCar", "Şehir üretiliyor…", 0.60f);
+                EditorUtility.DisplayProgressBar("DreamCar", "Şehir üretiliyor…", 0.84f);
                 ProceduralCityGenerator.GenerateCity();
 
                 // Şehir aktif sahneye eklendi — Game sahnesi olarak kaydet.
                 EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
 
-                // MainMenu + Game'i build listesine yazar (listeyi sıfırlar).
-                // Haritalar bundan SONRA eklenmeli; harita adımı mevcut girdileri korur.
-                EditorUtility.DisplayProgressBar("DreamCar", "Build Settings…", 0.64f);
+                // Bu metot build listesini SIFIRLAYIP MainMenu + Game yazıyor, yani
+                // harita adımının eklediklerini siler. Haritalar hemen ardından geri
+                // eklenir; o metot mevcut girdileri koruyarak yazıyor.
+                EditorUtility.DisplayProgressBar("DreamCar", "Build Settings…", 0.92f);
                 DreamCarSetup.AddScenesToBuildSettings();
-
-                // En uzun adım: 8 harita sahnesi. Kendi ilerleme çubuğunu gösterir,
-                // ardından Build Settings ve MapCatalog'u kendisi günceller.
-                EditorUtility.DisplayProgressBar("DreamCar", "Haritalar üretiliyor…", 0.70f);
-                ProceduralMapGenerator.GenerateAll(confirm: false);
+                ProceduralMapGenerator.AddMapsToBuildSettings();
 
                 AssetDatabase.SaveAssets();
                 AssetDatabase.Refresh();
