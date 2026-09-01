@@ -23,6 +23,9 @@ namespace DreamCar.UI
         {
             if (!stackParent || !toastPrefab) return;
             var go = Instantiate(toastPrefab, stackParent);
+            // toastPrefab sahnede kapalı duran bir şablon; klon da kapalı doğar ve
+            // kapalı objede GetComponentInChildren (includeInactive olmadan) null döner.
+            go.SetActive(true);
             var label = go.GetComponentInChildren<TMP_Text>();
             if (label) label.text = msg;
 
