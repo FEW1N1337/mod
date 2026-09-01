@@ -18,7 +18,17 @@ namespace DreamCar.Race
         public int Bank => _bank;
         public int Current => Mathf.RoundToInt(_currentDrift);
 
-        void Awake() => _rb = GetComponent<Rigidbody>();
+        void Awake()
+        {
+            _rb = GetComponent<Rigidbody>();
+
+            // Yalnızca YEREL araçta çalışmalı. Bileşen artık her araç prefabında
+            // olduğu için, guard olmadan uzak oyuncuların driftleri de bizim
+            // istatistiğimize ve başarımlarımıza yazılırdı.
+            // PhotonView yoksa tek oyunculu/Editor testi sayıyoruz.
+            var pv = GetComponent<Photon.Pun.PhotonView>();
+            if (pv && !pv.IsMine) enabled = false;
+        }
 
         void FixedUpdate()
         {

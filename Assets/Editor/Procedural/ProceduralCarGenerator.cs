@@ -633,6 +633,11 @@ namespace DreamCar.EditorTools.Procedural
             var damage = root.AddComponent<CarDamage>();
             damage.crashSfx = crashSource;
 
+            // DriftScore hiçbir prefaba eklenmiyordu: DriftMode.Finish() hiçbir şey
+            // bulamıyor, drift modu üç dakika sonunda sessizce hiçbir şey yapmıyordu.
+            // Drift başarımı ve "en iyi drift" istatistiği de bu bileşene bağlı.
+            root.AddComponent<Race.DriftScore>();
+
             root.AddComponent<CruiseControl>();
             root.AddComponent<GearBox>();
             root.AddComponent<FuelSystem>();

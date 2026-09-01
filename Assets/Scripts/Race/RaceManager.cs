@@ -99,17 +99,49 @@ namespace DreamCar.Race
 
             if (isLocal)
             {
+                // Eskiden bitiren HERKES won:true yazıyordu — sonuncu gelen bile
+                // "kazandı" sayılıyor, zafer başarımı ve istatistiği anlamsızlaşıyordu.
+                // Çizgiyi ilk geçen odaya kendini yazar; sonrakiler dolu bulur.
+                bool won = ClaimFirstPlace();
+
                 var ach = Backend.PlayFabAchievements.Instance;
-                if (ach) ach.OnRaceFinished(won: true);
+                if (ach) ach.OnRaceFinished(won);
                 var rate = AppMeta.RateAppPopup.Instance;
                 if (rate) rate.OnRaceFinished();
-                if (Core.PlayerStats.Instance) Core.PlayerStats.Instance.ReportRaceFinished(won: true);
+                if (Core.PlayerStats.Instance) Core.PlayerStats.Instance.ReportRaceFinished(won);
+
                 // Bitişin tek geri bildirimi Debug.Log'du — oyuncu ekranda hiçbir şey görmüyordu.
-                UI.ToastNotification.Show($"Yarış bitti! Süre {total:F2}s · En iyi tur {s.bestLapTime:F2}s · +{winReward:N0}");
+                string head = won ? "Yarışı kazandın!" : "Yarış bitti";
+                UI.ToastNotification.Show(
+                    $"{head} Süre {total:F2}s · En iyi tur {s.bestLapTime:F2}s · +{winReward:N0}");
             }
             // Durumu silmek yerine işaretle: silinince oyuncu çizgiden tekrar geçtiğinde
             // sıfırdan yeni bir yarış başlatıp ödülü defalarca alabiliyordu.
             s.finished = true;
+        }
+
+        const string WinnerKey = "rw";
+
+        // Birincilik odada tek bir özellikte tutulur. Boşsa bu oyuncu ilk bitirendir
+        // ve kendini yazar; doluysa biri önce gelmiştir.
+        //
+        // Sınır: iki oyuncu aynı milisaniyede bitirirse ikisi de boş görüp ikisi de
+        // yazabilir. Photon'un check-and-swap'i bunu tam çözer ama tek oyunculu ve
+        // offline modda davranışı doğrulayamadığım için basit yolu seçtim; pencere
+        // milisaniye mertebesinde ve sonucu yalnızca bir başarım bayrağı.
+        bool ClaimFirstPlace()
+        {
+            if (!PhotonNetwork.InRoom) return true;   // tek oyunculu: bitiren kazanır
+
+            var room = PhotonNetwork.CurrentRoom;
+            if (room.CustomProperties.TryGetValue(WinnerKey, out object existing) && existing != null)
+                return (int)existing == PhotonNetwork.LocalPlayer.ActorNumber;
+
+            room.SetCustomProperties(new ExitGames.Client.Photon.Hashtable
+            {
+                { WinnerKey, PhotonNetwork.LocalPlayer.ActorNumber },
+            });
+            return true;
         }
 
         public (int lap, int totalLaps, float lapTime, float best) StatusFor(int actor)
