@@ -142,6 +142,13 @@ jobs:
           git remote add target "https://github.com/${TARGET_REPO}.git"
           AUTH=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
 
+          # actions/checkout kendi kimlik bilgisini http.https://github.com/.extraheader
+          # olarak kuruyor. extraheader ÇOK DEĞERLİ bir ayar: üstüne bizimkini eklersek
+          # istekte iki Authorization header'ı gider ve GitHub 400 "Duplicate header"
+          # döner. Kendi header'ımızı koymadan önce onunkini kaldırıyoruz.
+          # (Checkout'un kendi temizlik adımı bu anahtarı zaten unset ediyor, sorun olmaz.)
+          git config --local --unset-all "http.https://github.com/.extraheader" || true
+
           PUSH_ARGS=""
           if [ "$FORCE" = "true" ]; then
             PUSH_ARGS="--force"
