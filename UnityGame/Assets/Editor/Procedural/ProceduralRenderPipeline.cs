@@ -186,7 +186,54 @@ namespace DreamCar.EditorTools.Procedural
             PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
             PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel24;
 
+            EnsureBothInputBackends();
+
             Debug.Log("[Pipeline] Player Settings uygulandı (Linear, IL2CPP, ARM64, yatay).");
+        }
+
+        // Girdi arka ucu "Both" olmalı — bu bir tercih değil, ZORUNLULUK.
+        //
+        // Projede iki farklı girdi API'si yan yana çalışıyor:
+        //   • Bizim kodumuz ESKİ Input Manager'ı kullanıyor: MobileTouchInput
+        //     (Input.GetTouch, Input.touchCount, Input.GetAxisRaw), PauseMenu ve
+        //     CameraModeController (Input.GetKeyDown), CruiseControl, HighBeam.
+        //   • RCCP YENİ Input System'i kullanıyor (InputAction, InputActionMap).
+        //
+        // Yalnızca "Input System Package (New)" seçilirse bizim her
+        // Input.GetTouch çağrımız çalışma anında InvalidOperationException
+        // atar — yani dokunmatik sürüş tamamen ölür. Yalnızca "Input Manager
+        // (Old)" seçilirse RCCP girdi alamaz.
+        //
+        // Ayar PlayerSettings API'sinde açık değil; ProjectSettings.asset
+        // içindeki "activeInputHandler" alanına SerializedObject ile yazılıyor
+        // (0 = eski, 1 = yeni, 2 = ikisi). Değişiklik Editor yeniden
+        // başlatılınca etkinleşir.
+        static void EnsureBothInputBackends()
+        {
+            try
+            {
+                var assets = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/ProjectSettings.asset");
+                if (assets == null || assets.Length == 0) return;
+
+                var so = new SerializedObject(assets[0]);
+                var prop = so.FindProperty("activeInputHandler");
+                if (prop == null) return;               // alan adı sürümle değişmişse sessizce geç
+                if (prop.intValue == 2) return;         // zaten "Both"
+
+                prop.intValue = 2;
+                so.ApplyModifiedProperties();
+                AssetDatabase.SaveAssets();
+
+                Debug.LogWarning("[Pipeline] Active Input Handling → Both yapıldı " +
+                                 "(RCCP yeni, bizim kodumuz eski girdi API'sini kullanıyor). " +
+                                 "Etkinleşmesi için Unity'yi yeniden başlat.");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("[Pipeline] Girdi arka ucu ayarlanamadı: " + e.Message +
+                                 "\nElle: Edit → Project Settings → Player → Other Settings → " +
+                                 "Active Input Handling → Both");
+            }
         }
 
         static void TryConfigure(NamedBuildTarget target, string bundleId)
