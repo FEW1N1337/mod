@@ -274,6 +274,39 @@ namespace DreamCar.EditorTools
             mainMenuUI.playButton = playBtn;
             mainMenuUI.statusText = statusText;
 
+            // --- Garaj ---
+            // GarageCarousel yazılmıştı ama hiçbir sahneye eklenmiyordu: oyuncu araç
+            // satın alabiliyor ama satın aldığını SEÇEMİYORDU, hep başlangıç aracıyla
+            // oynuyordu. Sol sütuna kuruluyor; nav butonları y=-300'de, burası boş.
+            var garageThumbGo = new GameObject("GarageThumb", typeof(RectTransform), typeof(Image));
+            garageThumbGo.transform.SetParent(mainPanel.transform, false);
+            var garageThumbRt = garageThumbGo.GetComponent<RectTransform>();
+            garageThumbRt.anchoredPosition = new Vector2(-600f, 140f);
+            garageThumbRt.sizeDelta = new Vector2(360f, 200f);
+            var garageThumb = garageThumbGo.GetComponent<Image>();
+            garageThumb.color = new Color(1f, 1f, 1f, 0.10f);
+            garageThumb.preserveAspect = true;
+
+            var garagePrev = MakeButton(mainPanel, "GaragePrev", "◀", new Vector2(-820f, 140f));
+            garagePrev.GetComponent<RectTransform>().sizeDelta = new Vector2(120f, 120f);
+            var garageNext = MakeButton(mainPanel, "GarageNext", "▶", new Vector2(-380f, 140f));
+            garageNext.GetComponent<RectTransform>().sizeDelta = new Vector2(120f, 120f);
+
+            var garageName = MakeText(mainPanel, "GarageName", "-", new Vector2(-600f, 10f), 36);
+            var garagePrice = MakeText(mainPanel, "GaragePrice", "-", new Vector2(-600f, -50f), 28);
+            var garageSelect = MakeButton(mainPanel, "GarageSelect", "Seç", new Vector2(-600f, -140f));
+
+            var garage = mainPanel.AddComponent<GarageCarousel>();
+            garage.prevButton = garagePrev;
+            garage.nextButton = garageNext;
+            garage.selectButton = garageSelect;
+            garage.nameLabel = garageName;
+            garage.priceOrOwnedLabel = garagePrice;
+            garage.thumbnail = garageThumb;
+            // previewMount bilerek boş: 3B önizleme araç prefabını Instantiate ederdi,
+            // o prefab PhotonView ve Rigidbody taşıyor — menü sahnesinde odaya bağlı
+            // olmadan doğurmak hata üretir. Alan zaten null kontrolüyle korunuyor.
+
             // Lobby panel (inactive by default)
             var lobbyPanel = MakeUiChild(canvasGo, "LobbyPanel");
             lobbyPanel.SetActive(false);
@@ -645,8 +678,15 @@ namespace DreamCar.EditorTools
             var settingsBtn = MakeButton(pausePanel, "Settings", "Ayarlar", new Vector2(0f, 40f));
             var leaveRoomBtn = MakeButton(pausePanel, "LeaveRoom", "Odadan Çık", new Vector2(0f, -70f));
             var mainMenuBtn = MakeButton(pausePanel, "MainMenu", "Ana Menü", new Vector2(0f, -180f));
+            // Ayarlar ekranı Game sahnesinde hiç kurulmuyordu (BuildSecondaryScreens
+            // yalnızca ana menüde çağrılıyor), bu yüzden duraklatma menüsündeki
+            // "Ayarlar" butonu sessizce hiçbir şey yapmıyordu: oyun içinde ses ve
+            // hassasiyet ayarlanamıyordu.
+            var gameSettingsScreen = BuildSettingsScreen(canvasGo);
+
             var pauseScript = pausePanel.AddComponent<PauseMenu>();
             pauseScript.panel = pausePanel;
+            pauseScript.settingsPanel = gameSettingsScreen.panel;
             pauseScript.resumeButton = resumeBtn;
             pauseScript.settingsButton = settingsBtn;
             pauseScript.leaveRoomButton = leaveRoomBtn;
@@ -682,9 +722,10 @@ namespace DreamCar.EditorTools
         // ---------------------------------------------------------- Secondary screens
         // Ayarlar / Liderlik / Başarımlar / Coin Mağazası / İstatistik panelleri.
         // Hepsi kapalı başlar; ana menüye açma butonları eklenir.
-        static void BuildSecondaryScreens(GameObject canvasGo, GameObject mainPanel)
+        // Ayarlar ekranı iki sahnede de gerekiyor: ana menüde nav butonundan,
+        // oyun içinde duraklatma menüsünden açılıyor. Tek yerden kurulur.
+        static SettingsScreen BuildSettingsScreen(GameObject canvasGo)
         {
-            // --- Ayarlar ---
             var settingsPanel = MakeUiChild(canvasGo, "SettingsScreen");
             settingsPanel.SetActive(false);
             MakeText(settingsPanel, "Title", "Ayarlar", new Vector2(0f, 420f), 64);
@@ -709,6 +750,13 @@ namespace DreamCar.EditorTools
             settings.steeringSensitivitySlider = steerSl;
             settings.steeringValueLabel = steerVal;
             settings.languageDropdown = langDd;
+            return settings;
+        }
+
+        static void BuildSecondaryScreens(GameObject canvasGo, GameObject mainPanel)
+        {
+            // --- Ayarlar ---
+            var settings = BuildSettingsScreen(canvasGo);
 
             // --- Liderlik ---
             var lbPanel = MakeUiChild(canvasGo, "LeaderboardScreen");
