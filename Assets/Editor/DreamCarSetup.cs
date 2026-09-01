@@ -595,6 +595,48 @@ namespace DreamCar.EditorTools
             hud.roomNameText = roomNameText;
             hud.leaveButton = leaveBtn;
 
+            // --- Araç aksiyonları (kamera / korna / sinyal / emote) ---
+            // Bu sistemlerin kodu ve RPC altyapısı yazılmıştı ama hiçbirini
+            // ÇAĞIRAN YOKTU: korna butonu yoktu, sinyal yoktu, emote yoktu ve
+            // oyunda tek kamera açısı vardı (Cycle yalnızca KeyCode.V'ye bağlı,
+            // mobilde ulaşılamaz). Hedef bileşenler araç prefabında ve araç
+            // odaya girilince doğuyor, o yüzden kalıcı listener kurulamıyor —
+            // CarActionButtons çağrıyı çalışma anında yerel araca iletiyor.
+            //
+            // Sol kenarda dikey sütun: sağ alt pedallara, sol alt direksiyon
+            // pedine ayrılmış durumda.
+            var actions = hudPanel.AddComponent<CarActionButtons>();
+
+            var camBtn = MakeIconButton(hudPanel, "CameraButton", "", Vector2.zero, "icon_camera");
+            AnchorCorner(camBtn.GetComponent<RectTransform>(),
+                         new Vector2(0f, 1f), new Vector2(100f, 340f), new Vector2(120f, 110f));
+            actions.cameraButton = camBtn;
+
+            var hornBtn = MakeIconButton(hudPanel, "HornButton", "", Vector2.zero, "icon_horn");
+            AnchorCorner(hornBtn.GetComponent<RectTransform>(),
+                         new Vector2(0f, 1f), new Vector2(100f, 460f), new Vector2(120f, 110f));
+            actions.hornButton = hornBtn;
+
+            var sigLeft = MakeChevronButton(hudPanel, "SignalLeft", Vector2.zero, pointRight: false);
+            AnchorCorner(sigLeft.GetComponent<RectTransform>(),
+                         new Vector2(0f, 1f), new Vector2(100f, 580f), new Vector2(120f, 110f));
+            actions.signalLeftButton = sigLeft;
+
+            var sigRight = MakeChevronButton(hudPanel, "SignalRight", Vector2.zero, pointRight: true);
+            AnchorCorner(sigRight.GetComponent<RectTransform>(),
+                         new Vector2(0f, 1f), new Vector2(100f, 700f), new Vector2(120f, 110f));
+            actions.signalRightButton = sigRight;
+
+            var hazardBtn = MakeIconButton(hudPanel, "HazardButton", "", Vector2.zero, "icon_hazard");
+            AnchorCorner(hazardBtn.GetComponent<RectTransform>(),
+                         new Vector2(0f, 1f), new Vector2(100f, 820f), new Vector2(120f, 110f));
+            actions.hazardButton = hazardBtn;
+
+            var emoteBtn = MakeIconButton(hudPanel, "EmoteButton", "", Vector2.zero, "icon_emote");
+            AnchorCorner(emoteBtn.GetComponent<RectTransform>(),
+                         new Vector2(0f, 1f), new Vector2(100f, 940f), new Vector2(120f, 110f));
+            actions.emoteButton = emoteBtn;
+
             var pingText = MakeText(hudPanel, "PingText", "-- ms", Vector2.zero, 24);
             AnchorCorner(pingText.GetComponent<RectTransform>(),
                          new Vector2(1f, 1f), new Vector2(260f, 250f), new Vector2(360f, 50f));
@@ -672,15 +714,15 @@ namespace DreamCar.EditorTools
             var chatMessages = MakeText(chatPanel, "ChatMessages", "", Vector2.zero, 24);
             chatMessages.alignment = TextAlignmentOptions.BottomLeft;
             AnchorCorner(chatMessages.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(380f, 420f), new Vector2(700f, 420f));
+                         new Vector2(0f, 1f), new Vector2(510f, 430f), new Vector2(620f, 420f));
 
             var chatInput = MakeInputField(chatPanel, "ChatInput", "Mesaj…", Vector2.zero);
             AnchorCorner(chatInput.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(300f, 680f), new Vector2(520f, 70f));
+                         new Vector2(0f, 1f), new Vector2(460f, 700f), new Vector2(500f, 70f));
 
             var chatSend = MakeButton(chatPanel, "ChatSend", "Gönder", Vector2.zero);
             AnchorCorner(chatSend.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(670f, 680f), new Vector2(200f, 70f));
+                         new Vector2(0f, 1f), new Vector2(820f, 700f), new Vector2(200f, 70f));
             var chatPv = chatPanel.AddComponent<Photon.Pun.PhotonView>();
             var richChat = chatPanel.AddComponent<RichChatUI>();
             richChat.inputField = chatInput;
@@ -1395,13 +1437,17 @@ namespace DreamCar.EditorTools
             var sprite = Ui(iconName);
             if (!sprite) return btn;   // sprite'lar üretilmemiş: düz butonla kal
 
+            // Etiket boşsa (yalnızca ikon olan HUD butonları) ikon ortalanır;
+            // sola dayalı bırakılsaydı 120 birimlik kare butonda kaçık dururdu.
+            bool iconOnly = string.IsNullOrEmpty(label);
+
             var icon = new GameObject("Icon", typeof(RectTransform), typeof(Image));
             icon.transform.SetParent(btn.transform, false);
             var iconRt = icon.GetComponent<RectTransform>();
-            iconRt.anchorMin = new Vector2(0f, 0.5f);
-            iconRt.anchorMax = new Vector2(0f, 0.5f);
-            iconRt.anchoredPosition = new Vector2(46f, 0f);
-            iconRt.sizeDelta = new Vector2(46f, 46f);
+            iconRt.anchorMin = new Vector2(iconOnly ? 0.5f : 0f, 0.5f);
+            iconRt.anchorMax = new Vector2(iconOnly ? 0.5f : 0f, 0.5f);
+            iconRt.anchoredPosition = iconOnly ? Vector2.zero : new Vector2(46f, 0f);
+            iconRt.sizeDelta = iconOnly ? new Vector2(64f, 64f) : new Vector2(46f, 46f);
             var img = icon.GetComponent<Image>();
             img.sprite = sprite;
             img.preserveAspect = true;
@@ -1410,7 +1456,7 @@ namespace DreamCar.EditorTools
             img.raycastTarget = false;
 
             // Etiketi ikonun sağına kaydır, yoksa üst üste binerler.
-            var labelRt = btn.transform.Find("Label") as RectTransform;
+            var labelRt = iconOnly ? null : btn.transform.Find("Label") as RectTransform;
             if (labelRt)
             {
                 labelRt.offsetMin = new Vector2(78f, labelRt.offsetMin.y);

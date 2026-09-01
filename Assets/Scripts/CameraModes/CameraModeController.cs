@@ -26,6 +26,8 @@ namespace DreamCar.CameraModes
 
         float _cineT;
 
+        // Klavye kısayolu masaüstü testinde kalsın; mobilde HUD'daki kamera
+        // butonu Cycle()'ı kalıcı listener ile çağırıyor.
         void Update() { if (Input.GetKeyDown(cycleKey)) Cycle(); }
 
         void LateUpdate()
@@ -67,6 +69,35 @@ namespace DreamCar.CameraModes
             }
         }
 
-        public void Cycle() => current = (Mode)(((int)current + 1) % 6);
+        // Mobilde fare yok: Free modu (Mouse X ile döndürme) dokunmatik bir
+        // cihazda hiçbir şey yapmıyor ve kullanıcıyı "kamera bozuldu" hissiyle
+        // baş başa bırakıyor. Bu yüzden döngü ondan önce başa sarıyor.
+        // Serbest bakış istenirse ayrı bir dokunmatik jest olarak eklenmeli.
+        static readonly Mode[] CycleOrder =
+        {
+            Mode.Chase, Mode.Hood, Mode.Bumper, Mode.Interior, Mode.Cinematic
+        };
+
+        public void Cycle()
+        {
+            int i = System.Array.IndexOf(CycleOrder, current);
+            current = CycleOrder[(i + 1) % CycleOrder.Length];
+        }
+
+        // Araç odaya girildikten SONRA doğduğu için hedef ve çapa noktaları
+        // Editor'de bağlanamıyor; RoomManager.SpawnLocalCar burayı çağırıyor.
+        // Eskiden yalnızca "follow" atanıyordu ve "target" null kaldığı için
+        // LateUpdate ilk satırda dönüyordu: kaput/tampon/kokpit/sinematik
+        // kameraların hiçbiri oyunda YOKTU, yalnızca takip kamerası çalışıyordu.
+        public void Bind(Transform car)
+        {
+            target = car;
+            if (!car) return;
+
+            hoodAnchor     = car.Find("HoodCam");
+            bumperAnchor   = car.Find("BumperCam");
+            interiorAnchor = car.Find("InteriorCam");
+            interior       = car.GetComponent<InteriorCamera>();
+        }
     }
 }

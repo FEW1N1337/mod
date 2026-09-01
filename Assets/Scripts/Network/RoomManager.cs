@@ -17,6 +17,11 @@ namespace DreamCar.Network
 
         GameObject _localCar;
 
+        // Yerel araç odaya girilince doğuyor; HUD bileşenleri (korna, sinyal,
+        // emote butonları) onu Editor'de bağlayamıyor, çalışma anında buradan
+        // alıyorlar.
+        public static GameObject LocalCar { get; private set; }
+
         void Start()
         {
             if (addGameModeManager && !FindFirstObjectByType<GameModeManager>())
@@ -47,6 +52,7 @@ namespace DreamCar.Network
             if (active && !string.IsNullOrEmpty(active.resourcePrefabName)) prefab = active.resourcePrefabName;
 
             _localCar = PhotonNetwork.Instantiate(prefab, pos, rot);
+            LocalCar = _localCar;
 
             Monetization.Analytics.Event("car_spawn", new()
             {
@@ -57,6 +63,14 @@ namespace DreamCar.Network
 
             var follow = Camera.main ? Camera.main.GetComponent<Car.CarCameraFollow>() : null;
             if (follow) follow.target = _localCar.transform;
+
+            // CameraModeController'a yalnızca "follow" atanıyordu; "target" ve
+            // çapa noktaları null kaldığı için LateUpdate ilk satırda dönüyor ve
+            // kaput/tampon/kokpit/sinematik kameraların hiçbiri çalışmıyordu.
+            // Araç prefabı bu çapaları üretiyor ama yalnızca OverheadAnchor
+            // kullanılıyordu.
+            var camModes = Camera.main ? Camera.main.GetComponent<CameraModes.CameraModeController>() : null;
+            if (camModes) camModes.Bind(_localCar.transform);
 
             // Minimap kamerası yerel aracı takip eder. Araç ancak odaya girilince
             // doğduğu için bu bağlantı Editor'de kurulamıyor.
@@ -76,6 +90,7 @@ namespace DreamCar.Network
         public override void OnLeftRoom()
         {
             _localCar = null;
+            LocalCar = null;
         }
 
         public override void OnPlayerLeftRoom(Player otherPlayer)

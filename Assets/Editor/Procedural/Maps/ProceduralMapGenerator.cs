@@ -526,7 +526,12 @@ namespace DreamCar.EditorTools.Procedural.Maps
             cam.farClipPlane = 1400f;
             cam.backgroundColor = arch.skyTint;
             camGo.AddComponent<AudioListener>();
-            camGo.AddComponent<Car.CarCameraFollow>();
+            var follow = camGo.AddComponent<Car.CarCameraFollow>();
+
+            // Harita sahnelerinde kamera modu denetleyicisi hiç yoktu; kaput,
+            // tampon, kokpit ve sinematik kameralar yalnızca Game.unity'de
+            // (orada da bağlanmamış halde) duruyordu.
+            camGo.AddComponent<DreamCar.CameraModes.CameraModeController>().follow = follow;
 
             // URP'de post-processing kamera başına açılır; profil yüklense bile
             // bu kutu işaretli değilse hiçbir efekt görünmez.
