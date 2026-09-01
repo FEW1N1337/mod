@@ -16,7 +16,11 @@ namespace DreamCar.Vehicle
 
         void Update()
         {
-            isReverse = _car.throttleInput < -0.05f && _car.SpeedKmh < 2f;
+            // Eski hali: isReverse = throttle < -0.05 && SpeedKmh < 2. Geri giderken hız
+            // 2 km/s'yi geçer geçmez vites "R" olmaktan çıkıp ileri vitese atlıyordu.
+            // Geri vites, gaz negatif kaldığı sürece korunmalı; ileri gaz veya duruş bozar.
+            if (_car.throttleInput < -0.05f && (isReverse || _car.SpeedKmh < 2f)) isReverse = true;
+            else if (_car.throttleInput > 0.05f || _car.SpeedKmh < 0.5f) isReverse = false;
             currentGear = isReverse ? 0 : Util.GameMath.GearForSpeed(_car.SpeedKmh, gearSpeedLimits);
         }
 

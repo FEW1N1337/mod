@@ -34,6 +34,20 @@ namespace DreamCar.Car
         public Vector3 centerOfMassOffset = new Vector3(0f, -0.6f, 0f);
         public float downForce = 80f;
 
+        // Yüksek hızda tam direksiyon açısı aracı anında takla attırıyordu (WheelCollider
+        // steerAngle doğrudan yazıldığı için hız süzgeci yok). Açıyı hızla birlikte kısıyoruz:
+        // dururken tam açı, steerFalloffSpeedKmh ve üstünde minSteeringFactor kadarı.
+        // topSpeedKmh yerine ayrı bir eşik: CarNitro topSpeedKmh'yi runtime'da değiştiriyor,
+        // nitro basınca direksiyonun aniden ağırlaşmaması için bağımsız olmalı.
+        public float steerFalloffSpeedKmh = 140f;
+        [Range(0.1f, 1f)] public float minSteeringFactor = 0.35f;
+
+        // Yakıt bitince motoru kesmek için FuelSystem bunu set eder. FuelSystem eskiden
+        // doğrudan throttleInput/brakeInput alanlarına yazıyordu ama MobileTouchInput her
+        // karede Move() ile o alanları eziyordu ve Update sırası garanti değil — kesme bu
+        // yüzden çoğu karede hiçbir şey yapmıyordu. Karar FixedUpdate'te veriliyor.
+        [HideInInspector] public bool engineCutoff;
+
         [Header("Runtime input (0..1 / -1..1)")]
         [Range(-1f, 1f)] public float throttleInput;
         [Range(0f, 1f)] public float brakeInput;
@@ -47,6 +61,16 @@ namespace DreamCar.Car
         {
             _rb = GetComponent<Rigidbody>();
             _rb.centerOfMass = centerOfMassOffset;
+
+            // Prefab'ta ayarlanmamışsa güvenli varsayılanlar. 180+ km/s'te (50 m/s) araç
+            // 0.02 sn'lik fizik adımında 1 metreden fazla yol alıyor; Discrete çarpışma
+            // tespitiyle ince duvarlardan/bariyerlerden geçip gidiyor. Interpolation kapalıyken
+            // de görüntü fizik frekansında titriyor. Zaten ayarlanmışsa dokunmuyoruz.
+            // Kinematik gövdeler Continuous modları desteklemez, onları atlıyoruz.
+            if (!_rb.isKinematic && _rb.collisionDetectionMode == CollisionDetectionMode.Discrete)
+                _rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+            if (_rb.interpolation == RigidbodyInterpolation.None)
+                _rb.interpolation = RigidbodyInterpolation.Interpolate;
         }
 
         public void Move(float throttle, float brake, float steer, bool hand)
@@ -59,11 +83,19 @@ namespace DreamCar.Car
 
         void FixedUpdate()
         {
-            float steer = maxSteeringAngle * steerInput;
+            // Direksiyon açısı hızla birlikte kısılır — bkz. steerFalloffSpeedKmh yorumu.
+            float steerFactor = Mathf.Lerp(1f, minSteeringFactor,
+                Mathf.InverseLerp(0f, Mathf.Max(1f, steerFalloffSpeedKmh), SpeedKmh));
+            float steer = maxSteeringAngle * steerFactor * steerInput;
+
             float motor = maxMotorTorque * throttleInput;
             if (SpeedKmh > topSpeedKmh) motor = 0f;
             float brake = maxBrakeTorque * brakeInput;
             float hand = handbrake ? maxBrakeTorque : 0f;
+
+            // Yakıt bitti: gaz kesilir, fren uygulanır. Input alanlarına değil buraya
+            // bakıyoruz ki her karede input yazan MobileTouchInput bunu ezemesin.
+            if (engineCutoff) { motor = 0f; brake = maxBrakeTorque; }
 
             foreach (var axle in axles)
             {
