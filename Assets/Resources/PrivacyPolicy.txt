@@ -1,0 +1,46 @@
+== ŞABLON — YAYINLAMADAN ÖNCE DOLDURULMALI ==
+
+Bu metin bir taslaktır. Aşağıdaki köşeli parantezli alanları kendi
+bilgilerinle doldurmadan uygulamayı mağazaya gönderme; Apple ve Google
+gerçek bir gizlilik politikası ve çalışan bir iletişim adresi istiyor.
+
+GİZLİLİK POLİTİKASI
+Son güncelleme: [TARİH]
+Veri sorumlusu: [ŞİRKET / GERÇEK KİŞİ ADI], [ADRES], [E-POSTA]
+
+1) TOPLANAN VERİLER
+Bu oyun, kodunda fiilen şunları işliyor:
+
+- Cihaz kimliği: Anonim hesap açmak için kullanılıyor (PlayFab
+  LoginWithCustomID). Ad, e-posta veya telefon istenmiyor.
+- Takma ad: Oyun içinde diğer oyunculara gösteriliyor.
+- Oyun ilerlemesi: Para, sahip olunan araçlar, ayarlar, başarımlar,
+  yarış ve drift istatistikleri. Hesabına bağlı olarak sunucuda saklanıyor.
+- Sohbet mesajları: Odadaki diğer oyunculara iletiliyor.
+- Sesli sohbet: Yalnızca sen bas-konuş tuşunu basılı tutarken, odadaki
+  oyunculara canlı iletiliyor. Kaydedilmiyor.
+- Kilitlenme ve hata kayıtları: Uygulamayı düzeltmek için.
+- Reklam kimliği: Reklam gösterimi için (reklamlar açıksa).
+
+2) NEDEN
+Hesabını cihaz değiştirdiğinde geri getirmek, çok oyunculu oturumu
+yürütmek, hile ve kötüye kullanımı önlemek, hataları düzeltmek.
+
+3) PAYLAŞIM
+Veriler şu hizmet sağlayıcılara aktarılıyor: [PlayFab / Microsoft],
+[Photon], [reklam ağı adları]. Bunların kendi gizlilik politikaları
+geçerli. Başka hiçbir üçüncü tarafa satılmıyor.
+
+4) SAKLAMA VE SİLME
+Hesabının silinmesini istersen [E-POSTA] adresine yaz; verilerin
+[SÜRE] içinde siliniyor.
+
+5) ÇOCUKLAR
+Bu oyun [YAŞ] yaş altı için tasarlanmamıştır.
+
+6) HAKLARIN (KVKK / GDPR)
+Verilerine erişme, düzeltme, silme ve işlemeye itiraz etme hakkın var.
+Başvuru: [E-POSTA]
+
+7) İLETİŞİM
+[E-POSTA]

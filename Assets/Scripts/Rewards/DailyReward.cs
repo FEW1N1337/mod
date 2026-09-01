@@ -44,7 +44,9 @@ namespace DreamCar.Rewards
 
             _streakForToday = LoginStreak.Instance ? LoginStreak.Instance.RegisterLoginToday() : 1;
             float mult = LoginStreak.Instance ? LoginStreak.Instance.MultiplierFor(_streakForToday) : 1f;
-            _amountForToday = (long)(baseAmount * mult);
+            // RemoteConfig hiç okunmuyordu; günlük ödül miktarı kodda sabitti.
+            long baseNow = Backend.RemoteConfig.GetLong("daily.baseAmount", baseAmount);
+            _amountForToday = (long)(baseNow * mult);
 
             if (amountLabel) amountLabel.text = $"+{_amountForToday:N0} ₺";
             if (streakLabel) streakLabel.text = $"{_streakForToday}. gün";

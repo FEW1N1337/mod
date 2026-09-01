@@ -18,6 +18,9 @@ namespace DreamCar.Social
         public long referrerBonus = 5000;
         public long refereeBonus = 3000;
 
+        // Ödül miktarları kodda sabitti; RemoteConfig okunmuyordu.
+        long RefereeBonus => Backend.RemoteConfig.GetLong("referral.refereeBonus", refereeBonus);
+
         const string MyCodeKey = "referral.myCode";
         const string RedeemedKey = "referral.redeemed";
 
@@ -81,16 +84,16 @@ namespace DreamCar.Social
                 {
                     HasRedeemed = true;   // property PlayerPrefs'e de yazıyor
                     PlayerPrefs.Save();
-                    if (PlayerMoney.Instance != null) PlayerMoney.Instance.Add(refereeBonus);
-                    Monetization.Analytics.Event("referral_redeemed", new() { { "bonus", refereeBonus } });
-                    ToastNotification.Show($"Kod kabul edildi! +{refereeBonus:N0} ₺");
+                    if (PlayerMoney.Instance != null) PlayerMoney.Instance.Add(RefereeBonus);
+                    Monetization.Analytics.Event("referral_redeemed", new() { { "bonus", RefereeBonus } });
+                    ToastNotification.Show($"Kod kabul edildi! +{RefereeBonus:N0} ₺");
                 }
                 else ToastNotification.Show("Kod geçersiz veya süresi dolmuş");
             }, err => ToastNotification.Show("Referral hatası: " + err.ErrorMessage));
 #else
             HasRedeemed = true;   // property PlayerPrefs'e de yazıyor
-            if (PlayerMoney.Instance != null) PlayerMoney.Instance.Add(refereeBonus);
-            ToastNotification.Show($"(Offline) Kod kabul edildi: +{refereeBonus:N0} ₺");
+            if (PlayerMoney.Instance != null) PlayerMoney.Instance.Add(RefereeBonus);
+            ToastNotification.Show($"(Offline) Kod kabul edildi: +{RefereeBonus:N0} ₺");
 #endif
         }
     }

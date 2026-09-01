@@ -288,7 +288,7 @@ namespace DreamCar.EditorTools
             var mainPanel = MakeUiChild(canvasGo, "MainPanel");
             var titleLabel = MakeText(mainPanel, "TitleLabel", "DreamCar", new Vector2(0f, 400f), 96);
             var nickInput = MakeInputField(mainPanel, "NicknameInput", "Kullanıcı adı", new Vector2(0f, 200f));
-            var playBtn = MakeButton(mainPanel, "PlayButton", "OYNA", new Vector2(0f, 40f));
+            var playBtn = MakeButton(mainPanel, "PlayButton", "OYNA", new Vector2(0f, 40f), key: "play");
             var statusText = MakeText(mainPanel, "StatusText", "Bağlanıyor…", new Vector2(0f, -100f), 32);
 
             var mainMenuUI = mainPanel.AddComponent<MainMenuUI>();
@@ -316,7 +316,7 @@ namespace DreamCar.EditorTools
 
             var garageName = MakeText(mainPanel, "GarageName", "-", new Vector2(-600f, 10f), 36);
             var garagePrice = MakeText(mainPanel, "GaragePrice", "-", new Vector2(-600f, -50f), 28);
-            var garageSelect = MakeButton(mainPanel, "GarageSelect", "Seç", new Vector2(-600f, -140f));
+            var garageSelect = MakeButton(mainPanel, "GarageSelect", "Seç", new Vector2(-600f, -140f), key: "select");
 
             var garage = mainPanel.AddComponent<GarageCarousel>();
             garage.prevButton = garagePrev;
@@ -335,9 +335,9 @@ namespace DreamCar.EditorTools
             mainMenuUI.lobbyPanel = lobbyPanel;
 
             var lobbyTitle = MakeText(lobbyPanel, "LobbyTitle", "Odalar", new Vector2(-500f, 400f), 64);
-            var quickJoinBtn = MakeButton(lobbyPanel, "QuickJoinButton", "Hızlı Katıl", new Vector2(400f, 400f));
+            var quickJoinBtn = MakeButton(lobbyPanel, "QuickJoinButton", "Hızlı Katıl", new Vector2(400f, 400f), key: "room.quick_join");
             var createNameInput = MakeInputField(lobbyPanel, "CreateRoomInput", "Yeni oda adı", new Vector2(400f, 300f));
-            var createBtn = MakeButton(lobbyPanel, "CreateButton", "OLUŞTUR", new Vector2(400f, 200f));
+            var createBtn = MakeButton(lobbyPanel, "CreateButton", "OLUŞTUR", new Vector2(400f, 200f), key: "room.create");
             // Düz bir RectTransform'du: satırların hepsi üst üste biniyor ve liste
             // taşınca kaydırılamıyordu. Diğer ekranlarla aynı kaydırılabilir kabı kullan.
             var roomListParent = MakeListContainer(lobbyPanel, "RoomList",
@@ -357,7 +357,7 @@ namespace DreamCar.EditorTools
             // OYNA'ya bir kez basan oyuncu ayarlara, garaja, araç mağazasına,
             // liderliğe ve istatistiklere o oturum boyunca bir daha ulaşamıyordu.
             // (MainMenuUI kendini de kapattığı için kendi kendine geri gelemiyor.)
-            var lobbyBack = MakeButton(lobbyPanel, "BackButton", "‹ Geri", Vector2.zero);
+            var lobbyBack = MakeButton(lobbyPanel, "BackButton", "‹ Geri", Vector2.zero, key: "back");
             AnchorCorner(lobbyBack.GetComponent<RectTransform>(),
                          new Vector2(0f, 1f), new Vector2(150f, 70f), new Vector2(220f, 100f));
             UnityEventTools.AddBoolPersistentListener(lobbyBack.onClick, lobbyPanel.SetActive, false);
@@ -620,7 +620,7 @@ namespace DreamCar.EditorTools
             AnchorCorner(repairPrice.GetComponent<RectTransform>(), new Vector2(1f, 1f),
                          new Vector2(430f, 400f), new Vector2(160f, 40f));
 
-            var repairBtn = MakeButton(hudPanel, "RepairButton", "Tamir", Vector2.zero);
+            var repairBtn = MakeButton(hudPanel, "RepairButton", "Tamir", Vector2.zero, key: "repair");
             AnchorCorner(repairBtn.GetComponent<RectTransform>(), new Vector2(1f, 1f),
                          new Vector2(260f, 320f), new Vector2(220f, 90f));
 
@@ -789,7 +789,17 @@ namespace DreamCar.EditorTools
             var chatSend = MakeButton(chatPanel, "ChatSend", "Gönder", Vector2.zero);
             AnchorCorner(chatSend.GetComponent<RectTransform>(),
                          new Vector2(0f, 1f), new Vector2(820f, 700f), new Vector2(200f, 70f));
-            var chatPv = chatPanel.AddComponent<Photon.Pun.PhotonView>();
+            // RichChatUI bir MonoBehaviourPun ve RPC'lerini bu görünüm üzerinden
+            // atıyor, o yüzden PhotonView şart.
+            //
+            // DİKKAT — Editor'de DOĞRULANMASI GEREKEN NOKTA: sahne
+            // PhotonView'larının ViewID'sini PUN, sahne kaydedilirken kendi
+            // atıyor. Betikle AddComponent edilen bir görünümün bu atamayı
+            // aldığını buradan doğrulayamıyorum (Photon henüz projede yok).
+            // Sohbet çalışmazsa çözümü tek adım: Photon import edildikten sonra
+            // sahneyi açıp kaydetmek, ya da PUN'un "Update PhotonViews in Scene"
+            // menüsünü çalıştırmak. README §Sohbet'e de yazıldı.
+            chatPanel.AddComponent<Photon.Pun.PhotonView>();
             var richChat = chatPanel.AddComponent<RichChatUI>();
             richChat.inputField = chatInput;
             richChat.sendButton = chatSend;
@@ -902,7 +912,7 @@ namespace DreamCar.EditorTools
             // bulamıyordu. Paneli açabilecek tek şey panelin kendisiydi —
             // benzin istasyonu paneli oyunda ASLA açılmıyordu.
             var refuelPanel = MakeUiChild(canvasGo, "RefuelStationPanel", modal: true);
-            var refuelTitle = MakeText(refuelPanel, "RefuelTitle", "Benzin İstasyonu", new Vector2(0f, 200f), 48);
+            var refuelTitle = MakeText(refuelPanel, "RefuelTitle", "Benzin İstasyonu", new Vector2(0f, 200f), 48, key: "fuel.station");
             var refuelPrice = MakeText(refuelPanel, "RefuelPrice", "-- ₺", new Vector2(0f, 100f), 40);
             var refuelPct = MakeText(refuelPanel, "RefuelPct", "0%", new Vector2(0f, 20f), 32);
 
@@ -926,8 +936,8 @@ namespace DreamCar.EditorTools
             rfFillRt.anchorMin = Vector2.zero; rfFillRt.anchorMax = Vector2.one;
             rfFillRt.offsetMin = Vector2.zero; rfFillRt.offsetMax = Vector2.zero;
 
-            var refuelPay = MakeButton(refuelPanel, "PayButton", "Öde ve Doldur", new Vector2(-120f, -120f));
-            var refuelCancel = MakeButton(refuelPanel, "CancelButton", "İptal", new Vector2(120f, -120f));
+            var refuelPay = MakeButton(refuelPanel, "PayButton", "Öde ve Doldur", new Vector2(-120f, -120f), key: "fuel.pay_and_fill");
+            var refuelCancel = MakeButton(refuelPanel, "CancelButton", "İptal", new Vector2(120f, -120f), key: "cancel");
 
             // Bileşen PANELİN ÜZERİNDE DEĞİL, her zaman açık olan Canvas'ta duruyor.
             // Panelin kendisinde olsaydı: panel kapalı kaydedilir → kapalı objede
@@ -946,13 +956,13 @@ namespace DreamCar.EditorTools
             // Pause menu
             var pausePanel = MakeUiChild(canvasGo, "PauseMenu", modal: true);
             pausePanel.SetActive(false);
-            var pauseTitle = MakeText(pausePanel, "PauseTitle", "Duraklat", new Vector2(0f, 300f), 64);
+            var pauseTitle = MakeText(pausePanel, "PauseTitle", "Duraklat", new Vector2(0f, 300f), 64, key: "pause");
             // Aralık 110 → 140: buton yüksekliği 80'den 120'ye çıktı, eski
             // aralıkta üst üste binerlerdi.
-            var resumeBtn = MakeButton(pausePanel, "Resume", "Devam", new Vector2(0f, 190f));
-            var settingsBtn = MakeButton(pausePanel, "Settings", "Ayarlar", new Vector2(0f, 50f));
-            var leaveRoomBtn = MakeButton(pausePanel, "LeaveRoom", "Odadan Çık", new Vector2(0f, -90f));
-            var mainMenuBtn = MakeButton(pausePanel, "MainMenu", "Ana Menü", new Vector2(0f, -230f));
+            var resumeBtn = MakeButton(pausePanel, "Resume", "Devam", new Vector2(0f, 190f), key: "pause.resume");
+            var settingsBtn = MakeButton(pausePanel, "Settings", "Ayarlar", new Vector2(0f, 50f), key: "settings");
+            var leaveRoomBtn = MakeButton(pausePanel, "LeaveRoom", "Odadan Çık", new Vector2(0f, -90f), key: "pause.leave_room");
+            var mainMenuBtn = MakeButton(pausePanel, "MainMenu", "Ana Menü", new Vector2(0f, -230f), key: "pause.main_menu");
             // Ayarlar ekranı Game sahnesinde hiç kurulmuyordu (BuildSecondaryScreens
             // yalnızca ana menüde çağrılıyor), bu yüzden duraklatma menüsündeki
             // "Ayarlar" butonu sessizce hiçbir şey yapmıyordu: oyun içinde ses ve
@@ -970,6 +980,49 @@ namespace DreamCar.EditorTools
             pauseScript.settingsButton = settingsBtn;
             pauseScript.leaveRoomButton = leaveRoomBtn;
             pauseScript.mainMenuButton = mainMenuBtn;
+
+            // --- Oyuncu listesi + rapor akışı ---
+            // PlayerListPanel ve ReportPlayer hiçbir sahnede yoktu:
+            // oyuncuyu atmanın, raporlamanın ya da sesini susturmanın hiçbir
+            // yolu bulunmuyordu. ReportPlayer.Open(Player), PlayerVoiceMute'un
+            // ToggleMute/IsMuted'ı ve BanList akışı hep bu panele bağlıydı.
+            // Sohbet ve sesli sohbet olan bir oyunda rapor akışı mağaza
+            // incelemesi için de gerekiyor.
+            var playersPanel = MakeUiChild(canvasGo, "PlayersScreen", modal: true);
+            playersPanel.SetActive(false);
+            MakeText(playersPanel, "Title", "Oyuncular", new Vector2(0f, 420f), 64);
+            var playersList = MakeListContainer(playersPanel, "List",
+                new Vector2(0f, 0f), new Vector2(900f, 620f));
+            var playersClose = MakeButton(playersPanel, "Close", "Kapat", Vector2.zero, key: "close");
+            AnchorTo(playersClose.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
+
+            var reportPanel = MakeUiChild(canvasGo, "ReportScreen", modal: true);
+            reportPanel.SetActive(false);
+            MakeText(reportPanel, "Title", "Oyuncuyu Bildir", new Vector2(0f, 300f), 56, key: "report");
+            var reportReason = MakeDropdown(reportPanel, "ReasonDropdown", new Vector2(0f, 150f));
+            var reportDetail = MakeInputField(reportPanel, "DetailField", "Açıklama (isteğe bağlı)", new Vector2(0f, 40f));
+            var reportSubmit = MakeButton(reportPanel, "Submit", "Gönder", new Vector2(-180f, -100f));
+            var reportCancel = MakeButton(reportPanel, "Cancel", "İptal", new Vector2(180f, -100f), key: "cancel");
+
+            var report = canvasGo.AddComponent<Moderation.ReportPlayer>();
+            report.panel = reportPanel;
+            report.reasonDropdown = reportReason;
+            report.detailField = reportDetail;
+            report.submitButton = reportSubmit;
+            report.cancelButton = reportCancel;
+
+            // Bileşen Canvas'ta: panel kapalı başlıyor ve kapalı objede
+            // OnEnable/Refresh koşmazdı.
+            var playerList = canvasGo.AddComponent<PlayerListPanel>();
+            playerList.listParent = playersList;
+            playerList.entryPrefab = MakePlayerRowTemplate(playersPanel, "PlayerRowTemplate");
+            playerList.report = report;
+
+            // PauseMenu'den açılıyor: oyun içinde başka bir giriş noktası yok.
+            var playersBtn = MakeButton(pausePanel, "Players", "Oyuncular", new Vector2(0f, -370f));
+            UnityEventTools.AddBoolPersistentListener(playersBtn.onClick, playersPanel.SetActive, true);
+            UnityEventTools.AddBoolPersistentListener(playersClose.onClick, playersPanel.SetActive, false);
 
             // PauseMenu yalnızca Escape tuşunu dinliyor. Android'de geri tuşu bunu
             // karşılar ama iOS'ta karşılığı yok — duraklatma menüsü iPhone'da
@@ -1011,9 +1064,49 @@ namespace DreamCar.EditorTools
             var steerSl = MakeSlider(settingsPanel, "SteeringSlider", new Vector2(0f, -90f));
             var steerVal = MakeText(settingsPanel, "SteeringValue", "1.0x", new Vector2(340f, -90f), 28);
             var langDd = MakeDropdown(settingsPanel, "LanguageDropdown", new Vector2(0f, -170f));
+
+            // Gizlilik politikası ve destek bağlantısı hiçbir sahnede yoktu.
+            // PrivacyPolicyScreen ve SupportEmailLink yazılmış ama hiç
+            // eklenmiyordu; tr.json'da "settings.privacy" ve "settings.support"
+            // anahtarları zaten bunlar için duruyordu. Gizlilik politikasına
+            // uygulama içinden ulaşılabilmesi mağaza incelemesinin şartı.
+            var privacyBtn = MakeButton(settingsPanel, "PrivacyButton", "Gizlilik",
+                                        new Vector2(-160f, -260f), key: "settings.privacy");
+            var supportBtn = MakeButton(settingsPanel, "SupportButton", "Destek",
+                                        new Vector2(160f, -260f), key: "settings.support");
+
+            var privacyPanel = MakeUiChild(canvasGo, "PrivacyPolicyScreen", modal: true);
+            privacyPanel.SetActive(false);
+            MakeText(privacyPanel, "Title", "Gizlilik Politikası", new Vector2(0f, 430f), 56,
+                     key: "settings.privacy");
+            var privacyBody = MakeText(privacyPanel, "Body", "", new Vector2(0f, 20f), 26);
+            privacyBody.alignment = TextAlignmentOptions.TopLeft;
+            var privacyBodyRt = privacyBody.GetComponent<RectTransform>();
+            privacyBodyRt.sizeDelta = new Vector2(900f, 700f);
+            var privacyOpen = MakeButton(privacyPanel, "OpenLink", "Web'de Aç", new Vector2(-180f, -400f));
+            var privacyClose = MakeButton(privacyPanel, "Close", "Kapat", new Vector2(180f, -400f), key: "close");
+
+            // Bileşenler Canvas'ta: panelleri kendileri kapatıyor ve kapalı bir
+            // objede Start() hiç koşmazdı.
+            var privacy = canvasGo.AddComponent<AppMeta.PrivacyPolicyScreen>();
+            privacy.panel = privacyPanel;
+            privacy.bodyLabel = privacyBody;
+            // Metin boş kalırsa ekran "politika eklenmemiş" yazıyordu.
+            // Assets/Resources/PrivacyPolicy.txt bir ŞABLON: uygulamanın
+            // gerçekte ne topladığını listeliyor ama şirket adı, adres,
+            // e-posta ve saklama süresi köşeli parantezle boş bırakılmış.
+            // Yayından önce doldurulması gerekiyor.
+            privacy.fallbackText = AssetDatabase.LoadAssetAtPath<TextAsset>(
+                "Assets/Resources/PrivacyPolicy.txt");
+            privacy.openLinkButton = privacyOpen;
+            privacy.closeButton = privacyClose;
+            UnityEventTools.AddPersistentListener(privacyBtn.onClick, privacy.Show);
+
+            var support = canvasGo.AddComponent<AppMeta.SupportEmailLink>();
+            support.supportButton = supportBtn;
             // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
             // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
-            var settingsClose = MakeButton(settingsPanel, "Close", "Kapat", Vector2.zero);
+            var settingsClose = MakeButton(settingsPanel, "Close", "Kapat", Vector2.zero, key: "close");
             AnchorTo(settingsClose.GetComponent<RectTransform>(),
                      new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
@@ -1042,13 +1135,13 @@ namespace DreamCar.EditorTools
             var lbPanel = MakeUiChild(canvasGo, "LeaderboardScreen", modal: true);
             lbPanel.SetActive(false);
             var lbTitle = MakeText(lbPanel, "Title", "En İyi Tur", new Vector2(0f, 420f), 64);
-            var lbRaceTab = MakeButton(lbPanel, "RaceTab", "Yarış", new Vector2(-160f, 320f));
-            var lbDriftTab = MakeButton(lbPanel, "DriftTab", "Drift", new Vector2(160f, 320f));
+            var lbRaceTab = MakeButton(lbPanel, "RaceTab", "Yarış", new Vector2(-160f, 320f), key: "mode.race");
+            var lbDriftTab = MakeButton(lbPanel, "DriftTab", "Drift", new Vector2(160f, 320f), key: "mode.drift");
             var lbList = MakeListContainer(lbPanel, "List", new Vector2(0f, -30f), new Vector2(900f, 620f));
             var lbLoading = MakeText(lbPanel, "Loading", "Yükleniyor…", new Vector2(0f, 0f), 32).gameObject;
             // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
             // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
-            var lbClose = MakeButton(lbPanel, "Close", "Kapat", Vector2.zero);
+            var lbClose = MakeButton(lbPanel, "Close", "Kapat", Vector2.zero, key: "close");
             AnchorTo(lbClose.GetComponent<RectTransform>(),
                      new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
@@ -1070,7 +1163,7 @@ namespace DreamCar.EditorTools
             var achList = MakeListContainer(achPanel, "List", new Vector2(0f, -30f), new Vector2(900f, 620f));
             // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
             // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
-            var achClose = MakeButton(achPanel, "Close", "Kapat", Vector2.zero);
+            var achClose = MakeButton(achPanel, "Close", "Kapat", Vector2.zero, key: "close");
             AnchorTo(achClose.GetComponent<RectTransform>(),
                      new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
@@ -1088,11 +1181,11 @@ namespace DreamCar.EditorTools
             shopPanel.SetActive(false);
             MakeText(shopPanel, "Title", "Mağaza", new Vector2(0f, 420f), 64);
             var shopBalance = MakeText(shopPanel, "Balance", "0 ₺", new Vector2(0f, 340f), 40);
-            var adBtn = MakeButton(shopPanel, "WatchAdButton", "Reklam İzle", new Vector2(0f, -200f));
+            var adBtn = MakeButton(shopPanel, "WatchAdButton", "Reklam İzle", new Vector2(0f, -200f), key: "watch_ad");
             var adReward = MakeText(shopPanel, "AdReward", "+5.000 ₺", new Vector2(0f, -280f), 28);
             // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
             // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
-            var shopClose = MakeButton(shopPanel, "Close", "Kapat", Vector2.zero);
+            var shopClose = MakeButton(shopPanel, "Close", "Kapat", Vector2.zero, key: "close");
             AnchorTo(shopClose.GetComponent<RectTransform>(),
                      new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
@@ -1147,7 +1240,7 @@ namespace DreamCar.EditorTools
             stats.crashesLabel = MakeStatRow(statsPanel, "Çarpışma", -330f);
             // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
             // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
-            stats.closeButton = MakeButton(statsPanel, "Close", "Kapat", Vector2.zero);
+            stats.closeButton = MakeButton(statsPanel, "Close", "Kapat", Vector2.zero, key: "close");
             AnchorTo(stats.closeButton.GetComponent<RectTransform>(),
                      new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
@@ -1170,10 +1263,10 @@ namespace DreamCar.EditorTools
             var rcSlider = MakeSlider(createPanel, "MaxPlayersSlider", new Vector2(0f, -50f));
             var rcSliderLabel = MakeText(createPanel, "MaxPlayersLabel", "10 oyuncu", new Vector2(380f, -50f), 28);
             var rcVisible = MakeToggle(createPanel, "VisibleToggle", "Oda listesinde görünsün", new Vector2(0f, -130f), true);
-            var rcCreate = MakeButton(createPanel, "CreateButton", "ODAYI KUR", new Vector2(0f, -240f));
+            var rcCreate = MakeButton(createPanel, "CreateButton", "ODAYI KUR", new Vector2(0f, -240f), key: "room.create");
             // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
             // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
-            var rcClose = MakeButton(createPanel, "Close", "Kapat", Vector2.zero);
+            var rcClose = MakeButton(createPanel, "Close", "Kapat", Vector2.zero, key: "close");
             AnchorTo(rcClose.GetComponent<RectTransform>(),
                      new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
@@ -1200,7 +1293,7 @@ namespace DreamCar.EditorTools
             var regionApply = MakeButton(regionPanel, "ApplyButton", "Uygula", new Vector2(0f, 40f));
             // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
             // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
-            var regionClose = MakeButton(regionPanel, "Close", "Kapat", Vector2.zero);
+            var regionClose = MakeButton(regionPanel, "Close", "Kapat", Vector2.zero, key: "close");
             AnchorTo(regionClose.GetComponent<RectTransform>(),
                      new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
@@ -1222,7 +1315,7 @@ namespace DreamCar.EditorTools
             var carShopList = MakeListContainer(carShopPanel, "List", new Vector2(0f, -30f), new Vector2(900f, 620f));
             // "Kapat" panelin ALT KENARINA sabitlendi. Mutlak y (-320…-430)
             // 19.5:9 telefonda (±489) ve 21:9'da (±454) ekran dışında kalıyordu.
-            var carShopClose = MakeButton(carShopPanel, "Close", "Kapat", Vector2.zero);
+            var carShopClose = MakeButton(carShopPanel, "Close", "Kapat", Vector2.zero, key: "close");
             AnchorTo(carShopClose.GetComponent<RectTransform>(),
                      new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
@@ -1240,23 +1333,23 @@ namespace DreamCar.EditorTools
             // Konumlar MainPanel'in ALT KENARINA sabitlendi: mutlak y -300/-400
             // 21:9 telefonda (görünür yarı-aralık ±454) ikinci sırayı ekran
             // dışına taşıyordu.
-            var navSettings = MakeIconButton(mainPanel, "NavSettings", "Ayarlar", Vector2.zero, "icon_gear");
+            var navSettings = MakeIconButton(mainPanel, "NavSettings", "Ayarlar", Vector2.zero, "icon_gear", key: "settings");
             AnchorTo(navSettings.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(-600f, 290f), new Vector2(280f, 120f));
             UnityEventTools.AddPersistentListener(navSettings.onClick, settings.Open);
-            var navLeaderboard = MakeIconButton(mainPanel, "NavLeaderboard", "Liderlik", Vector2.zero, "icon_trophy");
+            var navLeaderboard = MakeIconButton(mainPanel, "NavLeaderboard", "Liderlik", Vector2.zero, "icon_trophy", key: "leaderboard");
             AnchorTo(navLeaderboard.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(-300f, 290f), new Vector2(280f, 120f));
             UnityEventTools.AddPersistentListener(navLeaderboard.onClick, leaderboard.Open);
-            var navAchievements = MakeIconButton(mainPanel, "NavAchievements", "Başarımlar", Vector2.zero, "icon_flag");
+            var navAchievements = MakeIconButton(mainPanel, "NavAchievements", "Başarımlar", Vector2.zero, "icon_flag", key: "achievements");
             AnchorTo(navAchievements.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(0f, 290f), new Vector2(280f, 120f));
             UnityEventTools.AddPersistentListener(navAchievements.onClick, achievements.Open);
-            var navShop = MakeIconButton(mainPanel, "NavShop", "Mağaza", Vector2.zero, "icon_coin");
+            var navShop = MakeIconButton(mainPanel, "NavShop", "Mağaza", Vector2.zero, "icon_coin", key: "shop");
             AnchorTo(navShop.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(300f, 290f), new Vector2(280f, 120f));
             UnityEventTools.AddPersistentListener(navShop.onClick, coinShop.Open);
-            var navStats = MakeIconButton(mainPanel, "NavStats", "İstatistik", Vector2.zero, "icon_chart");
+            var navStats = MakeIconButton(mainPanel, "NavStats", "İstatistik", Vector2.zero, "icon_chart", key: "stats.title");
             AnchorTo(navStats.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(600f, 290f), new Vector2(280f, 120f));
             UnityEventTools.AddPersistentListener(navStats.onClick, stats.Open);
@@ -1264,7 +1357,7 @@ namespace DreamCar.EditorTools
             // İkinci sıra — birinci sıra beş butonla dolu.
             // RoomCreatorUI'de Open/Close yok, panel alanı da yok — paneli doğrudan
             // açıp kapatıyoruz. GameObject.SetActive kalıcı listener hedefi olabiliyor.
-            var navCreate = MakeIconButton(mainPanel, "NavCreateRoom", "Oda Kur", Vector2.zero, "icon_plus");
+            var navCreate = MakeIconButton(mainPanel, "NavCreateRoom", "Oda Kur", Vector2.zero, "icon_plus", key: "room.create");
             AnchorTo(navCreate.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(-150f, 160f), new Vector2(280f, 120f));
             UnityEventTools.AddBoolPersistentListener(navCreate.onClick, createPanel.SetActive, true);
@@ -1275,7 +1368,7 @@ namespace DreamCar.EditorTools
             UnityEventTools.AddPersistentListener(navRegion.onClick, region.Open);
 
             // ShopUI'de Open/Close yok — paneli doğrudan açıp kapatıyoruz.
-            var navCarShop = MakeIconButton(mainPanel, "NavCarShop", "Araçlar", Vector2.zero, "icon_car");
+            var navCarShop = MakeIconButton(mainPanel, "NavCarShop", "Araçlar", Vector2.zero, "icon_car", key: "garage");
             AnchorTo(navCarShop.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(450f, 160f), new Vector2(280f, 120f));
             UnityEventTools.AddBoolPersistentListener(navCarShop.onClick, carShopPanel.SetActive, true);
@@ -1295,13 +1388,13 @@ namespace DreamCar.EditorTools
             var refCodeLabel = MakeText(socialPanel, "MyCode", "-", new Vector2(0f, 330f), 40);
             var refShare = MakeButton(socialPanel, "ShareCode", "Kodu Paylaş", new Vector2(-180f, 240f));
             var refInput = MakeInputField(socialPanel, "RedeemInput", "Referans kodu", new Vector2(-120f, 150f));
-            var refRedeem = MakeButton(socialPanel, "RedeemButton", "Kullan", new Vector2(230f, 150f));
+            var refRedeem = MakeButton(socialPanel, "RedeemButton", "Kullan", new Vector2(230f, 150f), key: "referral.redeem");
 
             MakeText(socialPanel, "PlayedWithTitle", "Beraber oynadıkların", new Vector2(0f, 60f), 32);
             var playedList = MakeListContainer(socialPanel, "PlayedWithList",
                 new Vector2(0f, -180f), new Vector2(820f, 380f));
 
-            var socialClose = MakeButton(socialPanel, "Close", "Kapat", Vector2.zero);
+            var socialClose = MakeButton(socialPanel, "Close", "Kapat", Vector2.zero, key: "close");
             AnchorTo(socialClose.GetComponent<RectTransform>(),
                      new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
 
@@ -1324,10 +1417,33 @@ namespace DreamCar.EditorTools
                 playedWith.entryPrefab = MakeRowPrefabTemplate(socialPanel, "PlayedWithRow", 1, "Ekle");
             }
 
-            var navSocial = MakeIconButton(mainPanel, "NavSocial", "Sosyal", Vector2.zero, "icon_emote");
+            var navSocial = MakeIconButton(mainPanel, "NavSocial", "Sosyal", Vector2.zero, "icon_emote", key: "played_with");
             AnchorTo(navSocial.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(-450f, 160f), new Vector2(280f, 120f));
             UnityEventTools.AddPersistentListener(navSocial.onClick, social.Open);
+
+            // --- KVKK / GDPR onayı (ilk açılış) ---
+            // KVKKConsent hiçbir sahneye eklenmiyordu: onay hiç sorulmuyor,
+            // HasConsent kalıcı olarak false kalıyor ve analytics/reklam
+            // yüklemesinin dayandığı karar hiç verilmiyordu. Türkiye ve AB
+            // için zorunlu, Apple ATT akışı da buna bağlı.
+            var consentPanel = MakeUiChild(canvasGo, "ConsentDialog", modal: true);
+            consentPanel.SetActive(false);
+            MakeText(consentPanel, "Title", "Veri Kullanımı", new Vector2(0f, 300f), 56);
+            var consentBody = MakeText(consentPanel, "Body",
+                "Hesabını cihazlar arası taşıyabilmek, çok oyunculu oturumu yürütmek ve " +
+                "hataları düzeltmek için cihaz kimliği, takma adın ve oyun ilerlemen " +
+                "işleniyor. Ayrıntı: Ayarlar → Gizlilik.",
+                new Vector2(0f, 100f), 30);
+            consentBody.GetComponent<RectTransform>().sizeDelta = new Vector2(880f, 260f);
+            var consentAccept = MakeButton(consentPanel, "Accept", "Kabul ediyorum", new Vector2(-200f, -120f));
+            var consentReject = MakeButton(consentPanel, "Reject", "Hayır", new Vector2(200f, -120f));
+
+            // Bileşen Canvas'ta: Start() paneli kendisi açıp kapatıyor.
+            var consent = canvasGo.AddComponent<Consent.KVKKConsent>();
+            consent.dialog = consentPanel;
+            consent.acceptButton = consentAccept;
+            consent.rejectButton = consentReject;
 
             // --- Günlük ödül ---
             // DailyReward hiçbir sahneye eklenmiyordu. Onun da ötesinde:
@@ -1337,10 +1453,10 @@ namespace DreamCar.EditorTools
             // hatırlatma kuruyordu.
             var dailyPanel = MakeUiChild(canvasGo, "DailyRewardPopup", modal: true);
             dailyPanel.SetActive(false);
-            MakeText(dailyPanel, "Title", "Günlük Ödül", new Vector2(0f, 220f), 64);
+            MakeText(dailyPanel, "Title", "Günlük Ödül", new Vector2(0f, 220f), 64, key: "daily.title");
             var dailyAmount = MakeText(dailyPanel, "Amount", "+0 ₺", new Vector2(0f, 90f), 56);
             var dailyStreak = MakeText(dailyPanel, "Streak", "1. gün", new Vector2(0f, 10f), 32);
-            var dailyClaim = MakeButton(dailyPanel, "ClaimButton", "Al", new Vector2(0f, -120f));
+            var dailyClaim = MakeButton(dailyPanel, "ClaimButton", "Al", new Vector2(0f, -120f), key: "daily.claim");
 
             // Bileşen her zaman açık olan Canvas'ta: paneli kendisi açıp
             // kapatıyor ve kapalı bir objede Start() hiç koşmazdı.
@@ -1578,7 +1694,15 @@ namespace DreamCar.EditorTools
             return go;
         }
 
-        static TMP_Text MakeText(GameObject parent, string name, string content, Vector2 anchoredPos, int fontSize)
+        // key verilirse etikete LocalizedText takılır.
+        //
+        // Yerelleştirme katmanı tamamen ölüydü: LocalizationManager.T()'nin
+        // proje genelinde SIFIR çağrısı vardı ve LocalizedText hiçbir yere
+        // eklenmiyordu, yani SetLanguage'in yenileme döngüsü boş küme geziyordu.
+        // tr.json ve en.json doğru yükleniyor, okuyan yoktu: Ayarlar'dan
+        // İngilizce seçmek tercihi kaydediyor ve arayüz Türkçe kalıyordu.
+        static TMP_Text MakeText(GameObject parent, string name, string content,
+                                 Vector2 anchoredPos, int fontSize, string key = null)
         {
             var go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(parent.transform, false);
@@ -1589,10 +1713,13 @@ namespace DreamCar.EditorTools
             t.text = content;
             t.fontSize = fontSize;
             t.alignment = TextAlignmentOptions.Center;
+            if (!string.IsNullOrEmpty(key))
+                go.AddComponent<DreamCar.Localization.LocalizedText>().key = key;
             return t;
         }
 
-        static Button MakeButton(GameObject parent, string name, string label, Vector2 anchoredPos)
+        static Button MakeButton(GameObject parent, string name, string label,
+                                 Vector2 anchoredPos, string key = null)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
             go.transform.SetParent(parent.transform, false);
@@ -1604,7 +1731,7 @@ namespace DreamCar.EditorTools
             // varsayılanda kalmıştı.
             rt.sizeDelta = new Vector2(280f, 120f);
             Skin(go.GetComponent<Image>(), "pill", Palette.ButtonBg);
-            var t = MakeText(go, "Label", label, Vector2.zero, 36);
+            var t = MakeText(go, "Label", label, Vector2.zero, 36, key);
             var tRt = t.GetComponent<RectTransform>();
             tRt.anchorMin = Vector2.zero; tRt.anchorMax = Vector2.one;
             tRt.offsetMin = Vector2.zero; tRt.offsetMax = Vector2.zero;
@@ -1615,9 +1742,9 @@ namespace DreamCar.EditorTools
         // butonu düz metindi; ikon hem tanınmayı hızlandırıyor hem arayüzü
         // "kart" hissine yaklaştırıyor.
         static Button MakeIconButton(GameObject parent, string name, string label,
-                                     Vector2 anchoredPos, string iconName)
+                                     Vector2 anchoredPos, string iconName, string key = null)
         {
-            var btn = MakeButton(parent, name, label, anchoredPos);
+            var btn = MakeButton(parent, name, label, anchoredPos, key);
             var sprite = Ui(iconName);
             if (!sprite) return btn;   // sprite'lar üretilmemiş: düz butonla kal
 
@@ -2001,6 +2128,41 @@ namespace DreamCar.EditorTools
             buyRt.offsetMin = Vector2.zero; buyRt.offsetMax = Vector2.zero;
 
             return row;
+        }
+
+        // Oyuncu listesi satırı: ad + üç ADI BELLİ buton. PlayerListPanel
+        // butonları adıyla arıyor — GetComponentInChildren<Button>() hep
+        // ilkini döndürürdü ve üç işlev tek butona düşerdi.
+        static GameObject MakePlayerRowTemplate(GameObject parent, string name)
+        {
+            var row = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+            row.transform.SetParent(parent.transform, false);
+            row.SetActive(false);
+            row.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 84f);
+            Skin(row.GetComponent<Image>(), "panel", Palette.Surface);
+            row.GetComponent<LayoutElement>().preferredHeight = 84f;
+
+            var label = MakeText(row, "Name", "", Vector2.zero, 28);
+            var labelRt = label.GetComponent<RectTransform>();
+            labelRt.anchorMin = new Vector2(0.03f, 0f); labelRt.anchorMax = new Vector2(0.44f, 1f);
+            labelRt.offsetMin = Vector2.zero; labelRt.offsetMax = Vector2.zero;
+            label.alignment = TextAlignmentOptions.MidlineLeft;
+
+            AddRowButton(row, "MuteButton", "Sustur", 0.46f, 0.62f);
+            AddRowButton(row, "ReportButton", "Bildir", 0.64f, 0.80f);
+            AddRowButton(row, "KickButton", "At", 0.82f, 0.97f);
+            return row;
+        }
+
+        static void AddRowButton(GameObject row, string name, string label, float xMin, float xMax)
+        {
+            var btn = MakeButton(row, name, label, Vector2.zero);
+            var rt = btn.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(xMin, 0.15f);
+            rt.anchorMax = new Vector2(xMax, 0.85f);
+            rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+            var t = btn.GetComponentInChildren<TMP_Text>();
+            if (t) { t.enableAutoSizing = true; t.fontSizeMin = 16f; t.fontSizeMax = 26f; }
         }
 
         static GameObject MakeToastTemplate(GameObject parent, string name)
