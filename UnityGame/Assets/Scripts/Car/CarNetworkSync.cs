@@ -15,14 +15,30 @@ namespace DreamCar.Car
 
         Rigidbody _rb;
         IDriveInput _car;
+        CarController _controller;
         Vector3 _netPos;
         Quaternion _netRot = Quaternion.identity;
         Vector3 _netVel;
+
+        // Uzak araçlarda Rigidbody kinematik ve sürücü bileşeni kapalı. Bunun
+        // sonucu, ağ pozisyonu doğru olsa bile aracın ÖLÜ görünmesiydi:
+        // SpeedKmh linearVelocity'den okunuyor ve kinematik gövdede 0 —
+        // motor sesi rölantide sabit kalıyor, WheelCollider simüle edilmediği
+        // için tekerlek mesh'leri hiç dönmüyor ve direksiyon kırılmıyordu.
+        // Diğer oyuncular donmuş tekerlekli sessiz kutular gibi kayıyordu.
+        //
+        // Çözüm: hızı, gazı ve direksiyonu da senkronla ve görsel/işitsel
+        // sistemler uzak araçta bunları okusun. Kare başına üç float.
+        public bool IsRemote { get; private set; }
+        public float RemoteSpeedKmh { get; private set; }
+        public float RemoteThrottle { get; private set; }
+        public float RemoteSteer { get; private set; }
 
         void Awake()
         {
             _rb = GetComponent<Rigidbody>();
             _car = GetComponent<IDriveInput>();
+            _controller = GetComponent<CarController>();
             _netPos = transform.position;
             _netRot = transform.rotation;
 
@@ -39,7 +55,18 @@ namespace DreamCar.Car
                 // iniyoruz. Sürücü bulunamamışsa (prefab eksik kurulmuşsa) sessiz geçiyoruz.
                 var carBehaviour = _car as MonoBehaviour;
                 if (carBehaviour) carBehaviour.enabled = false;
+
+                IsRemote = true;
             }
+        }
+
+        void Update()
+        {
+            // Tekerlekleri ağdan gelen hızla döndür. Yerel araçta bunu
+            // CarController.SyncMesh yapıyor ama o FixedUpdate'te ve bileşen
+            // uzak araçta kapalı.
+            if (IsRemote && _controller)
+                _controller.ApplyRemoteVisuals(RemoteSpeedKmh, RemoteSteer, Time.deltaTime);
         }
 
         void FixedUpdate()
@@ -57,12 +84,18 @@ namespace DreamCar.Car
                 stream.SendNext(transform.position);
                 stream.SendNext(transform.rotation);
                 stream.SendNext(_rb.linearVelocity);
+                stream.SendNext(_car != null ? _car.SpeedKmh : 0f);
+                stream.SendNext(_car != null ? _car.ThrottleInput : 0f);
+                stream.SendNext(_car != null ? _car.SteerInput : 0f);
             }
             else
             {
                 _netPos = (Vector3)stream.ReceiveNext();
                 _netRot = (Quaternion)stream.ReceiveNext();
                 _netVel = (Vector3)stream.ReceiveNext();
+                RemoteSpeedKmh = (float)stream.ReceiveNext();
+                RemoteThrottle = (float)stream.ReceiveNext();
+                RemoteSteer = (float)stream.ReceiveNext();
             }
         }
     }

@@ -20,6 +20,10 @@ namespace DreamCar.Race
             public float lapStartTime;
             public bool started;   // start/finish çizgisinden ilk (turu saymayan) geçiş yapıldı mı
             public bool finished;  // yarışı bitirdi — bir daha tur/ödül işlemesin
+            // Photon'un sunucu senkronlu saati. Time.time her istemcide farklı
+            // bir sıfır noktasından sayıyor, o yüzden tur başlangıcı ağ
+            // üzerinden taşınamıyor.
+            public double netLapStart;
         }
 
         readonly Dictionary<int, RaceState> _states = new();
@@ -43,9 +47,40 @@ namespace DreamCar.Race
             }
         }
 
+        // Oyuncu başına custom property anahtarları — sıralama tablosu bunları okuyor.
+        const string LapKey = "rlap";
+        const string BestKey = "rbest";
+        const string LapStartKey = "rls";
+
         public void StartRace(int actorNumber)
         {
-            _states[actorNumber] = new RaceState { startTime = Time.time, lapStartTime = Time.time };
+            _states[actorNumber] = new RaceState
+            {
+                startTime = Time.time,
+                lapStartTime = Time.time,
+                netLapStart = PhotonNetwork.Time,
+            };
+            if (actorNumber == PhotonNetwork.LocalPlayer.ActorNumber)
+                Publish(_states[actorNumber]);
+        }
+
+        // OnCheckpointHit "if (!pv.IsMine) return" ile başlıyor — ve başlamak
+        // ZORUNDA, yoksa her istemci başkasının turunu da sayardı. Sonucu şuydu:
+        // her istemci YALNIZCA kendi RaceState'ini kuruyor, StatusFor uzak
+        // oyuncular için sıfır dönüyordu. Yani sıralama tablosu yapısal olarak
+        // imkânsızdı — rakipler sonsuza kadar "Tur 0" görünürdü.
+        //
+        // Çözüm: kendi ilerlemeni oyuncu özelliklerine yaz, ötekilerinkini
+        // oradan oku. Photon bunları odadaki herkese dağıtıyor.
+        void Publish(RaceState s)
+        {
+            if (!PhotonNetwork.InRoom) return;
+            PhotonNetwork.LocalPlayer.SetCustomProperties(new ExitGames.Client.Photon.Hashtable
+            {
+                { LapKey, s.lap },
+                { BestKey, s.bestLapTime },
+                { LapStartKey, s.netLapStart },
+            });
         }
 
         public void OnCheckpointHit(Collider carCollider, Checkpoint cp)
@@ -78,6 +113,8 @@ namespace DreamCar.Race
                 s.started = true;
                 s.startTime = Time.time;
                 s.lapStartTime = Time.time;
+                s.netLapStart = PhotonNetwork.Time;
+                Publish(s);
                 return;
             }
 
@@ -85,6 +122,8 @@ namespace DreamCar.Race
             float lapTime = Time.time - s.lapStartTime;
             if (s.bestLapTime <= 0f || lapTime < s.bestLapTime) s.bestLapTime = lapTime;
             s.lapStartTime = Time.time;
+            s.netLapStart = PhotonNetwork.Time;
+            Publish(s);
 
             if (s.lap >= totalLaps) FinishRace(actor, s);
         }
@@ -148,6 +187,20 @@ namespace DreamCar.Race
         {
             if (_states.TryGetValue(actor, out var s))
                 return (s.lap, totalLaps, Time.time - s.lapStartTime, s.bestLapTime);
+
+            // Uzak oyuncu: ilerlemesini kendi custom property'lerinden oku.
+            if (PhotonNetwork.InRoom &&
+                PhotonNetwork.CurrentRoom.Players.TryGetValue(actor, out var player))
+            {
+                var props = player.CustomProperties;
+                int lap = props.TryGetValue(LapKey, out var l) ? (int)l : 0;
+                float best = props.TryGetValue(BestKey, out var b) ? (float)b : 0f;
+                float lapTime = 0f;
+                if (props.TryGetValue(LapStartKey, out var ls))
+                    lapTime = Mathf.Max(0f, (float)(PhotonNetwork.Time - (double)ls));
+                return (lap, totalLaps, lapTime, best);
+            }
+
             return (0, totalLaps, 0f, 0f);
         }
     }

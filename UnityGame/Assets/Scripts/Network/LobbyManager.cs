@@ -29,14 +29,43 @@ namespace DreamCar.Network
         public void CreateRoom(string roomName)
         {
             if (string.IsNullOrWhiteSpace(roomName)) roomName = $"Room-{Random.Range(1000, 9999)}";
+
+            // "mode" ve "map" özellikleri HİÇ yazılmıyordu. GameModeManager
+            // anahtar yoksa 0'a düşüyor, yani lobiden ya da hızlı katılımdan
+            // kurulan her oda kalıcı olarak Serbest Sürüş oluyordu — yarış ve
+            // drift modlarına yalnızca "Oda Kur" ekranından ulaşılabiliyordu.
+            // Ayrıca "map" olmadan ResolveSceneName Game.unity'ye düşüyor.
+            var props = new ExitGames.Client.Photon.Hashtable
+            {
+                { RoomPassword.ModeKey, 0 },
+            };
+
+            // Harita seçilmemişse kataloğun ilkine düş: aksi halde oyuncu boş
+            // test sahnesinde (Game.unity) kalıyor.
+            var map = DefaultMapId();
+            if (!string.IsNullOrEmpty(map)) props[RoomPassword.MapKey] = map;
+
             var opts = new RoomOptions
             {
                 MaxPlayers = defaultMaxPlayers,
                 IsVisible = true,
                 IsOpen = true,
-                PublishUserId = true
+                PublishUserId = true,
+                CustomRoomProperties = props,
+                CustomRoomPropertiesForLobby = new[]
+                {
+                    RoomPassword.PwdKey, RoomPassword.ModeKey, RoomPassword.MapKey
+                },
             };
             PhotonNetwork.CreateRoom(roomName, opts, TypedLobby.Default);
+        }
+
+        string DefaultMapId()
+        {
+            if (!mapCatalog || mapCatalog.maps == null) return null;
+            foreach (var m in mapCatalog.maps)
+                if (m && !string.IsNullOrEmpty(m.id)) return m.id;
+            return null;
         }
 
         public void JoinRoom(string roomName)

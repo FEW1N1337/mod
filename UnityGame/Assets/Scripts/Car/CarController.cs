@@ -121,6 +121,43 @@ namespace DreamCar.Car
             _rb.AddForce(-transform.up * downForce * _rb.linearVelocity.magnitude);
         }
 
+        // Uzak (başka oyuncuya ait) araçlarda Rigidbody kinematik, WheelCollider
+        // simüle edilmiyor ve bu bileşen KAPALI — yani FixedUpdate hiç
+        // koşmuyor. Tekerlek mesh'leri bu yüzden ne dönüyor ne kırılıyordu:
+        // diğer oyuncular donmuş tekerlekli kutular gibi kayıyordu.
+        // CarNetworkSync ağdan gelen hız ve direksiyonla burayı çağırıyor.
+        //
+        // Mesh'ler aracın kökünün çocuğu (WheelCollider'ın değil) ve doğru
+        // yerel konumda duruyorlar, o yüzden yalnızca yerel DÖNÜŞ yazılıyor.
+        float _remoteSpinDegrees;
+
+        public void ApplyRemoteVisuals(float speedKmh, float steerInput01, float deltaTime)
+        {
+            if (axles == null || axles.Length == 0) return;
+
+            float radius = 0.34f;
+            if (axles[0].leftWheel) radius = Mathf.Max(0.05f, axles[0].leftWheel.radius);
+
+            // ω = v / r  (rad/s) → dereceye çevir.
+            _remoteSpinDegrees += (speedKmh / 3.6f) / radius * Mathf.Rad2Deg * deltaTime;
+            _remoteSpinDegrees = Mathf.Repeat(_remoteSpinDegrees, 360f);
+
+            float steerDegrees = maxSteeringAngle * Mathf.Clamp(steerInput01, -1f, 1f);
+
+            foreach (var axle in axles)
+            {
+                float s = axle.steering ? steerDegrees : 0f;
+                SetRemoteWheel(axle.leftMesh, s);
+                SetRemoteWheel(axle.rightMesh, s);
+            }
+        }
+
+        void SetRemoteWheel(Transform mesh, float steerDegrees)
+        {
+            if (!mesh) return;
+            mesh.localRotation = Quaternion.Euler(_remoteSpinDegrees, steerDegrees, 0f);
+        }
+
         static void SyncMesh(WheelCollider col, Transform mesh)
         {
             if (!mesh || !col) return;

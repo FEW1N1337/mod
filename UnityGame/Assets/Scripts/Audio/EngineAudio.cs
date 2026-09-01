@@ -18,9 +18,16 @@ namespace DreamCar.Audio
 
         IDriveInput _car;
 
+        // Uzak araçta sürücü bileşeni kapalı ve Rigidbody kinematik, yani
+        // _car.SpeedKmh her karede 0 dönüyor: motor sesi rölantiye kilitleniyor
+        // ve diğer oyuncuların araçları hızlanıp yavaşlarken hiç ses
+        // değiştirmiyordu. Ağdan gelen değerleri CarNetworkSync tutuyor.
+        CarNetworkSync _net;
+
         void Awake()
         {
             _car = GetComponent<IDriveInput>();
+            _net = GetComponent<CarNetworkSync>();
             if (idleLoop) { idleLoop.loop = true; if (!idleLoop.isPlaying) idleLoop.Play(); }
             if (revLoop) { revLoop.loop = true; if (!revLoop.isPlaying) revLoop.Play(); }
         }
@@ -33,8 +40,12 @@ namespace DreamCar.Audio
             // fırlatırdı.
             if (_car == null) return;
 
-            float speedT = Mathf.Clamp01(_car.SpeedKmh / Mathf.Max(1f, _car.TopSpeedKmh));
-            float throttle = Mathf.Clamp01(Mathf.Abs(_car.ThrottleInput));
+            bool remote = _net && _net.IsRemote;
+            float speedKmh = remote ? _net.RemoteSpeedKmh : _car.SpeedKmh;
+            float throttleRaw = remote ? _net.RemoteThrottle : _car.ThrottleInput;
+
+            float speedT = Mathf.Clamp01(speedKmh / Mathf.Max(1f, _car.TopSpeedKmh));
+            float throttle = Mathf.Clamp01(Mathf.Abs(throttleRaw));
             float pitch = Mathf.Lerp(idlePitch, maxPitch, Mathf.Max(speedT, throttle));
 
             // Sesini her karede kendisi yazıyor — SFX çarpanını burada uygular.
@@ -44,7 +55,7 @@ namespace DreamCar.Audio
             if (idleLoop)
             {
                 idleLoop.pitch = Mathf.Lerp(0.9f, 1.1f, throttle);
-                idleLoop.volume = idleVolumeVsSpeed.Evaluate(_car.SpeedKmh) * sfx;
+                idleLoop.volume = idleVolumeVsSpeed.Evaluate(speedKmh) * sfx;
             }
             if (revLoop)
             {
