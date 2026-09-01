@@ -37,6 +37,12 @@ namespace DreamCar.EditorTools.Procedural.Maps
                     "Üret", "İptal"))
                 return;
 
+            // Katalog sahnelerden ÖNCE üretilir: her sahnenin MapSelector'ü ona
+            // referans veriyor. Sonra üretilseydi bağlanacak varlık henüz olmazdı.
+            // (BuildMapCatalog sahnelerin var olmasına ihtiyaç duymuyor, yalnızca
+            // arketip listesini ve sahne adlarını kullanıyor.)
+            BuildMapCatalog();
+
             try
             {
                 for (int i = 0; i < archetypes.Length; i++)
@@ -49,7 +55,6 @@ namespace DreamCar.EditorTools.Procedural.Maps
             finally { EditorUtility.ClearProgressBar(); }
 
             AddMapsToBuildSettings();
-            BuildMapCatalog();
 
             if (confirm)
                 EditorUtility.DisplayDialog("DreamCar",
@@ -544,7 +549,10 @@ namespace DreamCar.EditorTools.Procedural.Maps
             }
 
             boot.AddComponent<NetworkInterestManager>();
-            boot.AddComponent<DreamCar.Maps.MapSelector>();
+            // catalog hiç atanmıyordu: ApplyForRoom ilk guard'da dönüyor, harita
+            // varyantı (gündüz/gece/yağmur) hiç uygulanmıyor ve 24 varyantın hepsi
+            // birbirinin aynısı görünüyordu.
+            boot.AddComponent<DreamCar.Maps.MapSelector>().catalog = LoadMapCatalog();
 
             // Cihaz gücüne göre çizim mesafesi / gölge / sis / post-processing ayarı
             boot.AddComponent<DreamCar.Settings.QualityAutoDetect>();
@@ -572,6 +580,10 @@ namespace DreamCar.EditorTools.Procedural.Maps
 
         static UnityEngine.Rendering.VolumeProfile LoadProfile(string path) =>
             AssetDatabase.LoadAssetAtPath<UnityEngine.Rendering.VolumeProfile>(path);
+
+        public static DreamCar.Maps.MapCatalog LoadMapCatalog() =>
+            AssetDatabase.LoadAssetAtPath<DreamCar.Maps.MapCatalog>(
+                "Assets/Generated/Catalog/MapCatalog.asset");
 
         // ---------------------------------------------------------- Katalog
         [MenuItem("DreamCar/Maps/Build Map Catalog")]

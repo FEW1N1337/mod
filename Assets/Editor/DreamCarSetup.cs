@@ -444,7 +444,12 @@ namespace DreamCar.EditorTools
             var weather = boot.AddComponent<Weather>();
             Procedural.ProceduralWeather.Attach(boot, weather);
             boot.AddComponent<DayNightCycle>().sun = sun;
-            boot.AddComponent<MapSelector>();
+            // catalog hiç atanmıyordu: ApplyForRoom ilk guard'da dönüyor ve harita
+            // varyantı (gündüz/gece/yağmur) hiç uygulanmıyordu. Katalog henüz
+            // üretilmemişse null kalır — BUILD EVERYTHING zinciri haritaları
+            // sahnelerden önce üretiyor, o yüzden normal akışta dolu gelir.
+            boot.AddComponent<MapSelector>().catalog =
+                Procedural.Maps.ProceduralMapGenerator.LoadMapCatalog();
 
             // Oda içi bileşenler — sadece Game sahnesinde anlamlı.
             boot.AddComponent<NetworkInterestManager>();
