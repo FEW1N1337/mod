@@ -45,7 +45,10 @@ namespace DreamCar.Monetization
 
         void Awake()
         {
-            if (Instance && Instance != this) { Destroy(gameObject); return; }
+            // Yalnızca yinelenen bileşeni yok et: ~Bootstrap üzerinde sahneye özel
+            // bileşenler de duruyor (RoomManager, Weather, MapSelector…) ve
+            // GameObject yok edilirse onlar da giderdi.
+            if (Instance && Instance != this) { Destroy(this); return; }
             Instance = this;
             DontDestroyOnLoad(gameObject);
             Advertisement.Initialize(GameId, testMode, this);
