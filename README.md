@@ -8,17 +8,32 @@ Bu klasör commit edilmiş iskelettir — Unity Editor'de açıp aşağıdaki ad
 
 ---
 
-## 0) Hızlı başlangıç — üç adım
+## 0) Hızlı başlangıç — dört adım
 
 Aşağıdaki uzun bölümler *referans*. Sıfırdan oynanabilir hale getirmek için tek yol yeterli:
 
 1. **Projeyi aç** (bölüm 1)
-2. **Photon PUN 2'yi import et + App Id gir** (bölüm 2) — çok oyunculu için tek zorunlu dış paket
-3. Menüden **`DreamCar → BUILD EVERYTHING`**
+2. **TextMeshPro kaynaklarını içe aktar**: `Window → TextMeshPro → Import TMP Essential Resources` → **Import**.
+   Unity bunu ilk açılışta sorabilir; sormazsa elle yap. **`BUILD EVERYTHING` bunu kontrol ediyor ve
+   eksikse durup sana söylüyor** — çünkü bu klasör olmadan oyundaki HİÇBİR yazı görünmez
+   (başlıklar, buton etiketleri, hız göstergesi, sohbet, para). Yazı tipi projeye ait bir varlık,
+   depoda tutulmuyor.
+3. **Photon PUN 2'yi import et + App Id gir** (bölüm 2) — çok oyunculu için tek zorunlu dış paket
+4. Menüden **`DreamCar → BUILD EVERYTHING`**
 
-Üçüncü adım şunları kodla üretir: texture ve materyaller, 5 araç prefab'ı, araç kataloğu, UI sprite'ları, uygulama ikonları ve açılış ekranı, post-processing profilleri, MainMenu + Game sahneleri, prosedürel şehir, **8 harita sahnesi** ve harita kataloğu, Build Settings. Birkaç dakika sürer.
+Son adım şunları kodla üretir: texture ve materyaller, 5 araç prefab'ı, araç kataloğu, UI sprite'ları, uygulama ikonları ve açılış ekranı, post-processing profilleri, MainMenu + Game sahneleri, prosedürel şehir, **8 harita sahnesi** ve harita kataloğu, Build Settings. Birkaç dakika sürer.
 
 Bitince `Assets/Scenes/MainMenu.unity` aç → **Play**.
+
+**Türkçe karakterler kutu (□) görünüyorsa:** Project penceresinde
+`Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF` varlığını seç,
+Inspector'da **Atlas Population Mode**'u `Dynamic` yap. Statik atlas yalnızca ASCII
+içeriyor; dinamik mod eksik glifleri (ş ğ ı İ ç ö ü) çalışma anında ekliyor.
+
+**Sohbet çalışmıyorsa:** sahne PhotonView'larının ViewID'sini PUN, sahne kaydedilirken
+atıyor. Sohbet paneli betikle kurulduğu için bu atamanın yapıldığını Editor dışından
+doğrulayamıyorum. Çözüm tek adım: Photon import edildikten sonra `MainMenu.unity` ve
+`Game.unity`'yi aç ve kaydet (Ctrl+S).
 
 > **Dış asset satın almana gerek yok.** Modeller, texture'lar, sesler, ikonlar — hepsi kodla üretiliyor (bölüm 14). Bölüm 3 ve 4 elle kurulum anlatıyor; bunlar `BUILD EVERYTHING` öncesinden kalma, kendi asset'ini getirmek istersen diye duruyor. Normal akışta ikisini de atla.
 
@@ -27,7 +42,7 @@ Bitince `Assets/Scenes/MainMenu.unity` aç → **Play**.
 ## 1) Aç
 
 1. **Unity Hub** kur (unity.com/download).
-2. **Unity 6 LTS** (6000.0.30f1 veya üzeri) yükle. Modülleri: **iOS Build Support** (Mac'te zorunlu). Windows/Linux'ta yalnızca geliştirme yapabilirsin — iOS `.ipa` build için Mac + Xcode şart.
+2. **Unity 6 LTS** (6000.0.30f1 veya üzeri) yükle. Hub "Missing Editor Version" uyarısı verirse daha yeni bir 6000.x ile açmak sorun değil: depoda tek bir sahne veya prefab dosyası yok, her şey C# ve üretici betiklerden ibaret, o yüzden sürüm yükseltmesi hiçbir varlığı bozamaz. Modülleri: **iOS Build Support** (Mac'te zorunlu). Windows/Linux'ta yalnızca geliştirme yapabilirsin — iOS `.ipa` build için Mac + Xcode şart.
 3. Hub → **Add project from disk** → bu `UnityGame/` klasörünü seç.
 4. İlk açılışta Unity paketleri indirir (birkaç dakika).
 
