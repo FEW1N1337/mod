@@ -644,8 +644,10 @@ namespace DreamCar.EditorTools.Procedural
             var hdr = root.AddComponent<CarPaintHDR>();
             hdr.paintRenderers = new[] { bodyRenderer };
 
-            var interior = root.AddComponent<InteriorCamera>();
-            interior.car = controller;
+            // Sürücü alanı burada ATANMAZ: Unity arayüz tipindeki alanları
+            // serileştirmiyor, değer prefab'a kaydedilmezdi. InteriorCamera aracın
+            // üzerinde durduğu için Awake'te kendisi buluyor.
+            root.AddComponent<InteriorCamera>();
         }
 
         static Transform AddAnchor(GameObject root, string name, Vector3 localPosition)

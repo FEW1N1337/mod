@@ -4,7 +4,9 @@ using DreamCar.Car;
 namespace DreamCar.Audio
 {
     // Motor sesi: gaz seviyesine + hıza göre pitch. İdle + gaz iki loop'u karıştırır.
-    [RequireComponent(typeof(CarController))]
+    // RequireComponent zorunluluğu kaldırıldı: sürücü artık IDriveInput uygulayan
+    // herhangi bir bileşen olabilir (RCCP adapteri dahil) ve Unity bir arayüz tipini
+    // RequireComponent ile zorunlu tutamaz.
     public class EngineAudio : MonoBehaviour
     {
         public AudioSource idleLoop;
@@ -14,19 +16,25 @@ namespace DreamCar.Audio
         public AnimationCurve throttleVolume = AnimationCurve.EaseInOut(0f, 0.15f, 1f, 1f);
         public AnimationCurve idleVolumeVsSpeed = AnimationCurve.Linear(0f, 1f, 60f, 0.1f);
 
-        CarController _car;
+        IDriveInput _car;
 
         void Awake()
         {
-            _car = GetComponent<CarController>();
+            _car = GetComponent<IDriveInput>();
             if (idleLoop) { idleLoop.loop = true; if (!idleLoop.isPlaying) idleLoop.Play(); }
             if (revLoop) { revLoop.loop = true; if (!revLoop.isPlaying) revLoop.Play(); }
         }
 
         void Update()
         {
-            float speedT = Mathf.Clamp01(_car.SpeedKmh / _car.topSpeedKmh);
-            float throttle = Mathf.Clamp01(Mathf.Abs(_car.throttleInput));
+            // RequireComponent(CarController) kaldırıldı — o attribute sürücünün
+            // varlığını garanti ediyordu. Artık garanti yok: RCCP'li bir araçta
+            // arayüzü kimse sağlamıyorsa burası her karede NullReferenceException
+            // fırlatırdı.
+            if (_car == null) return;
+
+            float speedT = Mathf.Clamp01(_car.SpeedKmh / Mathf.Max(1f, _car.TopSpeedKmh));
+            float throttle = Mathf.Clamp01(Mathf.Abs(_car.ThrottleInput));
             float pitch = Mathf.Lerp(idlePitch, maxPitch, Mathf.Max(speedT, throttle));
 
             // Sesini her karede kendisi yazıyor — SFX çarpanını burada uygular.

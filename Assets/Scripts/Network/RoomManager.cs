@@ -67,8 +67,10 @@ namespace DreamCar.Network
             if (NetworkInterestManager.Instance)
                 NetworkInterestManager.Instance.SetLocalCar(_localCar.transform);
 
+            // Sürücüyü somut tip yerine IDriveInput üzerinden alıyoruz: prefab
+            // WheelCollider'lı CarController da olabilir, RCCP'li RCCPCarAdapter da.
             var input = FindFirstObjectByType<InputSystemMobile.MobileTouchInput>();
-            if (input) input.car = _localCar.GetComponent<Car.CarController>();
+            if (input) input.car = _localCar.GetComponent<Car.IDriveInput>();
         }
 
         public override void OnLeftRoom()

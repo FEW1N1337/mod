@@ -5,8 +5,13 @@ namespace DreamCar.Effects
 {
     // Dream Road'daki CarNitro'ya paralel: nitroAmount 0..100 arasında,
     // basılınca ekstra ileri kuvvet + görsel efekt tetikler.
+    // CarController'a RequireComponent KOYMUYORUZ. Bu bileşen bizim WheelCollider
+    // denetleyicimize özel (üst hızı geçici olarak yükselterek boost veriyor, arayüzde
+    // yazılabilir üst hız yok). Ama zorunlu tutulursa RCCP'li bir araca eklendiğinde
+    // Unity CarController'ı da ekler ve iki sürücü aynı Rigidbody'yi sürer.
+    // RCCP modunda nitro RCCPNitroBridge üzerinden RCCP'nin kendi NOS'una gider;
+    // bu bileşen orada sessizce devre dışı kalır.
     [RequireComponent(typeof(Rigidbody))]
-    [RequireComponent(typeof(CarController))]
     public class CarNitro : MonoBehaviour
     {
         public float nitroAmount = 100f;
@@ -28,7 +33,8 @@ namespace DreamCar.Effects
         {
             _rb = GetComponent<Rigidbody>();
             _car = GetComponent<CarController>();
-            _originalTopSpeed = _car.topSpeedKmh;
+            if (_car) _originalTopSpeed = _car.topSpeedKmh;
+            else enabled = false;   // RCCP'li araç: nitro köprü üzerinden yürüyor
 
             // Seviyesi bir kez ayarlanıp Play() ediliyor — SFX sürgüsüne AudioBus bağlar.
             DreamCar.Audio.AudioBus.RegisterSfx(nitroLoop);

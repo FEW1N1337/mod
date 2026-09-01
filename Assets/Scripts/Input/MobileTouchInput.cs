@@ -7,7 +7,11 @@ namespace DreamCar.InputSystemMobile
 {
     public class MobileTouchInput : MonoBehaviour
     {
-        public CarController car;
+        // Somut araç sınıfı yerine arayüz: aynı dokunmatik kontrol hem bizim
+        // WheelCollider'lı sürücümüzü hem RCCP adapter'ını sürebilsin.
+        // Unity arayüzleri Inspector'da serileştiremez, ama gerek de yok: bu
+        // referansı RoomManager araç doğduktan sonra çalışma anında atıyor.
+        [System.NonSerialized] public IDriveInput car;
 
         [Header("UI buttons (assign in scene)")]
         public Button throttleButton;
@@ -41,7 +45,7 @@ namespace DreamCar.InputSystemMobile
 
         void Update()
         {
-            if (!car) return;
+            if (!IsAlive(car)) return;
 
             _sensRefreshTimer -= Time.unscaledDeltaTime;
             if (_sensRefreshTimer <= 0f)
@@ -111,6 +115,16 @@ namespace DreamCar.InputSystemMobile
                 _steerFingerId = -1;
                 _steer = 0f;
             }
+        }
+
+        // Arayüz referansında Unity'nin `!obj` kısayolu çalışmaz: yok edilmiş bir
+        // bileşen C# tarafında hâlâ null değildir. Unity nesnesiyse onun kendi null
+        // operatörüne düşerek eski `if (!car)` davranışını birebir koruyoruz.
+        static bool IsAlive(IDriveInput drive)
+        {
+            if (drive == null) return false;
+            if (drive is UnityEngine.Object obj) return obj != null;
+            return true;
         }
 
         static void HookHold(Button btn, System.Action<bool> setter)
