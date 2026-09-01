@@ -86,14 +86,30 @@ jobs:
         run: |
           set -euo pipefail
 
+          # actions/checkout dar bir refspec kuruyor, bu yüzden "git fetch origin main"
+          # uzak izleme referansını (origin/main) güncellemeyebiliyor. FETCH_HEAD her
+          # zaman az önce çekilen commit'i gösterir — ona bakıyoruz.
           git fetch origin "$SOURCE_BRANCH" --depth=1
           mkdir -p .github/workflows
 
+          # Önce hepsinin var olduğunu doğrula. Doğrudan "git show > dosya" yazsaydık
+          # kabuk yönlendirmeyi git çalışmadan önce yapar, dosya eksikse geriye boş
+          # dosya kalır ve hata mesajı ham git fatal'ı olur.
+          copy_from_source() {
+            src="$1"; dst="$2"
+            if ! git cat-file -e "FETCH_HEAD:${src}" 2>/dev/null; then
+              echo "::error::'${src}' dosyası '${SOURCE_BRANCH}' dalında yok."
+              echo "Unity CI dosyaları varsayılan dalda bulunmalı; feature dalında"
+              echo "kalmışlarsa önce oraya taşı."
+              exit 1
+            fi
+            git show "FETCH_HEAD:${src}" > "$dst"
+          }
+
           for f in unity-android-build.yml unity-ios-build.yml CI_SETUP.md; do
-            git show "origin/${SOURCE_BRANCH}:.github/workflows/${f}" > ".github/workflows/${f}"
+            copy_from_source ".github/workflows/${f}" ".github/workflows/${f}"
           done
-          git show "origin/${SOURCE_BRANCH}:.github/exportOptions.plist" \
-            > .github/exportOptions.plist
+          copy_from_source ".github/exportOptions.plist" ".github/exportOptions.plist"
 
           # 'UnityGame' → '.' : proje artık kökte
           sed -i \
