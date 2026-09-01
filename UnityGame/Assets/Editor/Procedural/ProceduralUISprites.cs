@@ -37,6 +37,12 @@ namespace DreamCar.EditorTools.Procedural
             Save(Globe(96, Color.white), "icon_globe");
             Save(Plus(96, Color.white), "icon_plus");
 
+            // Oyun içi HUD'daki aksiyon sütunu.
+            Save(CameraIcon(96, Color.white), "icon_camera");
+            Save(HornIcon(96, Color.white), "icon_horn");
+            Save(EmoteIcon(96, Color.white), "icon_emote");
+            Save(HazardIcon(96, Color.white), "icon_hazard");
+
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log("[Procedural] UI sprite'ları üretildi: " + Folder);
@@ -405,6 +411,81 @@ namespace DreamCar.EditorTools.Procedural
                 float h = Bar(p, new Vector2(0.20f, 0.50f), new Vector2(0.80f, 0.50f), 0.16f, aa);
                 float v = Bar(p, new Vector2(0.50f, 0.20f), new Vector2(0.50f, 0.80f), 0.16f, aa);
                 return Union(h, v);
+            });
+        }
+
+        // Fotoğraf makinesi — kamera modu butonu.
+        static Texture2D CameraIcon(int size, Color color)
+        {
+            float aa = Aa(size);
+            var lens = new Vector2(0.5f, 0.46f);
+            return Icon(size, color, p =>
+            {
+                float body = Box(p, 0.10f, 0.24f, 0.90f, 0.68f, aa);
+                float bump = Box(p, 0.32f, 0.68f, 0.54f, 0.76f, aa);
+                float shape = Union(body, bump);
+                // Objektif: gövdeden oyulmuş halka.
+                float ringGap = Ring(p, lens, 0.16f, 0.05f, aa);
+                return Subtract(shape, ringGap);
+            });
+        }
+
+        // Korna — konik hoparlör + iki ses yayı.
+        static Texture2D HornIcon(int size, Color color)
+        {
+            float aa = Aa(size);
+            var c = new Vector2(0.36f, 0.5f);
+            return Icon(size, color, p =>
+            {
+                // Koni: x ilerledikçe açılan bir bant.
+                float halfHeight = Mathf.Lerp(0.08f, 0.26f, Mathf.InverseLerp(0.16f, 0.52f, p.x));
+                float cone = (p.x > 0.16f && p.x < 0.52f && Mathf.Abs(p.y - 0.5f) < halfHeight)
+                    ? Mathf.Clamp01((halfHeight - Mathf.Abs(p.y - 0.5f)) / aa)
+                    : 0f;
+
+                float wave1 = Ring(p, c, 0.30f, 0.045f, aa);
+                float wave2 = Ring(p, c, 0.42f, 0.045f, aa);
+                // Yayları yalnızca sağ tarafta bırak.
+                float rightHalf = Mathf.Clamp01((p.x - 0.56f) / aa);
+                float waves = Mathf.Min(Union(wave1, wave2), rightHalf);
+
+                return Union(cone, waves);
+            });
+        }
+
+        // Gülen yüz — emote butonu.
+        static Texture2D EmoteIcon(int size, Color color)
+        {
+            float aa = Aa(size);
+            var c = new Vector2(0.5f, 0.5f);
+            return Icon(size, color, p =>
+            {
+                float outline = Ring(p, c, 0.38f, 0.065f, aa);
+                float eyeL = Disc(p, new Vector2(0.37f, 0.62f), 0.055f, aa);
+                float eyeR = Disc(p, new Vector2(0.63f, 0.62f), 0.055f, aa);
+                // Gülümseme: bir halkanın alt yarısı.
+                float smile = Ring(p, new Vector2(0.5f, 0.56f), 0.20f, 0.06f, aa);
+                smile = Mathf.Min(smile, Mathf.Clamp01((0.50f - p.y) / aa));
+                return Union(outline, Union(eyeL, Union(eyeR, smile)));
+            });
+        }
+
+        // Uyarı üçgeni — dörtlü flaşör butonu.
+        static Texture2D HazardIcon(int size, Color color)
+        {
+            float aa = Aa(size);
+            var a = new Vector2(0.50f, 0.86f);
+            var b = new Vector2(0.12f, 0.18f);
+            var d = new Vector2(0.88f, 0.18f);
+            return Icon(size, color, p =>
+            {
+                float e1 = Bar(p, a, b, 0.09f, aa);
+                float e2 = Bar(p, b, d, 0.09f, aa);
+                float e3 = Bar(p, d, a, 0.09f, aa);
+                float outline = Union(e1, Union(e2, e3));
+                float stem = Bar(p, new Vector2(0.5f, 0.34f), new Vector2(0.5f, 0.58f), 0.085f, aa);
+                float dot  = Disc(p, new Vector2(0.5f, 0.26f), 0.045f, aa);
+                return Union(outline, Union(stem, dot));
             });
         }
 

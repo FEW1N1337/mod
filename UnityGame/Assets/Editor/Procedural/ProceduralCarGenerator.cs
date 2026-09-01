@@ -161,6 +161,10 @@ namespace DreamCar.EditorTools.Procedural
         {
             EnsureFolders();
             ProceduralTextures.GenerateAll();
+            // Emote ikonları UI sprite klasöründen geliyor. BUILD EVERYTHING
+            // zinciri onları zaten araçlardan önce üretiyor, ama bu menü tek
+            // başına da çağrılabiliyor ve o durumda ikonlar null kalırdı.
+            ProceduralUISprites.GenerateAll();
 
             foreach (var preset in Presets) Generate(preset);
 
@@ -414,6 +418,21 @@ namespace DreamCar.EditorTools.Procedural
 
                 var glow = rimGo.AddComponent<WheelGlow>();
                 glow.wheel = wc;
+                // Rampayı BURADA atıyoruz. WheelGlow.Awake'teki
+                // "glowColor.colorKeys.Length == 0" yedeği hiç tetiklenmiyor:
+                // Unity serileştirilmiş bir Gradient alanını iki beyaz anahtarla
+                // doldurup veriyor. Yani siyah→kırmızı→turuncu ısı rampası hiç
+                // kurulmuyordu ve fren/drift parıltısı beyazımsı görünüyordu.
+                var heat = new Gradient();
+                heat.SetKeys(
+                    new[] {
+                        new GradientColorKey(Color.black, 0f),
+                        new GradientColorKey(new Color(0.6f, 0.05f, 0f), 0.5f),
+                        new GradientColorKey(new Color(1.5f, 0.3f, 0f), 0.85f),
+                        new GradientColorKey(new Color(2.5f, 1.2f, 0.2f), 1f),
+                    },
+                    new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) });
+                glow.glowColor = heat;
 
                 // Drift dumanı + fren izi. DriftSmoke yazılmıştı ama hiçbir prefab'a
                 // eklenmiyordu; drift modu olan bir oyunda kayma tamamen görsel
@@ -552,6 +571,11 @@ namespace DreamCar.EditorTools.Procedural
             var signals = root.AddComponent<TurnSignals>();
             signals.leftLights = new[] { headlights[0], taillights[0] };
             signals.rightLights = new[] { headlights[1], taillights[1] };
+            // leftEmissive / rightEmissive hiç atanmıyordu: sinyal yalnızca
+            // Light bileşenlerini yakıp söndürüyor, gövdede görünür bir parlama
+            // olmuyordu. Gündüz ışığında Light etkisi neredeyse görünmez.
+            signals.leftEmissive = new[] { bodyRenderer };
+            signals.rightEmissive = new[] { bodyRenderer };
 
             // Kamera bağlantı noktaları
             AddAnchor(root, "HoodCam", new Vector3(0f, frontSection.centerY + 0.42f, 0.55f));
@@ -622,6 +646,17 @@ namespace DreamCar.EditorTools.Procedural
             var emotes = root.AddComponent<Emote.EmoteSystem>();
             emotes.overheadAnchor = overhead;
             emotes.audioSource = hornSource;
+            // emotes listesi BOŞ bırakılıyordu: RPC_Play "emotes.Find(...)"
+            // ile null bulup sessizce dönüyordu, yani emote sistemi zorlansa
+            // bile hiçbir şey yapmazdı. emotePopupPrefab de yoktu, dolayısıyla
+            // gösterilecek bir baloncuk da yoktu.
+            emotes.emotePopupPrefab = EmotePopupPrefab();
+            emotes.emotes = new System.Collections.Generic.List<Emote.EmoteSystem.EmoteEntry>
+            {
+                new() { id = "wave", icon = UiSprite("icon_emote") },
+                new() { id = "gg",   icon = UiSprite("icon_trophy") },
+                new() { id = "race", icon = UiSprite("icon_flag") },
+            };
 
             var airHorn = root.AddComponent<Emote.AirHorn>();
             airHorn.source = hornSource;
@@ -629,9 +664,21 @@ namespace DreamCar.EditorTools.Procedural
             // Oyun bileşenleri
             var nitro = root.AddComponent<CarNitro>();
             nitro.nitroLoop = nitroSource;
+            // exhaustFlames boş bir diziydi: StartBoost'taki foreach hiçbir şey
+            // gezmiyor, NOS hız ve ses veriyor ama GÖRSELİ hiç yoktu.
+            nitro.exhaustFlames = new[]
+            {
+                MakeExhaustFlame(root, "ExhaustFlame_L",
+                    new Vector3(-rearSection.halfWidth * 0.64f, rearSection.centerY + 0.03f, rearSection.z - 0.06f)),
+                MakeExhaustFlame(root, "ExhaustFlame_R",
+                    new Vector3( rearSection.halfWidth * 0.64f, rearSection.centerY + 0.03f, rearSection.z - 0.06f)),
+            };
 
             var damage = root.AddComponent<CarDamage>();
             damage.crashSfx = crashSource;
+            // smoke hiç atanmıyordu: CarDamage'deki "if (smoke)" bloğu hiç
+            // koşmuyor, hasar birikiyor ama araçtan duman çıkmıyordu.
+            damage.smoke = MakeDamageSmoke(root, new Vector3(0f, frontSection.centerY + 0.30f, frontSection.z - 0.25f));
 
             // DriftScore hiçbir prefaba eklenmiyordu: DriftMode.Finish() hiçbir şey
             // bulamıyor, drift modu üç dakika sonunda sessizce hiçbir şey yapmıyordu.
@@ -653,6 +700,124 @@ namespace DreamCar.EditorTools.Procedural
             // serileştirmiyor, değer prefab'a kaydedilmezdi. InteriorCamera aracın
             // üzerinde durduğu için Awake'te kendisi buluyor.
             root.AddComponent<InteriorCamera>();
+        }
+
+        // NOS alev püskürtücüsü. CarNitro Play()/Stop() çağırdığı için
+        // playOnAwake KAPALI (drift dumanının tersine — o sürekli çalışıp
+        // oranı 0'da tutuyor).
+        static ParticleSystem MakeExhaustFlame(GameObject root, string name, Vector3 localPosition)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(root.transform, false);
+            go.transform.localPosition = localPosition;
+            // Alev geriye doğru püskürsün: aracın -Z'sine bak.
+            go.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+
+            var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+            var main = ps.main;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(0.10f, 0.22f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(6f, 11f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.16f, 0.34f);
+            main.startColor = new ParticleSystem.MinMaxGradient(
+                new Color(1f, 0.55f, 0.12f, 0.95f), new Color(0.45f, 0.75f, 1f, 0.95f));
+            main.gravityModifier = 0f;
+            main.maxParticles = 60;
+            main.playOnAwake = false;
+            // Yerel uzay: alev egzoza yapışık kalsın.
+            main.simulationSpace = ParticleSystemSimulationSpace.Local;
+
+            var emission = ps.emission;
+            emission.rateOverTime = 90f;
+
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Cone;
+            shape.angle = 9f;
+            shape.radius = 0.05f;
+
+            var sizeOverLife = ps.sizeOverLifetime;
+            sizeOverLife.enabled = true;
+            sizeOverLife.size = new ParticleSystem.MinMaxCurve(
+                1f, AnimationCurve.Linear(0f, 1f, 1f, 0.15f));
+
+            var renderer = ps.GetComponent<ParticleSystemRenderer>();
+            renderer.sharedMaterial = ProceduralWeather.ParticleMaterial("mat_fx_smoke", "fx_smoke");
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            return ps;
+        }
+
+        // Hasar dumanı — kaputtan yükselir. CarDamage emission.rateOverTime'ı
+        // sağlığa göre yazıp Play() çağırıyor, o yüzden playOnAwake kapalı.
+        static ParticleSystem MakeDamageSmoke(GameObject root, Vector3 localPosition)
+        {
+            var go = new GameObject("DamageSmoke");
+            go.transform.SetParent(root.transform, false);
+            go.transform.localPosition = localPosition;
+
+            var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+            var main = ps.main;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(1.1f, 2.2f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(0.6f, 1.6f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.35f, 0.8f);
+            main.startColor = new ParticleSystem.MinMaxGradient(
+                new Color(0.18f, 0.18f, 0.19f, 0.75f), new Color(0.42f, 0.42f, 0.44f, 0.55f));
+            main.gravityModifier = -0.12f;
+            main.maxParticles = 80;
+            main.playOnAwake = false;
+            // Dünya uzayı: araç ilerlerken duman geride kalsın.
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+
+            var emission = ps.emission;
+            emission.rateOverTime = 0f;
+
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Cone;
+            shape.angle = 22f;
+            shape.radius = 0.16f;
+
+            var sizeOverLife = ps.sizeOverLifetime;
+            sizeOverLife.enabled = true;
+            sizeOverLife.size = new ParticleSystem.MinMaxCurve(
+                1f, AnimationCurve.Linear(0f, 0.5f, 1f, 2.0f));
+
+            var renderer = ps.GetComponent<ParticleSystemRenderer>();
+            renderer.sharedMaterial = ProceduralWeather.ParticleMaterial("mat_fx_smoke", "fx_smoke");
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            return ps;
+        }
+
+        static Sprite UiSprite(string name) =>
+            AssetDatabase.LoadAssetAtPath<Sprite>($"Assets/Generated/UI/{name}.png");
+
+        // Araç üstünde beliren emote baloncuğu. Tek bir paylaşılan prefab —
+        // her araç için yeniden üretmenin anlamı yok.
+        static GameObject EmotePopupPrefab()
+        {
+            const string folder = "Assets/Generated/Prefabs";
+            const string path = folder + "/EmotePopup.prefab";
+
+            var existing = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (existing != null) return existing;
+
+            if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
+
+            var go = new GameObject("EmotePopup");
+            var sr = go.AddComponent<SpriteRenderer>();
+            // İkon RPC_Play tarafından atanıyor; burada yalnızca varsayılan.
+            sr.sprite = UiSprite("icon_emote");
+            sr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            sr.receiveShadows = false;
+            go.transform.localScale = Vector3.one * 1.4f;
+            go.AddComponent<Effects.Billboard>();
+
+            var prefab = PrefabUtility.SaveAsPrefabAsset(go, path);
+            Object.DestroyImmediate(go);
+            return prefab;
         }
 
         static Transform AddAnchor(GameObject root, string name, Vector3 localPosition)

@@ -25,9 +25,21 @@ namespace DreamCar.Vehicle
             foreach (var _ in lanes) _laneTimers.Add(Random.Range(0f, 3f));
         }
 
+        // tracker Editor'de atanamıyordu (oyuncu aracı odaya girilince doğuyor)
+        // ve atanmadığı için aşağıdaki despawn dalı HİÇ koşmuyordu: yolun
+        // başında doğan 12 araç sonsuza kadar yaşıyor, maxAlive dolduğu için de
+        // haritanın geri kalanı kalıcı olarak trafiksiz kalıyordu.
+        void ResolveTracker()
+        {
+            if (tracker) return;
+            var car = Network.RoomManager.LocalCar;
+            if (car) tracker = car.transform;
+        }
+
         void Update()
         {
             if (trafficCarPrefabs == null || trafficCarPrefabs.Length == 0 || lanes == null) return;
+            ResolveTracker();
 
             for (int i = _alive.Count - 1; i >= 0; i--)
             {
