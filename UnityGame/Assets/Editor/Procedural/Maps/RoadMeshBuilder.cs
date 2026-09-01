@@ -33,7 +33,7 @@ namespace DreamCar.EditorTools.Procedural.Maps
 
         public static Result Build(RoadSpline spline, Settings s, float sampleSpacing = 4f)
         {
-            var samples = spline.Sample(sampleSpacing);
+            var samples = spline.SampleAlong(sampleSpacing);
             var result = new Result { samples = samples };
             if (samples.Count < 2) return result;
 
