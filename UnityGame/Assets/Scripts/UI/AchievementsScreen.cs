@@ -57,7 +57,12 @@ namespace DreamCar.UI
                 if (texts.Length > 1) texts[1].text = def.description;
                 if (texts.Length > 2) texts[2].text = isUnlocked ? "✓" : $"+{def.moneyReward:N0} ₺";
 
-                var icon = go.GetComponentInChildren<Image>();
+                // GetComponentInChildren<Image>() satırın KÖK arka planını
+                // buluyordu: kilitli başarımlarda lockedColor bütün satırı
+                // griye boyuyor ve def.icon satır arka planının yerine
+                // geçiyordu. Şablondaki adı belli "Icon" çocuğunu arıyoruz.
+                var iconTr = go.transform.Find("Icon");
+                var icon = iconTr ? iconTr.GetComponent<Image>() : null;
                 if (icon)
                 {
                     if (def.icon) icon.sprite = def.icon;

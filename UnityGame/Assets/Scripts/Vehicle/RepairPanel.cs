@@ -15,12 +15,37 @@ namespace DreamCar.Vehicle
         public Button repairButton;
         public float baseUnitPrice = 10f;
 
+        GameObject _car;
+
         void Start()
         {
             if (repairButton) repairButton.onClick.AddListener(Repair);
-            if (damage != null) damage.OnDamaged += _ => Refresh();
             Refresh();
         }
+
+        // "damage" Editor'de bağlanamıyor: CarDamage araç prefabında ve araç
+        // ancak odaya girilince doğuyor. Eskiden Start'ta null olduğu için
+        // OnDamaged aboneliği hiç kurulmuyordu ve Refresh ilk satırda
+        // dönüyordu — tamir paneli hiçbir sahnede zaten yoktu, olsaydı da boş
+        // kalırdı. Hasarın oyunda tamir edilecek bir yolu yoktu.
+        void Update()
+        {
+            var car = Network.RoomManager.LocalCar;
+            if (car == _car) return;
+
+            if (damage) damage.OnDamaged -= OnDamaged;
+            _car = car;
+            damage = car ? car.GetComponent<CarDamage>() : null;
+            if (damage) damage.OnDamaged += OnDamaged;
+
+            Refresh();
+        }
+
+        void OnDestroy() { if (damage) damage.OnDamaged -= OnDamaged; }
+
+        // Lambda yerine adlandırılmış metot: "-=" ile abonelikten çıkmak için
+        // aynı delege örneğine ihtiyaç var, lambda her seferinde yenisini üretir.
+        void OnDamaged(float _) => Refresh();
 
         void Refresh()
         {

@@ -388,7 +388,7 @@ namespace DreamCar.EditorTools
             toast.toastPrefab = MakeToastTemplate(canvasGo, "ToastTemplate");
 
             // Ek ekranlar (Ayarlar / Liderlik / Başarımlar / Mağaza / İstatistik)
-            BuildSecondaryScreens(canvasGo, mainPanel);
+            BuildSecondaryScreens(canvasGo, mainPanel, boot);
 
             // Loading overlay
             BuildLoadingScreen(canvasGo, boot);
@@ -595,6 +595,40 @@ namespace DreamCar.EditorTools
             hud.roomNameText = roomNameText;
             hud.leaveButton = leaveBtn;
 
+            // --- Tamir paneli ---
+            // RepairPanel hiçbir sahneye eklenmiyordu, dolayısıyla
+            // CarDamage.OnDamaged'ın hiçbir abonesi yoktu: hasar birikiyor,
+            // oyuncu ne görüyor ne tamir edebiliyordu (Util.GameMath.RepairPrice
+            // yalnızca bunun için var).
+            var repairBg = new GameObject("RepairBG", typeof(RectTransform), typeof(Image));
+            repairBg.transform.SetParent(hudPanel.transform, false);
+            Skin(repairBg.GetComponent<Image>(), "pill", Palette.SurfaceDeep);
+            AnchorCorner(repairBg.GetComponent<RectTransform>(), new Vector2(1f, 1f),
+                         new Vector2(260f, 400f), new Vector2(280f, 18f));
+
+            var repairFillGo = new GameObject("RepairFill", typeof(RectTransform), typeof(Image));
+            repairFillGo.transform.SetParent(repairBg.transform, false);
+            var repairFill = repairFillGo.GetComponent<Image>();
+            Skin(repairFill, "pill", Palette.Good);
+            repairFill.type = Image.Type.Filled;
+            repairFill.fillMethod = Image.FillMethod.Horizontal;
+            var repairFillRt = repairFillGo.GetComponent<RectTransform>();
+            repairFillRt.anchorMin = Vector2.zero; repairFillRt.anchorMax = Vector2.one;
+            repairFillRt.offsetMin = Vector2.zero; repairFillRt.offsetMax = Vector2.zero;
+
+            var repairPrice = MakeText(hudPanel, "RepairPrice", "-", Vector2.zero, 22);
+            AnchorCorner(repairPrice.GetComponent<RectTransform>(), new Vector2(1f, 1f),
+                         new Vector2(430f, 400f), new Vector2(160f, 40f));
+
+            var repairBtn = MakeButton(hudPanel, "RepairButton", "Tamir", Vector2.zero);
+            AnchorCorner(repairBtn.GetComponent<RectTransform>(), new Vector2(1f, 1f),
+                         new Vector2(260f, 320f), new Vector2(220f, 90f));
+
+            var repair = hudPanel.AddComponent<RepairPanel>();
+            repair.healthFill = repairFill;
+            repair.priceLabel = repairPrice;
+            repair.repairButton = repairBtn;
+
             // --- Vites / drift / sıralama göstergeleri ---
             // Vites etiketi, drift skoru+combo ve drift seansı sayacı
             // hesaplanıyordu ama HİÇBİRİNİN ekran tüketicisi yoktu; yarış
@@ -623,7 +657,7 @@ namespace DreamCar.EditorTools
             var lbText = MakeText(hudPanel, "RaceStandings", "", Vector2.zero, 24);
             lbText.alignment = TextAlignmentOptions.TopRight;
             AnchorCorner(lbText.GetComponent<RectTransform>(),
-                         new Vector2(1f, 1f), new Vector2(230f, 720f), new Vector2(420f, 260f));
+                         new Vector2(1f, 1f), new Vector2(230f, 800f), new Vector2(420f, 200f));
             var standings = hudPanel.AddComponent<Race.LeaderboardUI>();
             standings.label = lbText;
 
@@ -702,7 +736,7 @@ namespace DreamCar.EditorTools
             // (760,200) merkeze göreydi: iPad 4:3'te görünür yatay yarı-aralık
             // ±831 ve minimap'in sağ kenarı 890'a düşüyordu — ekran dışında.
             AnchorCorner(minimapRt, new Vector2(1f, 1f),
-                         new Vector2(170f, 440f), new Vector2(260f, 260f));
+                         new Vector2(170f, 560f), new Vector2(260f, 260f));
 
             var minimap = minimapGo.AddComponent<Minimap>();
             minimap.minimapCamera = minimapCam;
@@ -997,7 +1031,9 @@ namespace DreamCar.EditorTools
             return settings;
         }
 
-        static void BuildSecondaryScreens(GameObject canvasGo, GameObject mainPanel)
+        // boot: ~Bootstrap. PlayedWithList ve RateAppPopup oraya ekleniyor ama
+        // UI referansları burada kuruluyor.
+        static void BuildSecondaryScreens(GameObject canvasGo, GameObject mainPanel, GameObject boot)
         {
             // --- Ayarlar ---
             var settings = BuildSettingsScreen(canvasGo);
@@ -1244,11 +1280,127 @@ namespace DreamCar.EditorTools
                      new Vector2(450f, 160f), new Vector2(280f, 120f));
             UnityEventTools.AddBoolPersistentListener(navCarShop.onClick, carShopPanel.SetActive, true);
             UnityEventTools.AddBoolPersistentListener(carShopClose.onClick, carShopPanel.SetActive, false);
+
+            // --- Sosyal: beraber oynadıkların + referans kodu ---
+            // PlayedWithList her iki sahnede ~Bootstrap'e ekleniyordu ama
+            // listParent/entryPrefab null olduğu için Refresh() ilk satırda
+            // dönüyordu: veri toplanıyor, hiçbir yerde gösterilmiyordu.
+            // ReferralSystem de kod üretiyor ama Redeem() ve ShareReferral()
+            // proje genelinde hiç çağrılmıyordu — kod ne girilebiliyor ne
+            // paylaşılabiliyordu.
+            var socialPanel = MakeUiChild(canvasGo, "SocialScreen", modal: true);
+            socialPanel.SetActive(false);
+            MakeText(socialPanel, "Title", "Sosyal", new Vector2(0f, 420f), 64);
+
+            var refCodeLabel = MakeText(socialPanel, "MyCode", "-", new Vector2(0f, 330f), 40);
+            var refShare = MakeButton(socialPanel, "ShareCode", "Kodu Paylaş", new Vector2(-180f, 240f));
+            var refInput = MakeInputField(socialPanel, "RedeemInput", "Referans kodu", new Vector2(-120f, 150f));
+            var refRedeem = MakeButton(socialPanel, "RedeemButton", "Kullan", new Vector2(230f, 150f));
+
+            MakeText(socialPanel, "PlayedWithTitle", "Beraber oynadıkların", new Vector2(0f, 60f), 32);
+            var playedList = MakeListContainer(socialPanel, "PlayedWithList",
+                new Vector2(0f, -180f), new Vector2(820f, 380f));
+
+            var socialClose = MakeButton(socialPanel, "Close", "Kapat", Vector2.zero);
+            AnchorTo(socialClose.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
+
+            // Bileşen Canvas'ta, panelde DEĞİL: SocialScreen.Start() paneli
+            // kapatıyor ve panelin üzerinde olsaydı ilk açılışta Start o anda
+            // koşup paneli hemen geri kapatırdı.
+            var social = canvasGo.AddComponent<SocialScreen>();
+            social.panel = socialPanel;
+            social.myCodeLabel = refCodeLabel;
+            social.shareButton = refShare;
+            social.redeemInput = refInput;
+            social.redeemButton = refRedeem;
+            social.closeButton = socialClose;
+
+            // PlayedWithList tekili ~Bootstrap'te; UI referanslarını ona veriyoruz.
+            var playedWith = boot.GetComponent<PlayedWithList>();
+            if (playedWith)
+            {
+                playedWith.listParent = playedList;
+                playedWith.entryPrefab = MakeRowPrefabTemplate(socialPanel, "PlayedWithRow", 1, "Ekle");
+            }
+
+            var navSocial = MakeIconButton(mainPanel, "NavSocial", "Sosyal", Vector2.zero, "icon_emote");
+            AnchorTo(navSocial.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
+                     new Vector2(-450f, 160f), new Vector2(280f, 120f));
+            UnityEventTools.AddPersistentListener(navSocial.onClick, social.Open);
+
+            // --- Günlük ödül ---
+            // DailyReward hiçbir sahneye eklenmiyordu. Onun da ötesinde:
+            // LoginStreak.RegisterLoginToday()'in TEK çağıranı bu bileşen, yani
+            // giriş serisi de kalıcı olarak 0'da kalıyordu — ve
+            // LocalNotificationScheduler alınamayacak bir ödül için her akşam
+            // hatırlatma kuruyordu.
+            var dailyPanel = MakeUiChild(canvasGo, "DailyRewardPopup", modal: true);
+            dailyPanel.SetActive(false);
+            MakeText(dailyPanel, "Title", "Günlük Ödül", new Vector2(0f, 220f), 64);
+            var dailyAmount = MakeText(dailyPanel, "Amount", "+0 ₺", new Vector2(0f, 90f), 56);
+            var dailyStreak = MakeText(dailyPanel, "Streak", "1. gün", new Vector2(0f, 10f), 32);
+            var dailyClaim = MakeButton(dailyPanel, "ClaimButton", "Al", new Vector2(0f, -120f));
+
+            // Bileşen her zaman açık olan Canvas'ta: paneli kendisi açıp
+            // kapatıyor ve kapalı bir objede Start() hiç koşmazdı.
+            var daily = canvasGo.AddComponent<Rewards.DailyReward>();
+            daily.popup = dailyPanel;
+            daily.amountLabel = dailyAmount;
+            daily.streakLabel = dailyStreak;
+            daily.claimButton = dailyClaim;
+
+            // --- Puan verme popup'ı ---
+            // RateAppPopup iki sahnede de ~Bootstrap'e ekleniyordu ve SEKİZ
+            // alanının hiçbiri atanmıyordu: her yolu "if (x)" ile korunduğu
+            // için tamamen sessiz bir no-op'tu.
+            var ratePanel = MakeUiChild(canvasGo, "RateAppPopup", modal: true);
+            ratePanel.SetActive(false);
+            var ratePrompt = MakeText(ratePanel, "Prompt", "Oyunu beğendin mi?", new Vector2(0f, 160f), 48);
+            var rateYes = MakeButton(ratePanel, "Yes", "Evet", new Vector2(-200f, 20f));
+            var rateNo = MakeButton(ratePanel, "No", "Pek değil", new Vector2(120f, 20f));
+            var rateNever = MakeButton(ratePanel, "Never", "Bir daha sorma", new Vector2(0f, -120f));
+
+            var feedbackPanel = MakeUiChild(canvasGo, "FeedbackPanel", modal: true);
+            feedbackPanel.SetActive(false);
+            MakeText(feedbackPanel, "Title", "Neyi düzeltelim?", new Vector2(0f, 220f), 48);
+            var feedbackField = MakeInputField(feedbackPanel, "FeedbackField", "Görüşün…", new Vector2(0f, 60f));
+            var feedbackSend = MakeButton(feedbackPanel, "Send", "Gönder", new Vector2(0f, -80f));
+
+            var rate = boot.GetComponent<AppMeta.RateAppPopup>();
+            if (rate)
+            {
+                rate.popup = ratePanel;
+                rate.prompt = ratePrompt;
+                rate.yesButton = rateYes;
+                rate.noButton = rateNo;
+                rate.neverButton = rateNever;
+                rate.feedbackPanel = feedbackPanel;
+                rate.feedbackField = feedbackField;
+                rate.feedbackSendButton = feedbackSend;
+            }
         }
 
         static void BuildLoadingScreen(GameObject canvasGo, GameObject boot)
         {
-            var panel = MakeUiChild(canvasGo, "LoadingScreen");
+            // KENDİ Canvas'ı — ana menü Canvas'ının çocuğu DEĞİL.
+            // Eskiden panel MainMenu Canvas'ının altındaydı ve LoadingScreen
+            // bileşeni ~Bootstrap ile DontDestroyOnLoad ediliyordu: sahne
+            // değişince bileşen yaşıyor ama gösterdiği UI yok ediliyordu.
+            // Yükleme ekranı tam olarak sahne geçişinde lazım, yani her zaman
+            // öldüğü anda. (Bileşen Awake'te bu kökü de DDOL ediyor.)
+            var loadingCanvasGo = new GameObject("~LoadingCanvas",
+                typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            var loadingCanvas = loadingCanvasGo.GetComponent<Canvas>();
+            loadingCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            // Her şeyin üstünde çizilsin.
+            loadingCanvas.sortingOrder = 100;
+            var loadingScaler = loadingCanvasGo.GetComponent<CanvasScaler>();
+            loadingScaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            loadingScaler.referenceResolution = new Vector2(1920f, 1080f);
+            loadingScaler.matchWidthOrHeight = 0.5f;
+
+            var panel = MakeUiChild(loadingCanvasGo, "LoadingScreen");
             var bg = panel.AddComponent<Image>();
             bg.color = Palette.PanelBg;
             var cg = panel.AddComponent<CanvasGroup>();
@@ -1818,9 +1970,22 @@ namespace DreamCar.EditorTools
             Skin(row.GetComponent<Image>(), "panel", Palette.Surface);
             row.GetComponent<LayoutElement>().preferredHeight = 96f;
 
+            // ADI BELLİ bir ikon çocuğu. ShopUI eskiden
+            // GetComponentInChildren<Image>() ile satırın KÖK arka planını
+            // buluyor ve araç küçük resmini bütün satıra yayıyordu.
+            var icon = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+            icon.transform.SetParent(row.transform, false);
+            var iconRt = icon.GetComponent<RectTransform>();
+            iconRt.anchorMin = new Vector2(0.02f, 0.12f);
+            iconRt.anchorMax = new Vector2(0.13f, 0.88f);
+            iconRt.offsetMin = Vector2.zero; iconRt.offsetMax = Vector2.zero;
+            var iconImg = icon.GetComponent<Image>();
+            iconImg.preserveAspect = true;
+            iconImg.color = Palette.TextDim;
+
             var nameText = MakeText(row, "Text0", "", Vector2.zero, 30);
             var nameRt = nameText.GetComponent<RectTransform>();
-            nameRt.anchorMin = new Vector2(0.03f, 0f); nameRt.anchorMax = new Vector2(0.45f, 1f);
+            nameRt.anchorMin = new Vector2(0.15f, 0f); nameRt.anchorMax = new Vector2(0.45f, 1f);
             nameRt.offsetMin = Vector2.zero; nameRt.offsetMax = Vector2.zero;
             nameText.alignment = TextAlignmentOptions.MidlineLeft;
 
@@ -1875,7 +2040,11 @@ namespace DreamCar.EditorTools
             return go;
         }
 
-        static GameObject MakeRowPrefabTemplate(GameObject parent, string name, int textCount)
+        // buttonLabel verilirse satırın sağına bir buton eklenir (PlayedWithList
+        // "arkadaş ekle" butonunu GetComponentInChildren<Button>() ile arıyor ve
+        // şablonda buton olmadığı için hiç bulamıyordu).
+        static GameObject MakeRowPrefabTemplate(GameObject parent, string name, int textCount,
+                                                string buttonLabel = null)
         {
             var row = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(LayoutElement));
             row.transform.SetParent(parent.transform, false);
@@ -1884,6 +2053,19 @@ namespace DreamCar.EditorTools
             rt.sizeDelta = new Vector2(0f, 64f);
             Skin(row.GetComponent<Image>(), "panel", Palette.Surface);
             row.GetComponent<LayoutElement>().preferredHeight = 64f;
+
+            // Aynı gerekçe: AchievementsScreen ikonu adıyla bulsun, yoksa
+            // GetComponentInChildren<Image>() satırın arka planını döndürüyor
+            // ve kilitli başarımlarda BÜTÜN satır griye boyanıyordu.
+            var rowIcon = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+            rowIcon.transform.SetParent(row.transform, false);
+            var rowIconRt = rowIcon.GetComponent<RectTransform>();
+            rowIconRt.anchorMin = new Vector2(0.02f, 0.15f);
+            rowIconRt.anchorMax = new Vector2(0.11f, 0.85f);
+            rowIconRt.offsetMin = Vector2.zero; rowIconRt.offsetMax = Vector2.zero;
+            var rowIconImg = rowIcon.GetComponent<Image>();
+            rowIconImg.preserveAspect = true;
+            rowIconImg.color = Palette.TextDim;
 
             float[] anchors = { 0.02f, 0.14f, 0.72f };
             float[] widths = { 0.10f, 0.56f, 0.26f };
@@ -1898,6 +2080,17 @@ namespace DreamCar.EditorTools
                 tRt.offsetMin = Vector2.zero; tRt.offsetMax = Vector2.zero;
                 t.alignment = i == textCount - 1 ? TextAlignmentOptions.MidlineRight : TextAlignmentOptions.MidlineLeft;
             }
+
+            if (!string.IsNullOrEmpty(buttonLabel))
+            {
+                var btn = MakeButton(row, "RowButton", buttonLabel, Vector2.zero);
+                var btnRt = btn.GetComponent<RectTransform>();
+                btnRt.anchorMin = new Vector2(1f, 0.5f);
+                btnRt.anchorMax = new Vector2(1f, 0.5f);
+                btnRt.anchoredPosition = new Vector2(-90f, 0f);
+                btnRt.sizeDelta = new Vector2(150f, 52f);
+            }
+
             return row;
         }
 

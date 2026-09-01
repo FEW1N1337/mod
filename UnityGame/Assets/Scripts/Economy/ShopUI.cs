@@ -33,7 +33,12 @@ namespace DreamCar.Economy
                 if (texts.Length > 0) texts[0].text = def.displayName;
                 if (texts.Length > 1) texts[1].text = def.price.ToString("N0") + " ₺";
 
-                var img = go.GetComponentInChildren<Image>();
+                // GetComponentInChildren<Image>() satırın KÖK arka planını
+                // buluyordu (Image ilk olarak orada) ve araç küçük resmi
+                // satırın tamamına yayılıyordu. Şablonda adı belli bir "Icon"
+                // çocuğu var, onu arıyoruz.
+                var iconTr = go.transform.Find("Icon");
+                var img = iconTr ? iconTr.GetComponent<Image>() : null;
                 if (img && def.thumbnail) img.sprite = def.thumbnail;
 
                 var btn = go.GetComponentInChildren<Button>();
