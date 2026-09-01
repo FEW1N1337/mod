@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using DreamCar.Economy;
 
@@ -17,7 +18,12 @@ namespace DreamCar.Backend
         void Start()
         {
             if (PlayFabAuth.Instance != null)
+            {
                 PlayFabAuth.Instance.OnLoggedIn += Pull;
+                // Login daha önce tamamlandıysa event bir daha gelmez; sunucuda sahip
+                // olunan araçlar bu cihazda hiç geri yüklenmezdi.
+                if (PlayFabAuth.Instance.IsLoggedIn) Pull();
+            }
         }
 
         public void RequestBuy(CarDefinition def, System.Action<bool> onResult)
@@ -40,7 +46,12 @@ namespace DreamCar.Backend
                           j["ok"] != null && (bool)j["ok"];
                 if (ok && CarInventory.Instance != null)
                 {
-                    CarInventory.Instance.Buy(def);
+                    // Buy() parayı yerelde de düşer (sunucu zaten düştü, ikinci kez
+                    // düşmesi bakiyeyi senkron tutar). Ama yerel bakiye yetmezse Buy
+                    // false döner ve sunucuda ödenmiş araç oyuncuya hiç verilmezdi;
+                    // o durumda ücretsiz olarak sahipliğe ekle.
+                    if (!CarInventory.Instance.Buy(def) && !CarInventory.Instance.Owns(def.id))
+                        CarInventory.Instance.MergeOwnedFromCloud(new List<string> { def.id }, null);
                     Pull();
                 }
                 onResult?.Invoke(ok);
@@ -55,13 +66,18 @@ namespace DreamCar.Backend
 #if PLAYFAB_INSTALLED
             PlayFabClientAPI.GetUserInventory(new GetUserInventoryRequest(), r =>
             {
-                if (CarInventory.Instance == null) return;
+                if (CarInventory.Instance == null || r.Inventory == null) return;
+
+                // Sunucudaki envanter zaten ödenmiş araçlar demek. Buy() çağırmak
+                // oyuncudan parayı bir kez daha alıyor, bakiye yetmezse de araç
+                // sessizce geri yüklenmiyordu. Ücretsiz sahiplik birleştirmesi doğru yol.
+                var restored = new List<string>();
                 foreach (var item in r.Inventory)
                 {
                     var def = CarInventory.Instance.catalog?.Find(item.ItemId);
-                    if (def && !CarInventory.Instance.Owns(def.id))
-                        CarInventory.Instance.Buy(def);
+                    if (def && !CarInventory.Instance.Owns(def.id)) restored.Add(def.id);
                 }
+                if (restored.Count > 0) CarInventory.Instance.MergeOwnedFromCloud(restored, null);
             }, err => Debug.LogWarning("[PlayFab] Inventory pull failed: " + err.ErrorMessage));
 #endif
         }

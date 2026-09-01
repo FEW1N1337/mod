@@ -33,8 +33,15 @@ namespace DreamCar.Backend
 
         void Start()
         {
+#if PLAYFAB_INSTALLED
             if (PlayFabAuth.Instance != null) PlayFabAuth.Instance.OnLoggedIn += Fetch;
             else Fetch();
+#else
+            // SDK yokken OnLoggedIn hiç tetiklenmez; sahnede PlayFabAuth varsa Fetch
+            // hiç çağrılmıyor, IsFetched false kalıyor ve OnFetched'i bekleyen ekranlar
+            // sonsuza kadar bekliyordu. Cache/default'larla hemen hazır ol.
+            Fetch();
+#endif
         }
 
         public void Fetch()
@@ -123,7 +130,11 @@ namespace DreamCar.Backend
                 for (int i = 0; i < wrapper.keys.Count && i < wrapper.values.Count; i++)
                     _values[wrapper.keys[i]] = wrapper.values[i];
             }
-            catch { /* bozuk cache — yok say */ }
+            catch (Exception e)
+            {
+                // Sessiz yutma yerine iz bırak: bozuk cache default'lara düşürür.
+                Debug.LogWarning("[RemoteConfig] Cache okunamadı, yok sayılıyor: " + e.Message);
+            }
         }
 
         [Serializable] class CacheWrapper { public List<string> keys; public List<string> values; }

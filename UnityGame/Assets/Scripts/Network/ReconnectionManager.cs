@@ -145,7 +145,10 @@ namespace DreamCar.Network
             // oyun içinde bağlantı koparsa oyuncu donmuş bir ekrandan başka bir şey
             // görmüyor. Overlay yoksa en azından toast ile durumu bildir.
             if (on && text != null && !reconnectingOverlay)
+            {
+                Debug.LogWarning($"[Reconnect] {text} (overlay bu sahnede yok)");
                 ToastNotification.Show(text);
+            }
         }
     }
 }
