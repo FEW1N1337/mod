@@ -103,6 +103,8 @@ namespace DreamCar.RCCPBridge
 
             if (!_wired || _rccp == null) return;
 
+            if (EngineCutoff) { _throttle = 0f; _brake = 1f; }
+
             // RCCP'ye kendi girdilerimizi veriyoruz. Negatif gaz frene eklenir —
             // mobil kontrolde "geri" ayrı bir tuş değil, gazın ters yönü.
             _throttleMember.SetFloat(_rccp, Mathf.Max(0f, _throttle));
@@ -136,5 +138,11 @@ namespace DreamCar.RCCPBridge
         public float ThrottleInput => _throttle;
         public float BrakeInput => _brake;
         public float SteerInput => _steer;
+        public bool Handbrake => _hand;
+
+        // Yakıt bitince motoru kes. RCCP tarafında ayrı bir kesme alanı aramak yerine
+        // gazı sıfırlayıp freni uyguluyoruz — sonuç aynı, RCCP'nin API'sine bağımlılık
+        // eklemiyor (o API'yi buradan doğrulayamıyoruz).
+        public bool EngineCutoff { get; set; }
     }
 }

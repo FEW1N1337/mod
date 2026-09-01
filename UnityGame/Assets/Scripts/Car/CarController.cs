@@ -9,6 +9,8 @@ namespace DreamCar.Car
         public float ThrottleInput => throttleInput;
         public float BrakeInput => brakeInput;
         public float SteerInput => steerInput;
+        public bool Handbrake => handbrake;
+        public bool EngineCutoff { get => engineCutoff; set => engineCutoff = value; }
 
         [System.Serializable]
         public class AxleInfo
