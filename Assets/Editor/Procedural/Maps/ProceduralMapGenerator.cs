@@ -559,6 +559,35 @@ namespace DreamCar.EditorTools.Procedural.Maps
             var tuner = boot.AddComponent<DreamCar.Core.GraphicsTuner>();
             AttachPostProcessingProfiles(tuner);
 
+            // Ayarlar tekili hiçbir sahneye eklenmiyordu. Ona bağlı olan her şey
+            // (direksiyon hassasiyeti, kalite tercihi, bulut kaydı) "if
+            // (GameSettings.Instance…)" ile korunduğu için sessizce hiçbir iş
+            // görmüyordu — Ayarlar ekranındaki sürgüler dahil.
+            boot.AddComponent<DreamCar.Settings.GameSettings>();
+
+            // Sahne doğrudan Editor'de açılıp Play'e basıldığında da test
+            // edilebilsin diye: normal akışta bunlar ana menüden
+            // DontDestroyOnLoad ile geliyor, tek başına açılan sahnede yoklar.
+            // Hepsi yinelenen bileşeni Destroy(this) ile eleyen tekiller,
+            // o yüzden ana menüden gelindiğinde çakışma yaratmazlar.
+            boot.AddComponent<DreamCar.Economy.PlayerMoney>();
+            boot.AddComponent<DreamCar.Economy.CarInventory>().catalog =
+                DreamCar.EditorTools.Procedural.ProceduralCarGenerator.LoadCatalog();
+            boot.AddComponent<DreamCar.Core.PlayerStats>();
+            boot.AddComponent<DreamCar.Core.ObjectPool>();
+            boot.AddComponent<DreamCar.Core.Haptics>();
+            boot.AddComponent<DreamCar.Localization.LocalizationManager>();
+            boot.AddComponent<DreamCar.UI.ChatProfanityFilter>();
+            boot.AddComponent<DreamCar.Moderation.ChatRateLimiter>();
+
+            // ASIL DÜZELTME: harita sahnelerinde Canvas, EventSystem ve
+            // MobileTouchInput hiç kurulmuyordu. Bunlar yalnızca Game.unity'de
+            // vardı, oyun ise normal akışta Game.unity'yi hiç yüklemiyor —
+            // LobbyManager odadaki "map" özelliğine bakıp buraya geliyor.
+            // Yani oyuncu araca biniyor ama gaz pedalı, direksiyon, hız
+            // göstergesi ve duraklatma menüsü ekranda yoktu.
+            DreamCar.EditorTools.DreamCarSetup.BuildGameplayUI(boot);
+
             AddReflectionProbe(root, extent: arch.roadExtent * 2.2f, height: 60f);
         }
 

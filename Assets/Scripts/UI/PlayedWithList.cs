@@ -59,7 +59,16 @@ namespace DreamCar.UI
             Save();
         }
 
-        void OnEnable() => Refresh();
+        // "void OnEnable()" idi ve taban sınıfın "public virtual void OnEnable()"
+        // metodunu GİZLİYORDU. O metot PhotonNetwork.AddCallbackTarget(this)
+        // çağırıyor; gizlenince hiç çalışmadı, yani OnJoinedRoom ve
+        // OnPlayerEnteredRoom hiç tetiklenmedi. "Beraber oynadıkların" listesi
+        // bu yüzden UI bağlansa bile kalıcı olarak boş kalırdı.
+        public override void OnEnable()
+        {
+            base.OnEnable();
+            Refresh();
+        }
 
         public void Refresh()
         {

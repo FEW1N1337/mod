@@ -47,6 +47,24 @@ namespace DreamCar.InputSystemMobile
         {
             if (!IsAlive(car)) return;
 
+            // Duraklatılmışken sürüş girdisi işlenmemeli. Bu sınıf direksiyonu
+            // EventSystem üzerinden değil, ham Input.GetTouch ile okuyor (aşağıda
+            // HandleSteerTouch); yani duraklatma paneli ekranı kaplasa bile
+            // dokunmalar buraya ulaşıyordu ve Update, Time.timeScale = 0'da da
+            // koşmaya devam ettiği için araç duraklatmışken sürülebiliyordu.
+            //
+            // Ayrıca serbest bırakma olayı da gelmeyeceği için basılı kalan bir
+            // parmağın durumu donuyor: direksiyonu ve pedalları sıfırlıyoruz ki
+            // devam edildiğinde araç eski girdiyle fırlamasın.
+            if (Time.timeScale == 0f)
+            {
+                _steer = 0f;
+                _steerFingerId = -1;
+                _throttleHeld = _brakeHeld = _handbrakeHeld = false;
+                car.Move(0f, 0f, 0f, true);
+                return;
+            }
+
             _sensRefreshTimer -= Time.unscaledDeltaTime;
             if (_sensRefreshTimer <= 0f)
             {

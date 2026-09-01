@@ -244,6 +244,14 @@ namespace DreamCar.EditorTools
             boot.AddComponent<Core.Haptics>();
             boot.AddComponent<ChatRateLimiter>();
             boot.AddComponent<DreamCar.Settings.QualityAutoDetect>();
+            // GameSettings hiçbir sahneye eklenmiyordu. Ona bağlı olan HER ŞEY
+            // "if (GameSettings.Instance…)" ile korunduğu için sessizce hiçbir iş
+            // görmüyordu: Ayarlar ekranındaki sürgüler, direksiyon hassasiyeti
+            // (MobileTouchInput), kalite tercihinin kaydı (QualityAutoDetect) ve
+            // ayarların buluta yazılması (PlayFabCloudSave). Ses sürgüleri
+            // tesadüfen çalışıyordu — AudioBus tercihleri kendi
+            // [RuntimeInitializeOnLoadMethod]'uyla yüklüyor.
+            boot.AddComponent<DreamCar.Settings.GameSettings>();
             boot.AddComponent<PlayFabAuth>();
             boot.AddComponent<PlayFabMoneySync>();
             boot.AddComponent<PlayFabInventoryBridge>();
@@ -340,6 +348,17 @@ namespace DreamCar.EditorTools
             // hep boş kalıyor ve oyuncu hiçbir odaya giremiyordu.
             lobbyUI.roomEntryPrefab = MakeRoomEntryTemplate(lobbyPanel, "RoomEntryTemplate");
 
+            // MainMenuUI.OnPlay lobiyi açıp MainPanel'i KAPATIYOR. Sekiz navigasyon
+            // butonunun hepsi MainPanel'in çocuğu ve lobide geri dönüş yoktu:
+            // OYNA'ya bir kez basan oyuncu ayarlara, garaja, araç mağazasına,
+            // liderliğe ve istatistiklere o oturum boyunca bir daha ulaşamıyordu.
+            // (MainMenuUI kendini de kapattığı için kendi kendine geri gelemiyor.)
+            var lobbyBack = MakeButton(lobbyPanel, "BackButton", "‹ Geri", Vector2.zero);
+            AnchorCorner(lobbyBack.GetComponent<RectTransform>(),
+                         new Vector2(0f, 1f), new Vector2(150f, 70f), new Vector2(220f, 100f));
+            UnityEventTools.AddBoolPersistentListener(lobbyBack.onClick, lobbyPanel.SetActive, false);
+            UnityEventTools.AddBoolPersistentListener(lobbyBack.onClick, mainPanel.SetActive, true);
+
             // Toast stack
             // toastRoot güvenli alana oturan tam ekran kap (MakeUiChild ekliyor);
             // yığın onun ALTINDA ayrı bir çocuk olmalı — anchor'larını burada
@@ -387,8 +406,8 @@ namespace DreamCar.EditorTools
             EnsureFolder(ScenesFolder);
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-            // EventSystem
-            new GameObject("EventSystem").AddComponent<EventSystem>().gameObject.AddComponent<StandaloneInputModule>();
+            // EventSystem'i BuildGameplayUI kuruyor (harita sahneleri de aynı
+            // metottan alsın diye oraya taşındı).
 
             // Ground
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
@@ -449,6 +468,14 @@ namespace DreamCar.EditorTools
             boot.AddComponent<Core.Haptics>();
             boot.AddComponent<ChatRateLimiter>();
             boot.AddComponent<DreamCar.Settings.QualityAutoDetect>();
+            // GameSettings hiçbir sahneye eklenmiyordu. Ona bağlı olan HER ŞEY
+            // "if (GameSettings.Instance…)" ile korunduğu için sessizce hiçbir iş
+            // görmüyordu: Ayarlar ekranındaki sürgüler, direksiyon hassasiyeti
+            // (MobileTouchInput), kalite tercihinin kaydı (QualityAutoDetect) ve
+            // ayarların buluta yazılması (PlayFabCloudSave). Ses sürgüleri
+            // tesadüfen çalışıyordu — AudioBus tercihleri kendi
+            // [RuntimeInitializeOnLoadMethod]'uyla yüklüyor.
+            boot.AddComponent<DreamCar.Settings.GameSettings>();
             boot.AddComponent<PlayFabAuth>();
             // Katalog olmadan hiçbir başarım değerlendirilemez: EvaluateForStat
             // katalogdaki tanımlar üzerinde dönüyor.
@@ -475,7 +502,45 @@ namespace DreamCar.EditorTools
             AddReflectionProbe(boot, extent: 600f, height: 50f);
 
             boot.AddComponent<NetworkInterestManager>();
-            boot.AddComponent<CheatDetector>();
+            // Oynanış UI'sinin tamamı — HUD, kontroller, duraklatma, sohbet…
+            // Harita sahneleri de aynı metodu çağırıyor (aşağıdaki nota bak).
+            BuildGameplayUI(boot);
+
+            EditorSceneManager.SaveScene(scene, GamePath);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log("[DreamCarSetup] Game scene created at " + GamePath);
+        }
+
+        // Oynanış UI'sinin TAMAMI burada kurulur: HUD, minimap, toast yığını,
+        // sohbet, dokunmatik sürüş kontrolleri, nitro ve yakıt barları, yakıt
+        // istasyonu paneli, duraklatma menüsü ve oyun içi ayarlar ekranı.
+        //
+        // NEDEN AYRI BİR METOT: Bu blok eskiden CreateGameScene'in gövdesinin
+        // içindeydi, yani yalnızca Game.unity'ye kuruluyordu. Oysa oyun normal
+        // akışta Game.unity'yi HİÇ yüklemiyor — LobbyManager odadaki "map"
+        // özelliğine bakıp harita sahnesini açıyor (LobbyManager.ResolveSceneName)
+        // ve RoomCreatorUI o özelliği her zaman yazıyor.
+        //
+        // Harita sahnelerinde ise Canvas da, EventSystem de, MobileTouchInput da
+        // yoktu. Sonuç: oyuncu oda kuruyor, harita seçiyor, araç doğuyor, kamera
+        // onu takip ediyor — ve gaz pedalı, direksiyon, hız göstergesi,
+        // duraklatma yok. Hiçbir hata da basılmıyordu, çünkü
+        // RoomManager.SpawnLocalCar bulamadığı MobileTouchInput'u "if (input)"
+        // ile sessizce geçiyor.
+        //
+        // Artık tek kaynak: hem CreateGameScene hem ProceduralMapGenerator bunu
+        // çağırıyor. İki ayrı kopya tutmak kaçınılmaz olarak ayrışırdı.
+        public static void BuildGameplayUI(GameObject boot)
+        {
+            // EventSystem olmadan HİÇBİR buton çalışmaz — harita sahnelerinde
+            // hiç kurulmuyordu. Sahneye özel ve DontDestroyOnLoad değil.
+            if (!UnityEngine.Object.FindFirstObjectByType<EventSystem>())
+                new GameObject("EventSystem").AddComponent<EventSystem>()
+                    .gameObject.AddComponent<StandaloneInputModule>();
+
+            // Aynı şekilde sahneye özel: hile tespiti yalnızca Game.unity'de vardı.
+            if (!boot.GetComponent<CheatDetector>()) boot.AddComponent<CheatDetector>();
 
             // Canvas (HUD)
             var canvasGo = new GameObject("HUDCanvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
@@ -666,8 +731,13 @@ namespace DreamCar.EditorTools
             fuelMeter.percentLabel = fuelLabel;
 
             // Refuel station panel
-            var refuelPanel = MakeUiChild(canvasGo, "RefuelStationPanel");
-            refuelPanel.SetActive(false);
+            // SetActive(false) buradan AŞAĞIYA, bileşen eklenip alanları
+            // doldurulduktan SONRAYA alındı. Eskiden panel bileşen eklenmeden
+            // kapatılıyordu; sahne kapalı halde kaydedilince RefuelStationPanel.Awake
+            // hiç koşmuyor, Instance null kalıyor ve RefuelStation onu hiç
+            // bulamıyordu. Paneli açabilecek tek şey panelin kendisiydi —
+            // benzin istasyonu paneli oyunda ASLA açılmıyordu.
+            var refuelPanel = MakeUiChild(canvasGo, "RefuelStationPanel", modal: true);
             var refuelTitle = MakeText(refuelPanel, "RefuelTitle", "Benzin İstasyonu", new Vector2(0f, 200f), 48);
             var refuelPrice = MakeText(refuelPanel, "RefuelPrice", "-- ₺", new Vector2(0f, 100f), 40);
             var refuelPct = MakeText(refuelPanel, "RefuelPct", "0%", new Vector2(0f, 20f), 32);
@@ -692,16 +762,22 @@ namespace DreamCar.EditorTools
             var refuelPay = MakeButton(refuelPanel, "PayButton", "Öde ve Doldur", new Vector2(-120f, -120f));
             var refuelCancel = MakeButton(refuelPanel, "CancelButton", "İptal", new Vector2(120f, -120f));
 
-            var refuelPanelScript = refuelPanel.AddComponent<RefuelStationPanel>();
+            // Bileşen PANELİN ÜZERİNDE DEĞİL, her zaman açık olan Canvas'ta duruyor.
+            // Panelin kendisinde olsaydı: panel kapalı kaydedilir → kapalı objede
+            // Awake hiç koşmaz → Instance null kalır → RefuelStation onu hiç bulamaz
+            // → paneli açacak tek şey panelin kendisi olurdu. Bileşenin zaten ayrı
+            // bir "panel" alanı var, tam da bunun için.
+            var refuelPanelScript = canvasGo.AddComponent<RefuelStationPanel>();
             refuelPanelScript.panel = refuelPanel;
             refuelPanelScript.fuelFill = refuelFill;
             refuelPanelScript.fuelPercentLabel = refuelPct;
             refuelPanelScript.priceLabel = refuelPrice;
             refuelPanelScript.payButton = refuelPay;
             refuelPanelScript.cancelButton = refuelCancel;
+            refuelPanel.SetActive(false);
 
             // Pause menu
-            var pausePanel = MakeUiChild(canvasGo, "PauseMenu");
+            var pausePanel = MakeUiChild(canvasGo, "PauseMenu", modal: true);
             pausePanel.SetActive(false);
             var pauseTitle = MakeText(pausePanel, "PauseTitle", "Duraklat", new Vector2(0f, 300f), 64);
             var resumeBtn = MakeButton(pausePanel, "Resume", "Devam", new Vector2(0f, 150f));
@@ -714,7 +790,11 @@ namespace DreamCar.EditorTools
             // hassasiyet ayarlanamıyordu.
             var gameSettingsScreen = BuildSettingsScreen(canvasGo);
 
-            var pauseScript = pausePanel.AddComponent<PauseMenu>();
+            // Aynı gerekçe: bileşen kapalı panelin üzerindeyken Update() hiç
+            // koşmuyor, yani Escape (Android'de geri tuşu) duraklatmayı açmıyordu
+            // ve Start() koşmadığı için panel içindeki dört butonun listener'ları
+            // ilk açılışa kadar bağlanmıyordu. Canvas her zaman açık.
+            var pauseScript = canvasGo.AddComponent<PauseMenu>();
             pauseScript.panel = pausePanel;
             pauseScript.settingsPanel = gameSettingsScreen.panel;
             pauseScript.resumeButton = resumeBtn;
@@ -730,11 +810,6 @@ namespace DreamCar.EditorTools
             AnchorCorner(pauseBtn.GetComponent<RectTransform>(),
                          new Vector2(1f, 1f), new Vector2(400f, 70f), new Vector2(120f, 100f));
             UnityEventTools.AddPersistentListener(pauseBtn.onClick, pauseScript.Toggle);
-
-            EditorSceneManager.SaveScene(scene, GamePath);
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-            Debug.Log("[DreamCarSetup] Game scene created at " + GamePath);
         }
 
         // ---------------------------------------------------------- Build Settings
@@ -756,7 +831,7 @@ namespace DreamCar.EditorTools
         // oyun içinde duraklatma menüsünden açılıyor. Tek yerden kurulur.
         static SettingsScreen BuildSettingsScreen(GameObject canvasGo)
         {
-            var settingsPanel = MakeUiChild(canvasGo, "SettingsScreen");
+            var settingsPanel = MakeUiChild(canvasGo, "SettingsScreen", modal: true);
             settingsPanel.SetActive(false);
             MakeText(settingsPanel, "Title", "Ayarlar", new Vector2(0f, 420f), 64);
             var qualityDd = MakeDropdown(settingsPanel, "QualityDropdown", new Vector2(0f, 300f));
@@ -789,7 +864,7 @@ namespace DreamCar.EditorTools
             var settings = BuildSettingsScreen(canvasGo);
 
             // --- Liderlik ---
-            var lbPanel = MakeUiChild(canvasGo, "LeaderboardScreen");
+            var lbPanel = MakeUiChild(canvasGo, "LeaderboardScreen", modal: true);
             lbPanel.SetActive(false);
             var lbTitle = MakeText(lbPanel, "Title", "En İyi Tur", new Vector2(0f, 420f), 64);
             var lbRaceTab = MakeButton(lbPanel, "RaceTab", "Yarış", new Vector2(-160f, 320f));
@@ -809,7 +884,7 @@ namespace DreamCar.EditorTools
             leaderboard.loadingIndicator = lbLoading;
 
             // --- Başarımlar ---
-            var achPanel = MakeUiChild(canvasGo, "AchievementsScreen");
+            var achPanel = MakeUiChild(canvasGo, "AchievementsScreen", modal: true);
             achPanel.SetActive(false);
             MakeText(achPanel, "Title", "Başarımlar", new Vector2(0f, 420f), 64);
             var achSummary = MakeText(achPanel, "Summary", "0 / 0", new Vector2(0f, 340f), 32);
@@ -826,7 +901,7 @@ namespace DreamCar.EditorTools
             achievements.catalog = Procedural.ProceduralAchievements.Load();
 
             // --- Coin mağazası ---
-            var shopPanel = MakeUiChild(canvasGo, "CoinShopScreen");
+            var shopPanel = MakeUiChild(canvasGo, "CoinShopScreen", modal: true);
             shopPanel.SetActive(false);
             MakeText(shopPanel, "Title", "Mağaza", new Vector2(0f, 420f), 64);
             var shopBalance = MakeText(shopPanel, "Balance", "0 ₺", new Vector2(0f, 340f), 40);
@@ -868,7 +943,7 @@ namespace DreamCar.EditorTools
             coinShop.packs = packs.ToArray();
 
             // --- İstatistik ---
-            var statsPanel = MakeUiChild(canvasGo, "StatsScreen");
+            var statsPanel = MakeUiChild(canvasGo, "StatsScreen", modal: true);
             statsPanel.SetActive(false);
             MakeText(statsPanel, "Title", "İstatistikler", new Vector2(0f, 420f), 64);
             var stats = statsPanel.AddComponent<StatsScreen>();
@@ -893,7 +968,7 @@ namespace DreamCar.EditorTools
             // DİKKAT: RoomCreatorUI.Start() bu alanların HEPSİNİ null kontrolsüz
             // kullanıyor (ClearOptions, minValue, onClick). Biri eksik kalırsa
             // ana menü açılışta NullReferenceException atar.
-            var createPanel = MakeUiChild(canvasGo, "RoomCreatorScreen");
+            var createPanel = MakeUiChild(canvasGo, "RoomCreatorScreen", modal: true);
             createPanel.SetActive(false);
             MakeText(createPanel, "Title", "Oda Kur", new Vector2(0f, 420f), 64);
 
@@ -922,7 +997,7 @@ namespace DreamCar.EditorTools
             // PhotonConnector RegionSelector.SavedRegion'ı okuyor ama o değeri yazacak
             // ekran hiç kurulmuyordu: herkes varsayılan bölgede kalıyordu. Türkiye'den
             // oynayan biri için yanlış bölge doğrudan yüksek ping demek.
-            var regionPanel = MakeUiChild(canvasGo, "RegionScreen");
+            var regionPanel = MakeUiChild(canvasGo, "RegionScreen", modal: true);
             regionPanel.SetActive(false);
             MakeText(regionPanel, "Title", "Sunucu Bölgesi", new Vector2(0f, 420f), 64);
             var regionCurrent = MakeText(regionPanel, "Current", "-", new Vector2(0f, 300f), 32);
@@ -941,7 +1016,7 @@ namespace DreamCar.EditorTools
             // ShopUI hiçbir sahneye eklenmiyordu: oyunda araç satın almanın HİÇBİR
             // yolu yoktu. GarageCarousel yalnızca sahip olunan aracı seçiyor, satın
             // alma yapmıyor. Para birikiyor ama harcanacak yer yoktu.
-            var carShopPanel = MakeUiChild(canvasGo, "CarShopScreen");
+            var carShopPanel = MakeUiChild(canvasGo, "CarShopScreen", modal: true);
             carShopPanel.SetActive(false);
             MakeText(carShopPanel, "Title", "Araçlar", new Vector2(0f, 420f), 64);
             var carShopMoney = MakeText(carShopPanel, "Money", "0 ₺", new Vector2(0f, 340f), 40);
@@ -1045,13 +1120,39 @@ namespace DreamCar.EditorTools
             AssetDatabase.Refresh();
         }
 
-        static GameObject MakeUiChild(GameObject parent, string name)
+        // modal=true → panele tam ekran, ışın hedefi açık bir arka plan konur.
+        //
+        // Bunsuz hiçbir tam ekran panel ALTINDAKİNİ ENGELLEMİYORDU: duraklatma
+        // menüsü ya da ayarlar açıkken gaz/fren/el freni butonlarına basılmaya
+        // devam edilebiliyordu. Aynı sebeple duraklatma ve ayarlar panelleri
+        // üst üste çiziliyor, ayarların dil açılır menüsü tam olarak "Ana Menü"
+        // butonunun üzerine denk geliyordu; opak arka plan bunu da çözüyor
+        // (ayarlar hiyerarşide sonra geldiği için üstte çizilir).
+        static GameObject MakeUiChild(GameObject parent, string name, bool modal = false)
         {
             var go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(parent.transform, false);
             var rt = go.GetComponent<RectTransform>();
             rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
             rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+
+            if (modal)
+            {
+                // Arka plan panelin KENDİSİNDE değil ayrı bir çocukta: panelin
+                // üzerine Image koymak SafeAreaFitter'ın kırptığı alanı boyar ve
+                // çentik bandı boş kalır. Bu çocuk güvenli alanı taşarak tüm
+                // ekranı kaplasın diye offsetleri elle geri açıyoruz.
+                var bg = new GameObject("Backdrop", typeof(RectTransform), typeof(Image));
+                bg.transform.SetParent(go.transform, false);
+                bg.transform.SetAsFirstSibling();
+                var bgRt = bg.GetComponent<RectTransform>();
+                bgRt.anchorMin = Vector2.zero; bgRt.anchorMax = Vector2.one;
+                bgRt.offsetMin = new Vector2(-200f, -200f);
+                bgRt.offsetMax = new Vector2(200f, 200f);
+                var bgImg = bg.GetComponent<Image>();
+                bgImg.color = new Color(0.04f, 0.05f, 0.08f, 0.94f);
+                bgImg.raycastTarget = true;
+            }
 
             // Çentik / Dynamic Island / ev göstergesi kenarları yiyor. Kontroller
             // köşelere sabitlendiği için tam oraya denk geliyorlar; panelleri güvenli

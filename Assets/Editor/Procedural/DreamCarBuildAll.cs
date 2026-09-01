@@ -39,6 +39,12 @@ namespace DreamCar.EditorTools.Procedural
 
             if (!proceed) return;
 
+            // HER ŞEYDEN ÖNCE: TMP'nin varsayılan yazı tipi projede yoksa
+            // kurulacak her metin fontsuz doğar ve hiçbir şey çizmez. Yazısız
+            // bir oyun üretip "bitti" demektense burada durmak doğru.
+            // Metot kullanıcıya ne yapacağını kendisi söylüyor.
+            if (!ProceduralTextMeshPro.EnsureResources()) return;
+
             try
             {
                 // EN BAŞTA: render pipeline atanmadan üretilen hiçbir şey doğru
