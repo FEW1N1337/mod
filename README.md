@@ -1063,6 +1063,8 @@ Ormanda ~1200 prop var. Prop başına GameObject mobilde ölümcül olurdu, bu y
 
 - **"The type or namespace name 'Photon' could not be found"**: PUN 2 import edilmemiş — Adım 2'yi tekrar yap.
 - **Photon App Id oluştururken SDK seçimi**: "Select Photon SDK" mutlaka **PUN**, sürüm **PUN 2** olmalı. Varsayılan olarak **Fusion** seçili gelir ve Fusion App Id'si PUN ile ÇALIŞMAZ — bağlantı sessizce kurulmaz.
+- **Yüzlerce `CS0619: 'TreeView' is obsolete` hatası, hepsi `Library/PackageCache/com.unity.collab-proxy/.../PlasticSCM/`**: Unity Version Control (Plastic SCM) paketi Unity 6000.6 ile uyumsuz. Bu proje Git kullanıyor, o paket hiç gerekmiyor — `Packages/manifest.json`'dan kaldırıldı. Kendi projende hâlâ varsa `Window → Package Manager → In Project → Version Control → Remove`.
+  Aynı temizlikte kaldırılan diğer kullanılmayan paketler: `com.unity.postprocessing` (PPv2 — biz URP'nin Volume sistemini kullanıyoruz, ikisi bir arada çakışma kaynağı), `com.unity.cinemachine`, `com.unity.timeline`, `com.unity.visualscripting`. Beşinin de kodda sıfır kullanımı vardı.
 - **"The name 'ScreenCapture' does not exist in the current context"** (RCCP_PhotoMode.cs): `com.unity.modules.screencapture` built-in modülü kapalı. Depodaki `Packages/manifest.json`'da artık ekli; eski bir klondaysan `Window → Package Manager → Packages: Built-in → Screen Capture → Enable`.
   Genel kural: Asset Store asset'leri (RCCP gibi `Assets/` altına düz `.cs` olarak gelenler) ihtiyaç duydukları built-in modülü bildiremez — UPM paketlerinin aksine. Bir asset `CS0103: The name 'X' does not exist` veriyorsa önce ilgili modülün açık olup olmadığına bak.
 - **Oda yaratıp katılamama**: AppId boş → PhotonServerSettings kontrol et.
