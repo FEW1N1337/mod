@@ -48,6 +48,7 @@
     { "key": "repair",            "value": "Repair" },
     { "key": "repair.done",       "value": "Repaired" },
     { "key": "damage",            "value": "Damage" },
+    { "key": "rescue",            "value": "Rescue" },
 
     { "key": "pause",             "value": "Paused" },
     { "key": "pause.resume",      "value": "Resume" },

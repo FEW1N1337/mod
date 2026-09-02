@@ -48,6 +48,7 @@
     { "key": "repair",            "value": "Tamir Et" },
     { "key": "repair.done",       "value": "Tamir edildi" },
     { "key": "damage",            "value": "Hasar" },
+    { "key": "rescue",            "value": "Kurtar" },
 
     { "key": "pause",             "value": "Duraklat" },
     { "key": "pause.resume",      "value": "Devam" },

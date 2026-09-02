@@ -11,10 +11,18 @@ namespace DreamCar.UI
         public TMP_Text speedText;
         public TMP_Text playerCountText;
         public TMP_Text roomNameText;
+
+        // Serbest sürüşte para artık sürerken kazanılıyor (FreeRoamMode), ama
+        // oyunda bakiyeyi gösteren hiçbir şey yoktu: oyuncu ancak menüye dönüp
+        // mağazayı açınca kazandığını görebiliyordu. Kazanç görünmeyince
+        // döngünün geri bildirimi de yok.
+        public TMP_Text moneyText;
+
         public Button leaveButton;
 
         // Somut tip yerine arayüz: HUD hem bizim sürücümüzü hem RCCP'li aracı okur.
         IDriveInput _car;
+        long _shownMoney = long.MinValue;
 
         void Start()
         {
@@ -43,6 +51,20 @@ namespace DreamCar.UI
                 playerCountText.text = $"{PhotonNetwork.CurrentRoom.PlayerCount}/{PhotonNetwork.CurrentRoom.MaxPlayers}";
             if (roomNameText && PhotonNetwork.CurrentRoom != null)
                 roomNameText.text = PhotonNetwork.CurrentRoom.Name;
+
+            // Olaya abone olmak yerine karşılaştırma: PlayerMoney sahneler
+            // arasında yaşıyor (DontDestroyOnLoad), HUD ise her sahnede yeniden
+            // kuruluyor. Aboneliği çözmeyi unutan bir HUD, yok edildikten sonra
+            // da çağrılmaya devam ederdi.
+            if (moneyText && Economy.PlayerMoney.Instance)
+            {
+                long money = Economy.PlayerMoney.Instance.Money;
+                if (money != _shownMoney)
+                {
+                    _shownMoney = money;
+                    moneyText.text = $"{money:N0} ₺";
+                }
+            }
         }
 
         // Arayüz referansında Unity'nin `!obj` kısayolu çalışmaz (yok edilmiş bileşen

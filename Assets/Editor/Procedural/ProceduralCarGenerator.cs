@@ -688,6 +688,9 @@ namespace DreamCar.EditorTools.Procedural
             root.AddComponent<CruiseControl>();
             root.AddComponent<GearBox>();
             root.AddComponent<FuelSystem>();
+            // Takla atan, haritadan düşen veya yakıtı biten araç için tek
+            // çıkış yolu — bu bileşen olmadan oyuncu odadan çıkmak zorunda.
+            root.AddComponent<CarRescue>();
             root.AddComponent<Core.StatsTracker>();
 
             var carPaint = root.AddComponent<CarPaint>();
