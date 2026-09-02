@@ -138,6 +138,7 @@ namespace DreamCar.EditorTools
             car.AddComponent<CruiseControl>();
             car.AddComponent<GearBox>();
             car.AddComponent<FuelSystem>();
+            car.AddComponent<CarRescue>();
             var horn = car.AddComponent<Emote.HornController>();
             car.AddComponent<Core.StatsTracker>();
 
@@ -618,10 +619,19 @@ namespace DreamCar.EditorTools
             AnchorCorner(leaveBtn.GetComponent<RectTransform>(),
                          new Vector2(1f, 1f), new Vector2(160f, 70f), new Vector2(240f, 100f));
 
+            // Para göstergesi. Serbest sürüş artık kilometre ve drift başına
+            // ödeme yapıyor (FreeRoamMode); bakiye ekranda olmazsa oyuncu
+            // kazandığını yalnızca menüye dönünce fark eder.
+            var moneyText = MakeText(hudPanel, "MoneyText", "0 ₺", Vector2.zero, 34);
+            moneyText.alignment = TextAlignmentOptions.MidlineLeft;
+            AnchorCorner(moneyText.GetComponent<RectTransform>(),
+                         new Vector2(0f, 1f), new Vector2(250f, 150f), new Vector2(440f, 60f));
+
             var hud = hudPanel.AddComponent<InGameHUD>();
             hud.speedText = speedText;
             hud.playerCountText = playerCountText;
             hud.roomNameText = roomNameText;
+            hud.moneyText = moneyText;
             hud.leaveButton = leaveBtn;
 
             // --- Tamir paneli ---
@@ -732,6 +742,15 @@ namespace DreamCar.EditorTools
             AnchorCorner(emoteBtn.GetComponent<RectTransform>(),
                          new Vector2(0f, 1f), new Vector2(100f, 940f), new Vector2(120f, 110f));
             actions.emoteButton = emoteBtn;
+
+            // Kurtarma butonu. Sol sütun 940'ta bitiyor, bir sonrası ekran
+            // dışına taşardı; ayrıca bu buton nadir ama KRİTİK — takla atan,
+            // haritadan düşen veya yakıtı biten araç için tek çıkış. Çıkış
+            // butonunun yanına, sağ üste koyuyoruz.
+            var rescueBtn = MakeButton(hudPanel, "RescueButton", "Kurtar", Vector2.zero, key: "rescue");
+            AnchorCorner(rescueBtn.GetComponent<RectTransform>(),
+                         new Vector2(1f, 1f), new Vector2(420f, 70f), new Vector2(240f, 100f));
+            actions.rescueButton = rescueBtn;
 
             var pingText = MakeText(hudPanel, "PingText", "-- ms", Vector2.zero, 24);
             AnchorCorner(pingText.GetComponent<RectTransform>(),

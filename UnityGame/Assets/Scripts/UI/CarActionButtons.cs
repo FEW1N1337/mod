@@ -2,6 +2,7 @@ using DreamCar.CameraModes;
 using DreamCar.Effects;
 using DreamCar.Emote;
 using DreamCar.Network;
+using DreamCar.Vehicle;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -28,6 +29,11 @@ namespace DreamCar.UI
         public Button hazardButton;
         public Button emoteButton;
 
+        // Kurtarma: takla atan, haritadan düşen veya yakıtı biten araç için
+        // tek çıkış yolu. CarRescue kendiliğinden de devreye giriyor ama
+        // oyuncunun beş saniye beklemek zorunda kalmaması gerekiyor.
+        public Button rescueButton;
+
         // EmoteSystem.emotes listesi boşken Play() sessizce dönüyor; üretici
         // en az bir giriş koyuyor ve bu kimlik onunla eşleşiyor.
         public string emoteId = "wave";
@@ -36,6 +42,7 @@ namespace DreamCar.UI
         HornController _horn;
         TurnSignals _signals;
         EmoteSystem _emotes;
+        CarRescue _rescue;
 
         void Start()
         {
@@ -49,6 +56,7 @@ namespace DreamCar.UI
             Hook(signalRightButton, () => { if (Signals()) _signals.Right(); });
             Hook(hazardButton, () => { if (Signals()) _signals.Hazard(); });
             Hook(emoteButton, () => { if (Emotes()) _emotes.Play(emoteId); });
+            Hook(rescueButton, () => { if (Ready(ref _rescue)) _rescue.Rescue(); });
         }
 
         static void Hook(Button b, UnityEngine.Events.UnityAction a)
@@ -74,7 +82,7 @@ namespace DreamCar.UI
         {
             var car = RoomManager.LocalCar;
             if (!car) { cached = null; return false; }
-            if (car != _car) { _car = car; _horn = null; _signals = null; _emotes = null; }
+            if (car != _car) { _car = car; _horn = null; _signals = null; _emotes = null; _rescue = null; }
             if (!cached) cached = car.GetComponent<T>();
             return cached;
         }

@@ -190,8 +190,9 @@ namespace DreamCar.EditorTools.RCCPTools
             Get<CruiseControl>(root);
             Get<GearBox>(root);
             Get<FuelSystem>(root);
+            Get<CarRescue>(root);
             Get<DreamCar.Core.StatsTracker>(root);
-            log.AppendLine("• Oynanış: drift, vites, yakıt, hasar, istatistik");
+            log.AppendLine("• Oynanış: drift, vites, yakıt, kurtarma, hasar, istatistik");
 
             // --- Drift dumanı + fren izi (tekerlek başına) ---
             int fx = 0;

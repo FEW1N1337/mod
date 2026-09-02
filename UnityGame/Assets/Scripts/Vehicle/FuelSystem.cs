@@ -16,8 +16,22 @@ namespace DreamCar.Vehicle
     {
         public float capacity = 60f;
         public float current = 60f;
-        public float baseDrainPerSecond = 0.05f;
-        public float throttleDrainMultiplier = 0.4f;
+
+        // TÜKETİM AYARI — eski değerler oyunu oynanamaz kılıyordu.
+        //
+        // Eskiden base 0.05 + gaz*0.4 idi: tam gazda saniyede 0.45 litre, yani
+        // 60 litrelik depo 133 SANİYEDE bitiyordu. Oyuncu iki dakika sürüp
+        // kalıyordu. Üstüne depoyu doldurmak 60 × 25 = 1.500 ₺; başlangıç
+        // parası 5.000 ₺. Serbest sürüşte hiçbir gelir kaynağı da olmadığı
+        // için oyuncu üçüncü depodan sonra parasız ve yakıtsız kalıyordu —
+        // geri dönüşü olmayan bir kilitlenme.
+        //
+        // Yeni değerler tam gazda 60 / 0.034 ≈ 1.765 saniye (yaklaşık 29
+        // dakika) veriyor; rölantide depo ~2,8 saat gidiyor. 100 km/h'te tam
+        // gaz kilometre başına ~1,22 litre = ~30 ₺; serbest sürüş kilometre
+        // başına 120 ₺ ödüyor (FreeRoamMode), yani döngü artı bakiyeli.
+        public float baseDrainPerSecond = 0.006f;
+        public float throttleDrainMultiplier = 0.028f;
         public float pricePerLiter = 25f;
 
         IDriveInput _car;
