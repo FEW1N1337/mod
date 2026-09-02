@@ -1138,6 +1138,43 @@ kesmez: lobiden gelindiğinde sahne zaten odadayken yükleniyor. Kapatmak için
   Değiştirmek için `~Bootstrap → MusicManager` üzerindeki `menuTracks` /
   `gameplayTracks` dizilerine gerçek klipleri ata; diziler doluyken
   `ProceduralMusic` kendini devre dışı bırakıyor, kod düzenlemesi gerekmiyor.
+- **Sohbet, sahne PhotonView'ının ViewID'si atanmadığı için ölüydü.** Sahne
+  görünümlerinin kimliğini PUN sahne kaydedilirken atar; betikle eklenen
+  görünümde bu gerçekleşmezse ViewID `0` kalır, PUN görünümü kaydetmez ve
+  `photonView.RPC(...)` sessizce düşer. `RichChatUI` ile `ChatUI` mesajı
+  yalnızca o RPC ile gönderiyor — yani sohbet tamamen sessiz kalırdı.
+  Kimlik artık `DreamCarSetup` içinde açıkça atanıyor. (Araç prefablarındaki
+  görünümler etkilenmiyor: onlar `PhotonNetwork.Instantiate` ile doğup
+  kimliklerini çalışma anında alıyor.)
+
+### 18f) Kablolama denetçisi — `Editor/DreamCarValidator.cs`
+
+Bu projenin baskın hata ailesi tek bir şey: **sistem yazılmış, görünüşte tam,
+ama hiçbir yere bağlanmamış ve sessizce hiçbir şey yapmıyor.** Ne derleme
+hatası ne çalışma anı istisnası veriyor — sadece olması gereken olmuyor.
+Yukarıdaki maddelerin hepsi bu aileden. Projede bunu yakalayan hiçbir
+otomatik denetim yoktu.
+
+`BUILD EVERYTHING`'in sonunda kendiliğinden koşuyor; elle de çalıştırılır:
+**`DreamCar → Doğrulama → Sahneleri denetle`**.
+
+Hata olarak raporladıkları (hepsi tek anlamlı):
+
+| Kontrol | Olmazsa |
+|---|---|
+| Sahne başına tam 1 `AudioListener` | 0 = sahne tamamen sessiz, 2+ = bozuk ses |
+| `EventSystem` | Hiçbir arayüz butonu çalışmaz |
+| `MainCamera` etiketli kamera | `Camera.main` null — kamera takibi, kamera modları, minimap ölü |
+| `Canvas` üzerinde `GraphicRaycaster` | Arayüz dokunma almaz |
+| Sahne `PhotonView`'ında ViewID ≠ 0 | RPC'ler sessizce düşer (sohbet) |
+| `CarCatalog` dolu + her prefab `Resources` altında | Araç seçilince doğmaz |
+| `MapCatalog`'daki her sahne Build Settings'te | `LoadLevel` sessizce başarısız, oyuncular boş odada asılı kalır |
+| URP varlığı atanmış | Bütün yüzeyler macenta |
+
+Ayrıca `DreamCar.*` bileşenlerindeki **boş referans alanlarını** bilgi olarak
+listeliyor. Bunlar hata değil — çoğu alan bilerek opsiyonel — ama bu ailenin
+bıraktığı iz tam olarak bu, o yüzden gözle taranabilir tek bir liste hâlinde
+veriliyor.
 
 ---
 
@@ -1150,6 +1187,7 @@ kesmez: lobiden gelindiğinde sahne zaten odadayken yükleniyor. Kapatmak için
 | `Scripts/Car/CarNetworkSync.cs` | Photon position/rotation sync |
 | `Scripts/Vehicle/CarRescue.cs` | Takla / düşme / yakıtsızlıktan kurtarma (§18c) |
 | `Scripts/Audio/ProceduralMusic.cs` | Çalışma anında müzik sentezi (§18e) |
+| `Editor/DreamCarValidator.cs` | Sahne kablolama denetimi (§18f) |
 | `Scripts/Input/MobileTouchInput.cs` | Dokunmatik + klavye input |
 | `Scripts/Network/PhotonConnector.cs` | Master bağlantısı, singleton |
 | `Scripts/Network/LobbyManager.cs` | Oda listesi/oluştur/katıl |
