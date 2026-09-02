@@ -1,3 +1,4 @@
+using System.Collections;
 using Photon.Pun;
 using Photon.Realtime;
 using UnityEngine;
@@ -14,6 +15,14 @@ namespace DreamCar.Network
         public Transform[] spawnPoints;
         public bool addGameModeManager = true;
         public bool applyMapPreset = true;
+
+        [Tooltip("Odaya bağlı olmadan bir harita sahnesi açılırsa çevrimdışı tek " +
+                 "oyunculu moda geç. Editor'de haritayı doğrudan Play'e basarak " +
+                 "denemeyi mümkün kılar.")]
+        public bool allowOfflineFallback = true;
+
+        [Tooltip("Bu kadar bekleyip hâlâ bağlantı yoksa çevrimdışına geçilir.")]
+        public float offlineFallbackDelay = 1.5f;
 
         GameObject _localCar;
 
@@ -32,9 +41,46 @@ namespace DreamCar.Network
                 if (sel) sel.ApplyForRoom();
             }
             if (PhotonNetwork.InRoom) SpawnLocalCar();
+            else if (allowOfflineFallback) StartCoroutine(OfflineFallback());
         }
 
         public override void OnJoinedRoom() => SpawnLocalCar();
+
+        // Bir harita sahnesini Editor'de doğrudan Play'e basarak açmak HİÇBİR
+        // ŞEY yapmıyordu: PhotonNetwork.InRoom false olduğu için araç doğmuyor,
+        // oyuncu boş bir haritaya ve "-- km/h" yazan bir HUD'a bakıyordu.
+        // Bu, projeyi ilk kuran herkesin karşılaştığı ilk ekran — çünkü
+        // BUILD EVERYTHING bittiğinde açık olan sahne son üretilen haritadır.
+        // Üstelik Photon App Id girilene kadar ana menüden de oyuna girilemiyor,
+        // yani sürüşü denemenin HİÇBİR yolu yoktu.
+        //
+        // PUN'ın çevrimdışı modu tam olarak bunun için var: ağ yok, oda yerel,
+        // PhotonNetwork.Instantiate normal Instantiate gibi davranıyor ve
+        // IsMine her zaman true. Böylece sürüş, kamera, HUD, yakıt, kurtarma ve
+        // serbest sürüş kazancı Photon kurulmadan da denenebiliyor.
+        //
+        // Gerçek çevrimiçi oyunu asla kesmez: lobiden gelindiğinde bu sahne
+        // zaten odadayken yükleniyor, yani Start'ta InRoom true ve bu yol hiç
+        // çalışmıyor. Yine de bekleme sırasında bağlantı belirirse geri çekiliyoruz.
+        IEnumerator OfflineFallback()
+        {
+            float deadline = Time.time + Mathf.Max(0f, offlineFallbackDelay);
+            while (Time.time < deadline)
+            {
+                if (PhotonNetwork.InRoom || PhotonNetwork.IsConnected) yield break;
+                yield return null;
+            }
+            if (PhotonNetwork.InRoom || PhotonNetwork.IsConnected) yield break;
+
+            Debug.LogWarning(
+                "[Room] Photon odasına bağlı değiliz — ÇEVRİMDIŞI test moduna geçiliyor. " +
+                "Çevrimiçi oynamak için ana menüden başla ve PhotonServerSettings'te " +
+                "App Id'nin dolu olduğundan emin ol.");
+
+            PhotonNetwork.OfflineMode = true;   // OnConnectedToMaster'ı yerel olarak tetikler
+            PhotonNetwork.CreateRoom("Offline", new RoomOptions { MaxPlayers = 1 });
+            UI.ToastNotification.Show("Çevrimdışı test modu — Photon'a bağlı değilsin");
+        }
 
         void SpawnLocalCar()
         {
