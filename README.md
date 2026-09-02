@@ -1120,6 +1120,24 @@ kesmez: lobiden gelindiğinde sahne zaten odadayken yükleniyor. Kapatmak için
   artık yeniden deniyor.
 - **HUD'da para göstergesi** eklendi — serbest sürüş artık sürerken
   kazandırdığı için bakiye ekranda olmalı.
+- **Oyunda hiç müzik yoktu.** `MusicManager` eksiksiz bir sistemdi (crossfade,
+  shuffle, `AudioBus` seviyesi) ve iki sahneye de ekleniyordu, ama parça
+  dizilerine hiçbir yerden atama yapılmıyordu ve depoda tek bir ses dosyası
+  yok — sistem sessizce hiçbir şey yapmıyordu. Üstelik `Play(Playlist)`'in
+  sınıf dışında sıfır çağıranı vardı, yani parçalar eklense bile oyun içi
+  liste asla çalmazdı.
+
+  `Audio/ProceduralMusic.cs` artık çalışma anında döngülenebilir parçalar
+  sentezliyor (22050 Hz mono, ~16 sn, menü için sakin / sürüş için tempolu;
+  DSP yardımcıları `ProceduralEngineAudio`'dan yeniden kullanılıyor). İlk
+  parça `Awake`'te, kalanlar sonraki karelere yayılıyor — açılış donmuyor.
+  Liste değişimini `MusicManager` kendisi `SceneManager.sceneLoaded`'dan
+  dinliyor, Editor'de atanacak alan yok.
+
+  **Prosedürel müzik yer tutucu kalitesindedir** — ambient pad gibi duyulur.
+  Değiştirmek için `~Bootstrap → MusicManager` üzerindeki `menuTracks` /
+  `gameplayTracks` dizilerine gerçek klipleri ata; diziler doluyken
+  `ProceduralMusic` kendini devre dışı bırakıyor, kod düzenlemesi gerekmiyor.
 
 ---
 
@@ -1131,6 +1149,7 @@ kesmez: lobiden gelindiğinde sahne zaten odadayken yükleniyor. Kapatmak için
 | `Scripts/Car/CarCameraFollow.cs` | Kamera takibi |
 | `Scripts/Car/CarNetworkSync.cs` | Photon position/rotation sync |
 | `Scripts/Vehicle/CarRescue.cs` | Takla / düşme / yakıtsızlıktan kurtarma (§18c) |
+| `Scripts/Audio/ProceduralMusic.cs` | Çalışma anında müzik sentezi (§18e) |
 | `Scripts/Input/MobileTouchInput.cs` | Dokunmatik + klavye input |
 | `Scripts/Network/PhotonConnector.cs` | Master bağlantısı, singleton |
 | `Scripts/Network/LobbyManager.cs` | Oda listesi/oluştur/katıl |

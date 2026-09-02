@@ -246,6 +246,11 @@ namespace DreamCar.EditorTools
             boot.AddComponent<Core.ObjectPool>();
             boot.AddComponent<CrashReporter>();
             boot.AddComponent<MusicManager>();
+            // MusicManager'ın parça dizileri hiçbir yerden doldurulmuyordu ve
+            // depoda tek bir ses dosyası yok: oyunda hiç müzik yoktu. Bu bileşen
+            // dizileri BOŞSA çalışma anında sentezleyip dolduruyor — gerçek
+            // klipler atandığı anda kenara çekilir.
+            boot.AddComponent<ProceduralMusic>();
             boot.AddComponent<ChatProfanityFilter>();
             boot.AddComponent<Localization.LocalizationManager>();
             boot.AddComponent<PlayFabCloudSave>();
@@ -470,6 +475,11 @@ namespace DreamCar.EditorTools
             boot.AddComponent<Core.ObjectPool>();
             boot.AddComponent<CrashReporter>();
             boot.AddComponent<MusicManager>();
+            // MusicManager'ın parça dizileri hiçbir yerden doldurulmuyordu ve
+            // depoda tek bir ses dosyası yok: oyunda hiç müzik yoktu. Bu bileşen
+            // dizileri BOŞSA çalışma anında sentezleyip dolduruyor — gerçek
+            // klipler atandığı anda kenara çekilir.
+            boot.AddComponent<ProceduralMusic>();
             boot.AddComponent<ChatProfanityFilter>();
             boot.AddComponent<Localization.LocalizationManager>();
             boot.AddComponent<PlayFabCloudSave>();
