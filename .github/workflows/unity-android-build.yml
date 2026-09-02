@@ -68,6 +68,12 @@ jobs:
           targetPlatform: Android
           buildName: DreamCar
           buildsPath: build
+          # Depoda sahne, üretilmiş varlık ve ProjectSettings YOK — hepsi
+          # BUILD EVERYTHING ile üretiliyor. Varsayılan build metodu
+          # çalıştırılsaydı boş bir APK çıkardı. Bu metot önce bütün
+          # prosedürel zinciri koşturur, sahne denetimini yapar (hata varsa
+          # build'i keser) ve ancak sonra BuildPlayer çağırır.
+          buildMethod: DreamCar.EditorTools.CI.DreamCarCI.GenerateAndBuild
           androidExportType: ${{ inputs.buildAab && 'androidAppBundle' || 'androidPackage' }}
           androidKeystoreName: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && 'dreamcar.keystore' || '' }}
           androidKeystoreBase64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

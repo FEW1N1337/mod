@@ -83,10 +83,35 @@ namespace DreamCar.EditorTools.Procedural
             // HDR olmadan doğru çalışmaz, parlak yüzeyler beyaza yapışır.
             asset.supportsHDR = true;
             asset.msaaSampleCount = 4;
-            asset.shadowDistance = 120f;
-            asset.shadowCascadeCount = 2;
             asset.supportsCameraDepthTexture = true;   // SSAO ve motion blur buna bağlı
             asset.supportsCameraOpaqueTexture = false; // pahalı, kullanmıyoruz
+
+            // RENK DERECELENDİRME MODU — burası bir ayar değil, bir HATA düzeltmesi.
+            //
+            // ProceduralPostProcessing profillere TonemappingMode.ACES kuruyor.
+            // ACES, HDR bir renk hattı varsayar. Ama bu alan varsayılanda
+            // LowDynamicRange kalıyordu: sinyal derecelendirmeden ÖNCE kırpılıyor,
+            // ACES'in eğrisi kırpılmış veriye uygulanıyor ve sonuç soluk,
+            // kontrastsız çıkıyordu. Yani supportsHDR = true demenin faydası tam
+            // burada kayboluyordu — parlak gökyüzü, far hüzmesi ve metalik araç
+            // boyası HDR'ın vermesi gereken derinliği hiç alamıyordu.
+            //
+            // Hiçbir hata vermiyordu; sadece görüntü olması gerekenden kötüydü.
+            asset.colorGradingMode = ColorGradingMode.HighDynamicRange;
+
+            // HDR modunda LUT 32 yetersiz — gökyüzü gradyanlarında ve gece
+            // aydınlatmasında bantlaşma (banding) görünür. 64 mobilde de makul.
+            asset.colorGradingLutSize = 64;
+
+            // Gölgeler: araç oyununda kamera sürekli ileri bakıyor, uzaktaki
+            // gölgeler ekranın büyük kısmını kaplıyor. 2 kademe yakını iyi
+            // gösterip uzağı bulanıklaştırıyordu; 4 kademe aynı mesafeyi çok
+            // daha iyi dağıtıyor.
+            asset.shadowDistance = 150f;
+            asset.shadowCascadeCount = 4;
+            asset.shadowDepthBias = 0.8f;
+            asset.shadowNormalBias = 0.8f;
+            SetSoftShadows(asset);
 
             EditorUtility.SetDirty(asset);
 
@@ -95,6 +120,24 @@ namespace DreamCar.EditorTools.Procedural
 
             Debug.Log("[Pipeline] URP kuruldu ve atandı: " + AssetPath);
             return asset;
+        }
+
+        // Yumuşak gölgeler: sert gölge kenarı, araç oyununda en çok "ucuz" hissi
+        // veren şeylerden biri — özellikle aracın kendi gölgesi asfaltta
+        // merdiven basamağı gibi görünüyor.
+        //
+        // Alanı doğrudan yazmıyoruz: "supportsSoftShadows" özelliğinin setter'ı
+        // bazı URP sürümlerinde yok, o zaman derleme hatası olurdu.
+        // SerializedObject ile yazmak, alan adı değişmişse sessizce geçilebilir
+        // bir duruma dönüştürüyor — LinkRenderer ile aynı gerekçe.
+        static void SetSoftShadows(UniversalRenderPipelineAsset asset)
+        {
+            var so = new SerializedObject(asset);
+            var prop = so.FindProperty("m_SoftShadowsSupported");
+            if (prop == null) return;
+
+            prop.boolValue = true;
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         // m_RendererDataList özel bir alan; public API'si yok. SerializedObject ile
@@ -187,8 +230,35 @@ namespace DreamCar.EditorTools.Procedural
             PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel24;
 
             EnsureBothInputBackends();
+            ApplyQualitySettings();
 
             Debug.Log("[Pipeline] Player Settings uygulandı (Linear, IL2CPP, ARM64, yatay).");
+        }
+
+        // URP varlığının kapsamadığı, QualitySettings tarafında duran ayarlar.
+        static void ApplyQualitySettings()
+        {
+            // ANİZOTROPİK FİLTRELEME — bu oyunda en çok göze çarpan tek ayar.
+            //
+            // Yol kaplaması sürekli sığ açıyla görülüyor: kamera aracın
+            // arkasında, asfalt ufka doğru uzanıyor. İki doğrusal filtreleme o
+            // açıda dokuyu birkaç metre ötede lapaya çeviriyor ve şerit
+            // çizgileri kayboluyor. Anizotropik filtreleme tam olarak bu durumu
+            // düzeltiyor ve mobil GPU'larda maliyeti düşük.
+            QualitySettings.anisotropicFiltering = AnisotropicFiltering.ForceEnable;
+
+            // Uzak nesneler erken basitleşmesin — açık dünyada silüetler
+            // gözle görülür şekilde "atlıyor".
+            QualitySettings.lodBias = 1.5f;
+
+            // Araç boyası metalik; yansıma probu güncellenmezse gün/gece
+            // döngüsünde boya rengi ortamla uyumsuz kalıyor.
+            QualitySettings.realtimeReflectionProbes = true;
+
+            // BİLEREK dokunulmayanlar: globalTextureMipmapLimit, softParticles ve
+            // skinWeights. Üçü de ya Unity 6'da yeniden adlandırıldı ya URP
+            // tarafına taşındı, ve üçü de zaten istediğimiz varsayılanda —
+            // derleme riskini karşılığı olmayan bir değişiklik için almıyoruz.
         }
 
         // Girdi arka ucu "Both" olmalı — bu bir tercih değil, ZORUNLULUK.
