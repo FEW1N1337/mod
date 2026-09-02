@@ -39,11 +39,52 @@ namespace DreamCar.EditorTools.Procedural
 
             if (!proceed) return;
 
+            if (!GenerateAll()) return;
+
+            // Denetim üretimden ve Build Settings adımından SONRA: harita
+            // kontrolü o listeyi okuyor, önce koşsaydı üretilen her haritayı
+            // "Build Settings'te yok" diye bildirirdi.
+            //
+            // Bu projenin baskın hata ailesi sessiz: sistem yazılmış ama hiçbir
+            // yere bağlanmamış ve ne derleme hatası ne çalışma anı istisnası
+            // veriyor — sadece olması gereken olmuyor. Üretimin hemen ardından
+            // denetlemek, o aileyi ortaya çıktığı anda görünür kılan tek yol.
+            //
+            // CI aynı çağrıyı kendi yapıyor ve dönen sayıyla build'i kesiyor
+            // (DreamCarCI), o yüzden burada GenerateAll'ın içinde değil.
+            int problems = DreamCarValidator.Run(showDialog: false);
+
+            EditorUtility.DisplayDialog("DreamCar — Hazır",
+                (problems == 0
+                    ? "Her şey üretildi. Denetim temiz.\n\n"
+                    : $"Her şey üretildi ama DENETİM {problems} SORUN buldu — Console'a bak.\n\n") +
+                "SIRADAKİ ADIMLAR:\n\n" +
+                "1) Photon PUN 2'yi Asset Store'dan import et\n" +
+                "2) PhotonServerSettings'e App Id gir\n" +
+                "3) Assets/Scenes/MainMenu.unity'i aç ve Play'e bas\n" +
+                "   (şu an açık olan sahne son üretilen haritadır)\n\n" +
+                "Ses sürgüleri kutudan çalışır — AudioMixer kurmak\n" +
+                "zorunda değilsin. İstersen kurabilirsin: Master/Music/\n" +
+                "SFX parametrelerini expose edip GameSettings.mixer\n" +
+                "alanına ata, sistem otomatik ona geçer (README §11d).",
+                "Tamam");
+        }
+
+        // ÜRETİM ZİNCİRİ — tek kaynak.
+        //
+        // Hem menüden (BuildEverything) hem de batch-mode CI'dan (DreamCarCI)
+        // çağrılıyor. İki yerde ayrı ayrı yazılsaydı sıra er geç ayrışırdı ve
+        // bu sıra kritik: haritalar sahnelerden ÖNCE (MapCatalog'a referans
+        // veriliyor), katalog sahnelerden ÖNCE, Build Settings EN SONDA.
+        //
+        // false dönerse üretim yapılmadı ve sebebi kullanıcıya bildirildi.
+        public static bool GenerateAll()
+        {
             // HER ŞEYDEN ÖNCE: TMP'nin varsayılan yazı tipi projede yoksa
             // kurulacak her metin fontsuz doğar ve hiçbir şey çizmez. Yazısız
             // bir oyun üretip "bitti" demektense burada durmak doğru.
             // Metot kullanıcıya ne yapacağını kendisi söylüyor.
-            if (!ProceduralTextMeshPro.EnsureResources()) return;
+            if (!ProceduralTextMeshPro.EnsureResources()) return false;
 
             try
             {
@@ -107,18 +148,6 @@ namespace DreamCar.EditorTools.Procedural
                 DreamCarSetup.AddScenesToBuildSettings();
                 ProceduralMapGenerator.AddMapsToBuildSettings();
 
-                // Denetim EN SONDA ve Build Settings adımından SONRA: harita
-                // kontrolü o listeyi okuyor, önce koşsaydı üretilen her haritayı
-                // "Build Settings'te yok" diye bildirirdi.
-                //
-                // Bu projenin baskın hata ailesi sessiz: sistem yazılmış ama
-                // hiçbir yere bağlanmamış ve ne derleme hatası ne çalışma anı
-                // istisnası veriyor — sadece olması gereken olmuyor. Üretimin
-                // hemen ardından denetlemek, o aileyi ortaya çıktığı anda
-                // görünür kılan tek yol.
-                EditorUtility.DisplayProgressBar("DreamCar", "Sahneler denetleniyor…", 0.96f);
-                DreamCarValidator.Run(showDialog: false);
-
                 AssetDatabase.SaveAssets();
                 AssetDatabase.Refresh();
             }
@@ -127,18 +156,7 @@ namespace DreamCar.EditorTools.Procedural
                 EditorUtility.ClearProgressBar();
             }
 
-            EditorUtility.DisplayDialog("DreamCar — Hazır",
-                "Her şey üretildi.\n\n" +
-                "SIRADAKİ ADIMLAR:\n\n" +
-                "1) Photon PUN 2'yi Asset Store'dan import et\n" +
-                "2) PhotonServerSettings'e App Id gir\n" +
-                "3) Assets/Scenes/MainMenu.unity'i aç ve Play'e bas\n" +
-                "   (şu an açık olan sahne son üretilen haritadır)\n\n" +
-                "Ses sürgüleri kutudan çalışır — AudioMixer kurmak\n" +
-                "zorunda değilsin. İstersen kurabilirsin: Master/Music/\n" +
-                "SFX parametrelerini expose edip GameSettings.mixer\n" +
-                "alanına ata, sistem otomatik ona geçer (README §11d).",
-                "Tamam");
+            return true;
         }
 
         [MenuItem("DreamCar/Yardım/Neler üretildi?", priority = 100)]

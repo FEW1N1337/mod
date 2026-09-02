@@ -1178,6 +1178,84 @@ veriliyor.
 
 ---
 
+## 19) v1.1 — Kurulabilir APK, grafik kalitesi, backend'in görünürlüğü
+
+### 19a) Depo tek başına oynanabilir oyun üretemiyordu
+
+Android CI iş akışı eksiksizdi ama çalıştırılsa **boş bir uygulama**
+üretirdi. Çünkü depoda şunlar yok:
+
+| Yol | Depodaki dosya |
+|---|---|
+| `Assets/Scenes/` | **0** — MainMenu, Game, 8 harita, hiçbiri |
+| `Assets/Generated/` | **0** — URP varlığı, mesh, materyal, katalog |
+| `ProjectSettings/` | **1** — yalnızca `ProjectVersion.txt` |
+
+Yani Build Settings sahne listesi, Graphics'teki URP ataması, Player Settings
+(IL2CPP, ARM64, yatay yön, Active Input Handling) ve "MainCamera" etiketi de
+depoda değil. Hepsi `BUILD EVERYTHING` ile makinede üretilip orada kalıyor.
+Bunlar `.gitignore`'da değil — hiç commit edilmemişler.
+
+**Çözüm: CI de üretiyor.** `Editor/CI/DreamCarCI.cs` batch-mode giriş
+noktası; her iki build workflow'u `buildMethod` olarak bunu çağırıyor:
+
+1. `DreamCarBuildAll.GenerateAll()` — üretim sırası tek kaynakta, kopyalanmıyor
+2. `DreamCarValidator.Run()` — sorun varsa **build kesiliyor** (boş APK
+   yüklemektense CI'da kırmızı görmek doğru)
+3. `BuildPipeline.BuildPlayer`
+
+İkili varlıklar git'e girmiyor, depo şişmiyor ve üretim zinciri her build'de
+gerçekten sınanmış oluyor.
+
+**APK almak için depoda yapılması gerekenler** (Settings → Secrets and
+variables → Actions):
+
+- **Variables**: `UNITY_CI_ENABLED` = `true`
+- **Secrets**: `UNITY_EMAIL`, `UNITY_PASSWORD`, `UNITY_LICENSE` (kişisel
+  lisans `.ulf` dosyasının içeriği)
+- Actions → "Unity Android Build" → Run workflow → artifact'ı indir, kur
+
+CI dosyaları taşınırken **varsayılan daldan** okunuyor; workflow
+değişikliklerinin `main`'de olması gerekiyor.
+
+### 19b) ACES tonemapping LDR'de derecelendiriliyordu
+
+`ProceduralPostProcessing` profillere `TonemappingMode.ACES` kuruyor. Ama URP
+varlığında `colorGradingMode` varsayılanda **`LowDynamicRange`** kalıyordu:
+sinyal derecelendirmeden önce kırpılıyor, ACES eğrisi kırpılmış veriye
+uygulanıyor ve sonuç soluk çıkıyordu. `supportsHDR = true` demenin faydası
+tam burada kayboluyordu — parlak gökyüzü, far hüzmesi ve metalik araç boyası
+HDR'ın vermesi gereken derinliği hiç almıyordu. Hiçbir hata vermiyordu.
+
+Ayrıca açılanlar: `colorGradingLutSize` 64 (bantlaşma), gölge kademesi 2→4 ve
+mesafe 150, yumuşak gölgeler, **anizotropik filtreleme** (yol kaplaması sığ
+açıdan görüldüğü için bu oyunda en çok göze çarpan ayar), LOD bias 1.5,
+gerçek zamanlı yansıma probları.
+
+**Sınır:** render ayarları sonuna kadar açıldı, ama "Dream Road gibi
+görünmenin" önündeki engel ayar değil **içerik**. Araçlar, binalar ve dokular
+prosedürel; elle modellenmiş varlıklarla aynı görünmezler. Bunu kapatmanın
+tek yolu gerçek 3D varlık almak — RCCP'nin fizikte yaptığını görselde
+yapacak muadili.
+
+### 19c) Backend katmanının tamamı derlemeye girmiyordu
+
+`PLAYFAB_INSTALLED` sembolü **10 dosyayı** koruyor: kimlik doğrulama, bulut
+kayıt, liderlik tablosu, başarım senkronu, envanter, para senkronu, arkadaş
+listesi, referans sistemi, oyuncu şikâyeti. Ve bu sembolü projede **hiçbir
+yer tanımlamıyordu.** RCCP için dönüştürücü `RCCP_INSTALLED`'ı otomatik
+ekliyor; PlayFab'in muadili yoktu. SDK kurulsa bile hiçbir şey değişmezdi.
+
+`DreamCar → Backend → PlayFab kurulumunu doğrula` artık SDK'yı reflection ile
+arayıp sembolü kendisi ekliyor, yoksa ne yapılacağını adım adım yazıyor.
+Denetçi de durumu her koşuda bildiriyor.
+
+**Oyun PlayFab'siz tam oynanır** — para, istatistik ve araçlar `PlayerPrefs`'te.
+Eksik olan cihazlar arası kalıcılık ve sosyal taraf; yani "oyun çalışmıyor"
+değil, "ilerleme telefon değişince kaybolur".
+
+---
+
 ## Dosya haritası
 
 | Dosya | Görev |
@@ -1188,6 +1266,8 @@ veriliyor.
 | `Scripts/Vehicle/CarRescue.cs` | Takla / düşme / yakıtsızlıktan kurtarma (§18c) |
 | `Scripts/Audio/ProceduralMusic.cs` | Çalışma anında müzik sentezi (§18e) |
 | `Editor/DreamCarValidator.cs` | Sahne kablolama denetimi (§18f) |
+| `Editor/CI/DreamCarCI.cs` | Batch-mode üretim + build (§19a) |
+| `Editor/DreamCarPlayFabSetup.cs` | PLAYFAB_INSTALLED define'ı (§19c) |
 | `Scripts/Input/MobileTouchInput.cs` | Dokunmatik + klavye input |
 | `Scripts/Network/PhotonConnector.cs` | Master bağlantısı, singleton |
 | `Scripts/Network/LobbyManager.cs` | Oda listesi/oluştur/katıl |

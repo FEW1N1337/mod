@@ -38,7 +38,9 @@ namespace DreamCar.EditorTools
         [MenuItem("DreamCar/Doğrulama/Sahneleri denetle")]
         public static void ValidateInteractive() => Run(showDialog: true);
 
-        public static void Run(bool showDialog)
+        // Bulunan HATA sayısını döner. CI bu sayıyla build'i kesiyor:
+        // boş bir APK'yı sessizce yüklemektense kırmızı görmek doğru.
+        public static int Run(bool showDialog)
         {
             var errors = new List<string>();
             var notes = new List<string>();
@@ -48,7 +50,7 @@ namespace DreamCar.EditorTools
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
             {
                 Debug.LogWarning("[Doğrulama] Kullanıcı iptal etti.");
-                return;
+                return 0;
             }
 
             string reopen = SceneManager.GetActiveScene().path;
@@ -57,11 +59,13 @@ namespace DreamCar.EditorTools
                 ValidateScene(path, errors, notes);
 
             ValidateProjectWide(errors);
+            ReportBackend(notes);
 
             if (!string.IsNullOrEmpty(reopen))
                 EditorSceneManager.OpenScene(reopen, OpenSceneMode.Single);
 
             Report(errors, notes, showDialog);
+            return errors.Count;
         }
 
         static IEnumerable<string> ScenesToCheck()
@@ -204,6 +208,35 @@ namespace DreamCar.EditorTools
             if (UnityEngine.Rendering.GraphicsSettings.defaultRenderPipeline == null)
                 errors.Add("URP varlığı atanmamış — bütün yüzeyler macenta görünür " +
                            "(DreamCar → Procedural → Setup Render Pipeline).");
+        }
+
+        // Backend HATA değil, DURUM: oyun PlayFab'siz tam oynanır (para,
+        // istatistik ve araçlar PlayerPrefs'te). Ama katmanın tamamı
+        // PLAYFAB_INSTALLED sembolüyle derlemeden çıkarılmış durumdaysa bulut
+        // kayıt, liderlik tablosu, başarım senkronu ve arkadaş listesi sessizce
+        // yok demektir — bunu hiç söylemeyen bir denetim eksik kalırdı.
+        static void ReportBackend(List<string> notes)
+        {
+            bool sdk = DreamCarPlayFabSetup.IsSdkPresent();
+            bool define = DreamCarPlayFabSetup.IsDefineSet();
+
+            if (sdk && define)
+            {
+                notes.Add("PlayFab: SDK var, PLAYFAB_INSTALLED tanımlı. " +
+                          "Title Id'nin dolu olduğundan emin ol (PlayFabAuth.titleId).");
+            }
+            else if (sdk)
+            {
+                notes.Add("PlayFab: SDK var ama PLAYFAB_INSTALLED TANIMLI DEĞİL — " +
+                          "backend katmanı derlemeye girmiyor. " +
+                          "DreamCar → Backend → PlayFab kurulumunu doğrula.");
+            }
+            else
+            {
+                notes.Add("PlayFab: SDK kurulu değil — bulut kayıt, liderlik tablosu, " +
+                          "başarım senkronu ve arkadaş listesi çalışmaz. " +
+                          "Oyun bunsuz da tam oynanır (ilerleme yalnızca cihazda kalır).");
+            }
         }
 
         static T FindFirst<T>() where T : UnityEngine.Object
