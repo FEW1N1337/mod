@@ -35,6 +35,7 @@ namespace DreamCar.Network
         public void Connect()
         {
             if (PhotonNetwork.IsConnected) return;
+            if (!HasAppId()) return;
             PhotonNetwork.GameVersion = gameVersion;
 
             // Öncelik: oyuncunun RegionSelector'dan seçtiği bölge, yoksa inspector değeri.
@@ -54,6 +55,42 @@ namespace DreamCar.Network
         public override void OnDisconnected(DisconnectCause cause)
         {
             Debug.LogWarning($"[Photon] Disconnected: {cause}");
+
+            // Kopma yalnızca Console'a yazılıyordu. Oyuncunun gördüğü tek şey
+            // hiç dolmayan bir oda listesiydi: buton basılıyor, hiçbir şey
+            // olmuyor, sebep görünmüyor. ReconnectionManager yeniden bağlanmayı
+            // deniyor, ama denediğini de söylemek gerekiyor.
+            if (cause == DisconnectCause.InvalidAuthentication ||
+                cause == DisconnectCause.CustomAuthenticationFailed)
+                UI.ToastNotification.Show("Photon App Id gecersiz — PhotonServerSettings'i kontrol et");
+            else if (cause != DisconnectCause.DisconnectByClientLogic)
+                UI.ToastNotification.Show($"Baglanti koptu: {cause}");
+        }
+
+        // App Id boşken ConnectUsingSettings sessizce false döner: menü açılır,
+        // oda listesi sonsuza kadar boş kalır ve HİÇBİR YERDE sebep yazmaz.
+        // Kurulumun en sık atlanan adımı bu, o yüzden tek ekranda anlaşılır
+        // olmalı. Kendi sunucusunu kuranlarda App Id gerekmiyor — Server alanı
+        // doluysa uyarmıyoruz.
+        static bool HasAppId()
+        {
+            var settings = PhotonNetwork.PhotonServerSettings;
+            if (settings == null || settings.AppSettings == null) return true;
+
+            bool hasAppId = !string.IsNullOrWhiteSpace(settings.AppSettings.AppIdRealtime);
+            bool hasOwnServer = !string.IsNullOrWhiteSpace(settings.AppSettings.Server);
+            if (hasAppId || hasOwnServer) return true;
+
+            Debug.LogError(
+                "[Photon] App Id GİRİLMEMİŞ — çevrimiçi hiçbir şey çalışmayacak.\n" +
+                "Yapılacak:\n" +
+                "  1) dashboard.photonengine.com → Create a New App\n" +
+                "  2) Photon SDK = 'Pun', sürüm = 'Pun 2'  (VARSAYILAN 'Fusion' İŞE YARAMAZ)\n" +
+                "  3) Uygulamanın App ID'sini kopyala\n" +
+                "  4) Unity: Window → Photon Unity Networking → Highlight Server Settings\n" +
+                "     → App Id PUN alanına yapıştır");
+            UI.ToastNotification.Show("Photon App Id girilmemiş — Console'a bak");
+            return false;
         }
     }
 }
