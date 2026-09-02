@@ -859,15 +859,7 @@ namespace DreamCar.EditorTools
                          new Vector2(0f, 1f), new Vector2(820f, 700f), new Vector2(200f, 70f));
             // RichChatUI bir MonoBehaviourPun ve RPC'lerini bu görünüm üzerinden
             // atıyor, o yüzden PhotonView şart.
-            //
-            // DİKKAT — Editor'de DOĞRULANMASI GEREKEN NOKTA: sahne
-            // PhotonView'larının ViewID'sini PUN, sahne kaydedilirken kendi
-            // atıyor. Betikle AddComponent edilen bir görünümün bu atamayı
-            // aldığını buradan doğrulayamıyorum (Photon henüz projede yok).
-            // Sohbet çalışmazsa çözümü tek adım: Photon import edildikten sonra
-            // sahneyi açıp kaydetmek, ya da PUN'un "Update PhotonViews in Scene"
-            // menüsünü çalıştırmak. README §Sohbet'e de yazıldı.
-            chatPanel.AddComponent<Photon.Pun.PhotonView>();
+            AssignSceneViewId(chatPanel.AddComponent<Photon.Pun.PhotonView>(), ChatSceneViewId);
             var richChat = chatPanel.AddComponent<RichChatUI>();
             richChat.inputField = chatInput;
             richChat.sendButton = chatSend;
@@ -2111,6 +2103,54 @@ namespace DreamCar.EditorTools
             rt.pivot = new Vector2(0.5f, 0.5f);
             rt.sizeDelta = size;
             rt.anchoredPosition = pos;
+        }
+
+        // Sahne PhotonView'ının ViewID'si — sohbetin çalışıp çalışmamasını
+        // belirleyen tek sayı.
+        //
+        // Sahne görünümlerinin ViewID'sini PUN, sahne kaydedilirken kendi atar.
+        // Betikle AddComponent edilen bir görünümde bu atama gerçekleşmezse
+        // ViewID 0 kalır; PUN 0'lı görünümü kaydetmez ve photonView.RPC(...)
+        // sessizce düşer. RichChatUI ve ChatUI mesajı YALNIZCA o RPC ile
+        // gönderiyor, başka yolu yok — yani sohbet tamamen ölür.
+        //
+        // Eskiden burada "sohbet çalışmazsa sahneyi açıp kaydet" diye bir not
+        // vardı. O adım unutulur; üstelik BUILD EVERYTHING sahneyi zaten kendi
+        // kaydediyor, kullanıcının araya gireceği bir an yok. Kimliği burada
+        // açıkça yazıyoruz.
+        //
+        // Doğrudan ViewID özelliğine değil, SerializedObject ile yazıyoruz:
+        // alan adı PUN sürümleri arasında değişebiliyor (sceneViewId /
+        // viewIdField) ve yanlış tahmin DERLEME HATASI olurdu. Bu yol, alan
+        // bulunamazsa çalışma anında yakalanabilir bir uyarıya dönüşüyor —
+        // ProceduralRenderPipeline.LinkRenderer ile aynı gerekçe.
+        //
+        // Araç prefablarındaki PhotonView'lar bu sorundan etkilenmiyor: onlar
+        // PhotonNetwork.Instantiate ile doğuyor ve kimliklerini çalışma anında
+        // alıyor. Risk yalnızca sahne görünümlerinde.
+        const int ChatSceneViewId = 1;
+
+        static void AssignSceneViewId(Photon.Pun.PhotonView view, int id)
+        {
+            if (!view) return;
+
+            var so = new SerializedObject(view);
+            // PUN sürümüne göre biri var: yenilerde sceneViewId, eskilerde viewIdField.
+            var prop = so.FindProperty("sceneViewId") ?? so.FindProperty("viewIdField");
+
+            if (prop != null)
+            {
+                prop.intValue = id;
+                so.ApplyModifiedPropertiesWithoutUndo();
+                EditorUtility.SetDirty(view);
+                return;
+            }
+
+            Debug.LogWarning(
+                "[DreamCarSetup] Sahne PhotonView'ının ViewID alanı bulunamadı " +
+                "(PUN sürümü alan adını değiştirmiş olabilir). ViewID 0 kalırsa " +
+                "SOHBET ÇALIŞMAZ.\nElle çöz: Window → Photon Unity Networking → " +
+                "\"Update PhotonViews in Scene\", ya da sahneyi açıp kaydet.");
         }
 
         static void AnchorCorner(RectTransform rt, Vector2 corner, Vector2 offset, Vector2 size)

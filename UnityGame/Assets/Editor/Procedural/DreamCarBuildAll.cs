@@ -107,6 +107,18 @@ namespace DreamCar.EditorTools.Procedural
                 DreamCarSetup.AddScenesToBuildSettings();
                 ProceduralMapGenerator.AddMapsToBuildSettings();
 
+                // Denetim EN SONDA ve Build Settings adımından SONRA: harita
+                // kontrolü o listeyi okuyor, önce koşsaydı üretilen her haritayı
+                // "Build Settings'te yok" diye bildirirdi.
+                //
+                // Bu projenin baskın hata ailesi sessiz: sistem yazılmış ama
+                // hiçbir yere bağlanmamış ve ne derleme hatası ne çalışma anı
+                // istisnası veriyor — sadece olması gereken olmuyor. Üretimin
+                // hemen ardından denetlemek, o aileyi ortaya çıktığı anda
+                // görünür kılan tek yol.
+                EditorUtility.DisplayProgressBar("DreamCar", "Sahneler denetleniyor…", 0.96f);
+                DreamCarValidator.Run(showDialog: false);
+
                 AssetDatabase.SaveAssets();
                 AssetDatabase.Refresh();
             }
