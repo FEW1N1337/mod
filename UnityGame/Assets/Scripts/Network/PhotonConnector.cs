@@ -52,6 +52,28 @@ namespace DreamCar.Network
             if (!PhotonNetwork.InLobby) PhotonNetwork.JoinLobby();
         }
 
+        // Davet linki soğuk başlangıçta HİÇ işe yaramıyordu.
+        //
+        // DeepLinkManager.TryJoinPending()'in tek çağıranı aynı sınıfın
+        // Parse() metoduydu; Parse ise Awake() içinden, Application.absoluteURL
+        // yolundan çağrılıyor. O anda Photon kesinlikle bağlı değil, dolayısıyla
+        // TryJoinPending ilk satırda "IsConnectedAndReady" kontrolüne takılıp
+        // false dönüyordu: PendingRoom doluyor, ekranda "Davet: ODA" bildirimi
+        // çıkıyor ve BİR DAHA HİÇBİR ŞEY OLMUYORDU. Yani davet linki, tam da
+        // var olma sebebi olan yolda — linke tıklayıp uygulamayı açmak — ölüydü.
+        //
+        // Burası doğru yer: bu bileşen bağlantı yaşam döngüsünün sahibi
+        // (OnConnectedToMaster → JoinLobby) ve DeepLinkManager ile aynı
+        // ~Bootstrap nesnesinde, ikisi de DontDestroyOnLoad.
+        //
+        // Bayat davet için ek iş gerekmiyor: TryJoinPending denemeden önce
+        // PendingRoom'u temizliyor (sonsuz döngü yok) ve oda kapanmışsa
+        // LobbyManager.OnJoinRoomFailed zaten ekranda sebebini gösteriyor.
+        public override void OnJoinedLobby()
+        {
+            if (Core.DeepLinkManager.Instance) Core.DeepLinkManager.Instance.TryJoinPending();
+        }
+
         public override void OnDisconnected(DisconnectCause cause)
         {
             Debug.LogWarning($"[Photon] Disconnected: {cause}");

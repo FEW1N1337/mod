@@ -1031,6 +1031,98 @@ Ormanda ~1200 prop var. Prop başına GameObject mobilde ölümcül olurdu, bu y
 
 ---
 
+## 18) v1.0 — Oynanabilirlik: ekonomi döngüsü, kurtarma, çevrimdışı test
+
+Bu turda düzeltilenler "eksik özellik" değil, **oyunu bitirilemez kılan
+kilitlenmelerdi**. Ayarları buradan bulabilirsin.
+
+### 18a) Serbest sürüşte gelir — `GameModes/FreeRoamMode.cs`
+
+`PlayerMoney.Add`'i çağıran her yer (yarış, drift modu, günlük ödül,
+referans, başarım, reklam, PlayFab senkronu) ya başka bir moddaydı ya oyun
+dışında. Ama **varsayılan mod serbest sürüş**: hızlı oyun ve lobiden kurulan
+odalar `mode` özelliğini hiç yazmıyor, `GameModeManager` de yazılmamış değeri
+`0` (= Free) okuyor. Oyuncu 5.000 ₺ ile başlıyor, ikinci araç 25.000 ₺ —
+yalnızca sürerek aradaki farkı **asla kapatamıyordu**.
+
+Ödül iki kaynaktan geliyor:
+
+| Alan | Varsayılan | RemoteConfig anahtarı |
+|---|---|---|
+| `moneyPerKilometre` | 120 ₺/km | `freeroam.moneyPerKm` |
+| `rewardPerThousandDriftPoints` | 5 ₺ / 1.000 puan | `freeroam.driftPerThousand` |
+| `toastEvery` | 250 ₺ (bildirim eşiği) | — |
+| `tickSeconds` | 5 sn (ödeme aralığı) | — |
+
+Mesafe kendi sayacımızdan değil, `StatsTracker`'ın zaten `PlayerStats`'e
+akıttığı değerden okunuyor — o, ışınlanma sıçramalarını (>50 m) eliyor ve
+yalnızca sahibi olunan araçta çalışıyor.
+
+Kablolama `GameModeManager.AddComponent` üzerinden: Editor'de atanacak
+hiçbir alan yok, yani "yazılmış ama hiç bağlanmamış" durumuna düşemez.
+
+### 18b) Yakıt tüketimi — `Vehicle/FuelSystem.cs`
+
+Eski değerler (`base 0.05 + gaz*0.4`) tam gazda saniyede 0,45 litre
+harcıyordu: **60 litrelik depo 133 saniyede** bitiyordu. Depoyu doldurmak
+1.500 ₺, başlangıç parası 5.000 ₺ ve gelir yok — üçüncü depodan sonra
+parasız ve yakıtsız kalınıyordu.
+
+Yeni: `baseDrainPerSecond = 0.006`, `throttleDrainMultiplier = 0.028`.
+Tam gazda ~29 dakika, rölantide ~2,8 saat. 100 km/h'te kilometre başına
+~1,22 litre ≈ 30 ₺ yakıta karşılık 120 ₺ kazanç — döngü artı bakiyeli.
+
+### 18c) Kurtarma — `Vehicle/CarRescue.cs`
+
+"Respawn", "Reset", "Flip" proje genelinde **sıfır sonuç** veriyordu. Takla
+atan, haritadan düşen veya istasyondan uzakta yakıtı biten araç sonsuza
+kadar kalakalıyordu; tek çıkış odadan çıkmaktı.
+
+- Altında zemin varsa **yerinde doğrultuyor** (yön korunur) — uzun bir
+  yolculuğu geri almak cezalandırıcı olurdu
+- Zemin yoksa (haritadan düşme) en yakın doğma noktasına alıyor
+- Depo boşsa `emergencyFuelLiters` (6 L) bedava veriyor, yoksa doğrultmanın
+  anlamı olmazdı
+- Ters durup duran araç `autoRescueSeconds` (5 sn) sonra kendiliğinden
+  kurtarılıyor; `fallY` (-60) altına düşen anında
+- `cooldownSeconds` (3 sn) ışınlanarak ilerlemeyi engelliyor
+
+HUD'da sağ üstte **Kurtar** butonu var (`CarActionButtons.rescueButton`).
+Bileşen her üç araç üreticisine de ekleniyor: prosedürel araçlar, sahne
+kurulumu ve RCCP dönüştürücüsü.
+
+### 18d) Çevrimdışı test modu — `Network/RoomManager.cs`
+
+Bir harita sahnesini Editor'de doğrudan Play'e basarak açmak hiçbir şey
+yapmıyordu: `PhotonNetwork.InRoom` false olduğu için araç doğmuyordu. Bu,
+`BUILD EVERYTHING` bittiğinde açık olan sahne olduğu için herkesin gördüğü
+ilk ekran — ve Photon App Id girilene kadar ana menüden de girilemediği için
+sürüşü denemenin hiçbir yolu yoktu.
+
+`RoomManager` artık `offlineFallbackDelay` (1,5 sn) bekleyip hâlâ bağlantı
+yoksa PUN'ın çevrimdışı moduna geçip yerel bir oda kuruyor. Çevrimiçi oyunu
+kesmez: lobiden gelindiğinde sahne zaten odadayken yükleniyor. Kapatmak için
+`allowOfflineFallback = false`.
+
+### 18e) Sessiz kalmayan teşhisler
+
+- **Photon App Id boşsa** `ConnectUsingSettings` sessizce `false` dönüyordu;
+  oyuncu hiç dolmayan bir oda listesine bakıyordu. Artık bağlanmadan önce
+  kontrol ediliyor ve Console'a adım adım ne yapılacağı yazılıyor —
+  özellikle Photon panelinde SDK'nın varsayılan `Fusion` yerine `Pun / Pun 2`
+  seçilmesi gerektiği.
+- **Ana menüde AudioListener yoktu** — menü tamamen sessizdi. Kamera
+  `new GameObject(...) + AddComponent<Camera>()` ile kurulduğu için Unity'nin
+  hazır kamera nesnesinin aksine listener eklenmiyordu.
+- **Davet linki soğuk başlangıçta ölüydü**: `TryJoinPending()`'in tek
+  çağıranı `Awake()` içinden gelen `Parse()`'tı ve o anda Photon bağlı
+  olmadığı için hep `false` dönüyordu. `PhotonConnector.OnJoinedLobby`
+  artık yeniden deniyor.
+- **HUD'da para göstergesi** eklendi — serbest sürüş artık sürerken
+  kazandırdığı için bakiye ekranda olmalı.
+
+---
+
 ## Dosya haritası
 
 | Dosya | Görev |
@@ -1038,6 +1130,7 @@ Ormanda ~1200 prop var. Prop başına GameObject mobilde ölümcül olurdu, bu y
 | `Scripts/Car/CarController.cs` | WheelCollider tabanlı fizik |
 | `Scripts/Car/CarCameraFollow.cs` | Kamera takibi |
 | `Scripts/Car/CarNetworkSync.cs` | Photon position/rotation sync |
+| `Scripts/Vehicle/CarRescue.cs` | Takla / düşme / yakıtsızlıktan kurtarma (§18c) |
 | `Scripts/Input/MobileTouchInput.cs` | Dokunmatik + klavye input |
 | `Scripts/Network/PhotonConnector.cs` | Master bağlantısı, singleton |
 | `Scripts/Network/LobbyManager.cs` | Oda listesi/oluştur/katıl |
@@ -1068,7 +1161,7 @@ Ormanda ~1200 prop var. Prop başına GameObject mobilde ölümcül olurdu, bu y
 | `Scripts/RCCPBridge/RCCPDamageBridge.cs` | RCCP_Damage ↔ CarDamage API köprü |
 | `Scripts/RCCPBridge/RCCPDetachableBridge.cs` | Hasar eşiğinde parça düşürme |
 | `Scripts/GameModes/GameMode.cs` | Enum + abstract base |
-| `Scripts/GameModes/FreeRoamMode.cs` | Kuralsız serbest sürüş |
+| `Scripts/GameModes/FreeRoamMode.cs` | Serbest sürüş + km/drift başına kazanç (§18a) |
 | `Scripts/GameModes/RaceMode.cs` | 3-2-1-GO + tur + ödül |
 | `Scripts/GameModes/DriftMode.cs` | 3 dk drift oturumu + ödül |
 | `Scripts/GameModes/GameModeManager.cs` | Room prop'a göre mod spawn |
