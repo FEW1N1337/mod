@@ -717,7 +717,7 @@ namespace DreamCar.EditorTools.Procedural
         }
 
         // Plaka yüzeyi. Doku 512x128 (4:1), quad da o oranda.
-        static Renderer MakePlateQuad(GameObject root, string name, Material mat,
+        internal static Renderer MakePlateQuad(GameObject root, string name, Material mat,
                                       Vector3 localPosition, float yawDegrees)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
@@ -787,7 +787,7 @@ namespace DreamCar.EditorTools.Procedural
 
         // Hasar dumanı — kaputtan yükselir. CarDamage emission.rateOverTime'ı
         // sağlığa göre yazıp Play() çağırıyor, o yüzden playOnAwake kapalı.
-        static ParticleSystem MakeDamageSmoke(GameObject root, Vector3 localPosition)
+        internal static ParticleSystem MakeDamageSmoke(GameObject root, Vector3 localPosition)
         {
             var go = new GameObject("DamageSmoke");
             go.transform.SetParent(root.transform, false);
@@ -828,12 +828,13 @@ namespace DreamCar.EditorTools.Procedural
             return ps;
         }
 
-        static Sprite UiSprite(string name) =>
+        // internal: RCCPCarConverter da aynı ikonları kullanıyor.
+        internal static Sprite UiSprite(string name) =>
             AssetDatabase.LoadAssetAtPath<Sprite>($"Assets/Generated/UI/{name}.png");
 
         // Araç üstünde beliren emote baloncuğu. Tek bir paylaşılan prefab —
         // her araç için yeniden üretmenin anlamı yok.
-        static GameObject EmotePopupPrefab()
+        internal static GameObject EmotePopupPrefab()
         {
             const string folder = "Assets/Generated/Prefabs";
             const string path = folder + "/EmotePopup.prefab";
@@ -894,10 +895,30 @@ namespace DreamCar.EditorTools.Procedural
                 catalog.cars.Add(def);
             }
 
+            // DIŞARIDAN eklenen araçları koru. Bu metot kataloğu SIFIRDAN kuruyor:
+            // Presets dizisini gezip CarCatalog.asset'i baştan yazıyor. Dönüştürülmüş
+            // bir RCCP aracı eklendikten sonra çalıştırılan her BUILD EVERYTHING onu
+            // listeden silerdi — varlık diskte kalır ama mağazada görünmez olurdu.
+            // Klasördeki id'si Presets'te olmayan her tanım geri ekleniyor.
+            var presetIds = new HashSet<string>();
+            foreach (var p in Presets) presetIds.Add(p.id);
+
+            foreach (var guid in AssetDatabase.FindAssets("t:CarDefinition", new[] { catalogFolder }))
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                var def = AssetDatabase.LoadAssetAtPath<Economy.CarDefinition>(path);
+                if (def == null || presetIds.Contains(def.id)) continue;
+                if (!catalog.cars.Contains(def))
+                {
+                    catalog.cars.Add(def);
+                    Debug.Log($"[Procedural] Katalogda korundu (dışarıdan eklenmiş): {def.displayName}");
+                }
+            }
+
             AssetDatabase.CreateAsset(catalog, $"{catalogFolder}/CarCatalog.asset");
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log($"[Procedural] Katalog: {catalogFolder}/CarCatalog.asset");
+            Debug.Log($"[Procedural] Katalog: {catalogFolder}/CarCatalog.asset ({catalog.cars.Count} araç)");
         }
 
         public static Economy.CarCatalog LoadCatalog() =>

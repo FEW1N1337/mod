@@ -313,10 +313,44 @@ Fizik motoru olarak RCCP'yi (Realistic Car Controller Pro, BoneCracker Games) ku
 
 1. Unity Asset Store → **Realistic Car Controller Pro** al ($50 civarı).
 2. Editor'de import et.
-3. Player Settings → Other Settings → **Scripting Define Symbols** → `RCCP_INSTALLED` ekle.
-4. Test aracına RCCP prefab'ını hazırla (BoneCracker demo aracı temel alınabilir).
-5. **RCCP denetleyicisiyle aynı GameObject'e** `RCCPCarAdapter` ekle. İstersen `RCCPNitroBridge`, `RCCPDamageBridge`, `RCCPDetachableBridge` de eklenebilir — bunlar opsiyonel. Köprüler RCCP API'sini bizim `IDriveInput` arayüzümüz altında sarar; `MobileTouchInput`, `NitroBar`, hasar HUD'u hepsi RCCP moduyla otomatik çalışır.
-6. `RCCPWheelGlowBridge` bileşeni de eklenirse bizim `WheelGlow.cs`'i devre dışı bırakır (çift emissive olmasın).
+3. Project penceresinde bir RCCP araç **prefab'ı** seç
+   (genelde `Assets/Realistic Car Controller Pro/Resources/Vehicles/` altında).
+4. Menü: **`DreamCar → RCCP → Seçili RCCP aracını DreamCar aracına çevir`**
+
+Hepsi bu. Araç `Assets/Resources/Car_rccp_<ad>.prefab` olarak kaydedilir,
+araç kataloğuna eklenir ve ana menüdeki **Araçlar** mağazasında görünür.
+Satın alıp seçtikten sonra odaya girince o araçla doğarsın.
+
+Dönüştürücünün otomatik yaptıkları:
+
+- `RCCP_INSTALLED` define'ını ekler (Standalone + Android + iOS) — elle
+  eklemene gerek yok. RCCP'nin varlığı zaten doğrulanmış oluyor.
+- **Köprü:** `RCCPCarAdapter` (asıl olan) + nitro, hasar, parça, parıltı köprüleri.
+- **Ağ:** `PhotonView` + `CarNetworkSync` (observed component bağlı).
+- **Oynanış:** drift skoru, vites, yakıt, hasar, istatistik, cruise control.
+- **Ses:** prosedürel motor sesi, lastik çığlığı, korna, çarpma.
+- **Görsel:** boya (en büyük mesh gövde kabul edilir), ön/arka plaka, drift dumanı
+  ve fren izi (her `WheelCollider` için).
+- **Kamera çapaları:** kaput, tampon, kokpit, üst — prefabın gerçek sınırlarından
+  hesaplanır, sabit sayı yazılmaz.
+- **Emote:** üç emote + araç üstü baloncuk.
+
+Bilerek **eklenmeyenler** ve sebepleri:
+
+| Eklenmeyen | Neden |
+|---|---|
+| `CarController` + kendi WheelCollider'larımız | Fizik RCCP'nin; iki sürücü aynı Rigidbody'yi süremez |
+| `CarNitro` | `RCCPNitroBridge` RCCP'nin kendi NOS'una gidiyor |
+| `WheelGlow` | RCCP kendi parıltısını getiriyor; `RCCPWheelGlowBridge` bizimkini kapatıyor |
+| Far / sinyal / uzun huzme | RCCP'nin kendi ışık sistemi var; ikisi aynı `Light`'ları sürerse titrer |
+
+> Prosedürel üretilen beş araç yerinde kalır — RCCP araçları onların **yanına**
+> gelir, yerine değil. Oyuncu mağazadan seçer. `BUILD EVERYTHING` tekrar
+> çalıştırıldığında dönüştürülmüş araç katalogda korunur.
+
+> **Lisans:** RCCP ve ondan türetilen prefab'lar **public** depoya konamaz
+> (Asset Store EULA). Dönüştürme kendi makinende çalışır; çıktı yalnızca
+> private depoya commit edilmeli.
 
 > **Köprüler RCCP tipine doğrudan bağlanmaz.** Bu kod RCCP'nin gerçek API'si görülmeden yazıldı; adlar tahmindi ve yanlış tahmin, define eklendiği anda projenin derlenmemesi demekti. Bunun yerine tip ve üye adları çalışma anında aranıyor (`RCCPReflection`). Bir ad tutmazsa proje yine derlenir; Console'a **RCCP'nin gerçek üye adlarını listeleyen** bir uyarı düşer. O listeyi geliştiriciye gönder, köprü adları tek turda düzeltilir.
 >
