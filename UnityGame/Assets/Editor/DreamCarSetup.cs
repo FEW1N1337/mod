@@ -216,6 +216,15 @@ namespace DreamCar.EditorTools
             cam.tag = "MainCamera";
             cam.transform.position = new Vector3(0f, 1f, -10f);
 
+            // AudioListener YOKTU — ana menü tamamen sessizdi. Sahneye kamera
+            // "new GameObject(...) + AddComponent<Camera>()" ile kuruluyor;
+            // bu yol, Unity'nin hazır kamera nesnesinin aksine AudioListener
+            // eklemiyor. Oyun sahnesinde eklenmişti, menüde unutulmuştu.
+            // Listener'sız sahnede HİÇBİR ses duyulmaz: menü müziği, arayüz
+            // sesi, hiçbiri. Unity bunu yalnızca bir uyarı olarak bildiriyor,
+            // Console akıp gidiyor ve sorun "ses yok galiba" diye kalıyor.
+            cam.gameObject.AddComponent<AudioListener>();
+
             // Bootstrap
             var boot = new GameObject("~Bootstrap");
             boot.AddComponent<GameBootstrap>();
