@@ -273,7 +273,9 @@ namespace DreamCar.Audio
 
         // --- Yardımcılar ---
 
-        static float SquareWave(float frequency, float t)
+        // ProceduralMusic de bu DSP yardımcılarını kullanıyor — sentez kodunu
+        // ikinci kez yazmak, iki ayrı yerde ayrışan iki döngü dikişi demek olurdu.
+        internal static float SquareWave(float frequency, float t)
         {
             // Yumuşatılmış kare — saf kare dalganın tiz aliasing'ini azaltır.
             float phase = (t * frequency) % 1f;
@@ -282,11 +284,11 @@ namespace DreamCar.Audio
             return Mathf.Lerp(smooth, raw, 0.65f);
         }
 
-        static float SoftClip(float x) => x / (1f + Mathf.Abs(x));
+        internal static float SoftClip(float x) => x / (1f + Mathf.Abs(x));
 
         // Tepe değerini hedefe çeker. Tek atış klipler için tek başına yeterlidir —
         // döngü dikişi harmanlaması istenmediğinde bu çağrılır.
-        static void NormalizePeak(float[] data, float target)
+        internal static void NormalizePeak(float[] data, float target)
         {
             float peak = 0f;
             foreach (var s in data) peak = Mathf.Max(peak, Mathf.Abs(s));
@@ -297,7 +299,7 @@ namespace DreamCar.Audio
         }
 
         // Tepe değerini normalize eder ve döngü dikişini kısa çapraz geçişle gizler.
-        static void NormalizeAndFadeLoopSeam(float[] data)
+        internal static void NormalizeAndFadeLoopSeam(float[] data)
         {
             NormalizePeak(data, 0.9f);
 

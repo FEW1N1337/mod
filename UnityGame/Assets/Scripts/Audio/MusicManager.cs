@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Audio;
+using UnityEngine.SceneManagement;
 
 namespace DreamCar.Audio
 {
@@ -13,6 +14,11 @@ namespace DreamCar.Audio
         public static MusicManager Instance { get; private set; }
 
         public enum Playlist { Menu, Gameplay }
+
+        [Tooltip("Bu sahne adı menü listesini çalar; diğer her sahne oyun içi listeyi.")]
+        public string menuSceneName = "MainMenu";
+
+        string MenuSceneName => string.IsNullOrEmpty(menuSceneName) ? "MainMenu" : menuSceneName;
 
         [Header("Parçalar")]
         public AudioClip[] menuTracks;
@@ -49,8 +55,37 @@ namespace DreamCar.Audio
             _active = _a;
         }
 
-        void OnEnable() => AudioBus.OnChanged += OnVolumeChanged;
-        void OnDisable() => AudioBus.OnChanged -= OnVolumeChanged;
+        void OnEnable()
+        {
+            AudioBus.OnChanged += OnVolumeChanged;
+            SceneManager.sceneLoaded += OnSceneLoaded;
+        }
+
+        void OnDisable()
+        {
+            AudioBus.OnChanged -= OnVolumeChanged;
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+        }
+
+        // Play(Playlist)'in sınıf DIŞINDA sıfır çağıranı vardı: Start() bir kez
+        // Play(Menu) çağırıyor ve orada bitiyordu. Yani parçalar eklense bile
+        // gameplayTracks asla çalmaz, menü parçası sürüş boyunca çalmaya devam
+        // ederdi.
+        //
+        // Değişimi bileşen kendi dinliyor. Dışarıdan çağırmak her sahne için ayrı
+        // kablolama demek olurdu ve bu bileşen DontDestroyOnLoad — ana menünün
+        // Start()'ı sahne geçişlerinde bir daha koşmuyor, yani "birinde unutulur"
+        // hatasına açık kalırdı. Olayı buradan dinleyince Editor'de atanacak
+        // hiçbir alan kalmıyor.
+        void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            if (mode == LoadSceneMode.Additive) return;   // ek sahne müziği değiştirmesin
+
+            var wanted = scene.name == MenuSceneName ? Playlist.Menu : Playlist.Gameplay;
+            if (wanted == _current && _active != null && _active.isPlaying) return;
+
+            Play(wanted);
+        }
 
         // Sürgü oynatıldığında çalan parça anında uysun — bir sonraki geçişi bekleme.
         // Crossfade sürerken dokunma, yoksa geçişin ara değerini ezeriz.
