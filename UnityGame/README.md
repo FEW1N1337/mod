@@ -1407,6 +1407,61 @@ kapanır — RCCP'nin fizikte yaptığının görsel karşılığı.
 
 ---
 
+## 23) v1.5 — Ana menüde gerçek bir garaj
+
+Geçen bölümde "aradaki fark ancak satın alınmış 3B varlıkla kapanır"
+demiştim. **Eksikti.** Asıl sebep şuydu:
+
+`CreateMainMenu` sahneye **hiç 3B içerik koymuyordu** — yalnızca bir kamera
+ve UI. Garaj diye bir mekân, aydınlatma, zemin: hiçbiri yoktu. Referans
+görüntünün oluşmamasının sebebi model kalitesi değil, sahnenin boş olmasıydı.
+
+Ve gereken her yapı taşı zaten projedeydi; garaj için hiç kullanılmamıştı:
+`MeshBuilder`, `ProceduralTextures.CreateTexturedMaterial`,
+`ProceduralCityGenerator.CreateMeshObject`, hatta
+`GarageCarousel.turntableDegPerSecond` bile.
+
+**`Editor/Procedural/ProceduralGarage.cs`** odayı kuruyor: zemin, üç duvar
+(ön açık — kamera oradan bakıyor), tavan, tavan ışıkları ve ortada aracın
+döneceği pivot. İki yeni doku: `garage_floor` (fayans ızgarası + kırmızı
+vurgu bandı) ve `garage_wall` (dikey lamel).
+
+Işıklar hem **emissive şerit** hem **gerçek `Light`**: yalnızca emissive
+koyarsak araç aydınlanmaz (URP'de emissive yüzey gerçek zamanlı ışık
+yaymıyor), yalnızca `Light` koyarsak kaynak görünmez. Öne ayrıca yumuşak bir
+dolgu ışığı — tepeden ışıkla aracın ön yüzü karanlıkta kalıyordu ve kamera
+tam oradan bakıyor.
+
+Kapalı oda olduğu için yansıma probu `boxProjection = true` ile çalışıyor
+(açık dünyadaki probun aksine, orada kutu izdüşümü yanlış olurdu).
+
+### Önizleme prefabı — eski engelin çözümü
+
+`GarageCarousel.previewMount` bilerek boş bırakılmıştı: araç prefabı
+`PhotonView` ve `Rigidbody` taşıyor, menüde odaya bağlı olmadan doğurmak
+hata üretiyor. **O gerekçe hâlâ geçerli** — çözüm önizlemeden vazgeçmek
+değil, prefabı ayırmaktı.
+
+`ProceduralCarGenerator` artık her araç için `Preview_<id>.prefab` de
+üretiyor: yalnızca `MeshFilter` + `MeshRenderer`. Rigidbody, WheelCollider,
+PhotonView, collider ve bütün MonoBehaviour'lar atılıyor; far ışıkları da
+(menüde sahneyi yıkıyorlardı). `CarDefinition.previewPrefabName` alanı
+bunu gösteriyor — dize kuralıyla çözmek sessizce bozulabilecek bir varsayım
+olurdu.
+
+Garajın ortasındaki **düz panel kaldırıldı**: arkasında gerçek araç
+dönerken önünde gri bir dikdörtgen durması onu tamamen gizlerdi. Küçük
+resimler mağaza satırlarında kullanılmaya devam ediyor (`ShopUI`).
+
+Denetçi artık önizleme prefabının çözüldüğünü de kontrol ediyor. Menü
+yerleşimi düz panel kalktıktan sonra yeniden tarandı: 18 öğe, sıfır çakışma.
+
+**Kalan sınır:** araç *modellerinin kendisi*. Bizimkiler prosedürel, kutumsu
+gövdeler; referanstaki elle modellenmiş. Garaj mekânı artık kod işi, araç
+modeli hâlâ varlık işi.
+
+---
+
 ## Dosya haritası
 
 | Dosya | Görev |
@@ -1419,6 +1474,7 @@ kapanır — RCCP'nin fizikte yaptığının görsel karşılığı.
 | `Editor/DreamCarValidator.cs` | Sahne kablolama denetimi (§18f) |
 | `Editor/CI/DreamCarCI.cs` | Batch-mode üretim + build (§19a) |
 | `Editor/Procedural/ProceduralCarThumbnails.cs` | Araç küçük resimleri (§22) |
+| `Editor/Procedural/ProceduralGarage.cs` | Ana menü garaj sahnesi (§23) |
 | `Editor/DreamCarPlayFabSetup.cs` | PLAYFAB_INSTALLED define'ı (§19c) |
 | `Editor/iOS/DreamCarIOSPostBuild.cs` | Info.plist + gizlilik manifesti (§20) |
 | `Scripts/Input/MobileTouchInput.cs` | Dokunmatik + klavye input |

@@ -201,11 +201,54 @@ namespace DreamCar.EditorTools.Procedural
 
             string prefabPath = $"{PrefabFolder}/{ToPrefabName(preset.id)}.prefab";
             PrefabUtility.SaveAsPrefabAsset(root, prefabPath, out bool ok);
+
+            // Menü garajı için AYRI bir önizleme prefabı.
+            //
+            // GarageCarousel.previewMount bugüne kadar bilerek boş bırakılmıştı:
+            // asıl araç prefabı PhotonView ve Rigidbody taşıyor, menü sahnesinde
+            // odaya bağlı olmadan doğurmak hata üretiyor. O gerekçe hâlâ geçerli
+            // — çözüm prefabı ayırmak, önizlemeden vazgeçmek değil.
+            SavePreviewPrefab(root, preset.id);
+
             Object.DestroyImmediate(root);
 
             if (!ok) Debug.LogError($"[Procedural] Prefab kaydedilemedi: {prefabPath}");
             else Debug.Log($"[Procedural] {preset.displayName} → {prefabPath}");
         }
+
+        // Yalnızca GÖRÜNEN hiyerarşi: MeshFilter + MeshRenderer. Rigidbody,
+        // WheelCollider, PhotonView, collider ve bütün MonoBehaviour'lar
+        // atılıyor. Menüde doğurulması tamamen zararsız.
+        internal static void SavePreviewPrefab(GameObject source, string carId)
+        {
+            var copy = Object.Instantiate(source);
+            copy.name = PreviewPrefabName(carId);
+
+            // Alttan üste doğru: bir bileşeni silmek başka bir bileşenin
+            // RequireComponent bağımlılığını kırabiliyor, ters sırada gitmek
+            // "can't remove because X depends on it" hatalarını doğuruyor.
+            foreach (var c in copy.GetComponentsInChildren<Component>(true))
+            {
+                if (c == null) continue;
+                if (c is Transform) continue;
+                if (c is MeshFilter) continue;
+                if (c is MeshRenderer) continue;
+                Object.DestroyImmediate(c, allowDestroyingAssets: false);
+            }
+
+            // Işık ve partikül gibi görsel olmayan çocuklar da kalksın: menüde
+            // araç prefabındaki far ışıkları sahneyi yıkar.
+            foreach (var light in copy.GetComponentsInChildren<Light>(true))
+                if (light) Object.DestroyImmediate(light.gameObject);
+
+            string path = $"{PrefabFolder}/{copy.name}.prefab";
+            PrefabUtility.SaveAsPrefabAsset(copy, path, out bool previewOk);
+            Object.DestroyImmediate(copy);
+
+            if (!previewOk) Debug.LogWarning($"[Procedural] Önizleme prefabı kaydedilemedi: {path}");
+        }
+
+        internal static string PreviewPrefabName(string carId) => "Preview_" + ToPrefabName(carId);
 
         public static string ToPrefabName(string carId) =>
             "Car_" + carId.Replace("car.", "");
@@ -888,6 +931,7 @@ namespace DreamCar.EditorTools.Procedural
                 def.displayName = preset.displayName;
                 def.price = i < prices.Length ? prices[i] : 50000;
                 def.resourcePrefabName = ToPrefabName(preset.id);
+                def.previewPrefabName = PreviewPrefabName(def.id);
                 def.topSpeedKmh = preset.topSpeed;
                 def.maxMotorTorque = preset.motorTorque;
                 def.speedStat = Mathf.RoundToInt(Mathf.InverseLerp(150f, 240f, preset.topSpeed) * 10f);

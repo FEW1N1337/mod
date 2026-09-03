@@ -24,6 +24,13 @@ namespace DreamCar.Economy
         [Tooltip("Prefab name under Assets/Resources/ (PhotonNetwork.Instantiate uses this string).")]
         public string resourcePrefabName = "Car";
 
+        // Menü garajındaki 3B önizleme için AYRI prefab: yalnızca görünen
+        // hiyerarşi, Rigidbody/PhotonView/collider yok. Asıl prefabı menüde
+        // doğurmak odaya bağlı olmadan hata üretiyor.
+        // Dize kuralıyla ("Preview_" + ad) çözmek sessizce bozulabilecek bir
+        // varsayım olurdu; alan açık duruyor.
+        public string previewPrefabName = "";
+
         [Header("Stats (display only)")]
         [Range(0, 10)] public int speedStat = 7;
         [Range(0, 10)] public int accelerationStat = 7;
