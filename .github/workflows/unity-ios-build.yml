@@ -93,6 +93,10 @@ jobs:
           targetPlatform: iOS
           buildName: DreamCar
           buildsPath: build
+          # Android ile aynı gerekçe: depoda sahne, üretilmiş varlık ve
+          # ProjectSettings yok, hepsi prosedürel üretiliyor. Varsayılan metot
+          # boş bir Xcode projesi çıkarırdı.
+          buildMethod: DreamCar.EditorTools.CI.DreamCarCI.GenerateAndBuild
 
       - name: Import signing certificate
         env:
