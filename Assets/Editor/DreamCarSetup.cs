@@ -301,10 +301,14 @@ namespace DreamCar.EditorTools
 
             // Main panel
             var mainPanel = MakeUiChild(canvasGo, "MainPanel");
-            var titleLabel = MakeText(mainPanel, "TitleLabel", "DreamCar", new Vector2(0f, 400f), 96);
-            var nickInput = MakeInputField(mainPanel, "NicknameInput", "Kullanıcı adı", new Vector2(0f, 200f));
-            var playBtn = MakeButton(mainPanel, "PlayButton", "OYNA", new Vector2(0f, 40f), key: "play");
-            var statusText = MakeText(mainPanel, "StatusText", "Bağlanıyor…", new Vector2(0f, -100f), 32);
+            // Üst şerit: kullanıcı adı solda, başlık ortada. Kullanıcı adı
+            // eskiden (0,200)'deydi ve garaj ortaya alınınca aracın üstüne
+            // biniyordu.
+            var titleLabel = MakeText(mainPanel, "TitleLabel", "DreamCar", new Vector2(0f, 480f), 72);
+            var nickInput = MakeInputField(mainPanel, "NicknameInput", "Kullanıcı adı", new Vector2(-680f, 480f));
+            // OYNA altta ortada — garaj artik ekranin ortasini kapliyor.
+            var playBtn = MakeButton(mainPanel, "PlayButton", "OYNA", new Vector2(200f, -230f), key: "play");
+            var statusText = MakeText(mainPanel, "StatusText", "Bağlanıyor…", new Vector2(0f, 400f), 26);
 
             var mainMenuUI = mainPanel.AddComponent<MainMenuUI>();
             mainMenuUI.nicknameInput = nickInput;
@@ -318,20 +322,22 @@ namespace DreamCar.EditorTools
             var garageThumbGo = new GameObject("GarageThumb", typeof(RectTransform), typeof(Image));
             garageThumbGo.transform.SetParent(mainPanel.transform, false);
             var garageThumbRt = garageThumbGo.GetComponent<RectTransform>();
-            garageThumbRt.anchoredPosition = new Vector2(-600f, 140f);
-            garageThumbRt.sizeDelta = new Vector2(360f, 200f);
+            garageThumbRt.anchoredPosition = new Vector2(0f, 110f);
+            garageThumbRt.sizeDelta = new Vector2(760f, 340f);
             var garageThumb = garageThumbGo.GetComponent<Image>();
             Skin(garageThumb, "panel", Palette.Surface);
             garageThumb.preserveAspect = true;
 
-            var garagePrev = MakeChevronButton(mainPanel, "GaragePrev", new Vector2(-820f, 140f), pointRight: false);
+            var garagePrev = MakeChevronButton(mainPanel, "GaragePrev", new Vector2(-490f, 110f), pointRight: false);
             garagePrev.GetComponent<RectTransform>().sizeDelta = new Vector2(120f, 120f);
-            var garageNext = MakeChevronButton(mainPanel, "GarageNext", new Vector2(-380f, 140f), pointRight: true);
+            var garageNext = MakeChevronButton(mainPanel, "GarageNext", new Vector2(490f, 110f), pointRight: true);
             garageNext.GetComponent<RectTransform>().sizeDelta = new Vector2(120f, 120f);
 
-            var garageName = MakeText(mainPanel, "GarageName", "-", new Vector2(-600f, 10f), 36);
-            var garagePrice = MakeText(mainPanel, "GaragePrice", "-", new Vector2(-600f, -50f), 28);
-            var garageSelect = MakeButton(mainPanel, "GarageSelect", "Seç", new Vector2(-600f, -140f), key: "select");
+            var garageName = MakeText(mainPanel, "GarageName", "-", new Vector2(0f, -95f), 40);
+            garageName.GetComponent<RectTransform>().sizeDelta = new Vector2(600f, 50f);
+            var garagePrice = MakeText(mainPanel, "GaragePrice", "-", new Vector2(0f, -145f), 28);
+            garagePrice.GetComponent<RectTransform>().sizeDelta = new Vector2(600f, 40f);
+            var garageSelect = MakeButton(mainPanel, "GarageSelect", "Seç", new Vector2(-200f, -230f), key: "select");
 
             var garage = mainPanel.AddComponent<GarageCarousel>();
             garage.prevButton = garagePrev;
@@ -358,11 +364,20 @@ namespace DreamCar.EditorTools
             var roomListParent = MakeListContainer(lobbyPanel, "RoomList",
                 new Vector2(-400f, 0f), new Vector2(600f, 700f));
 
+            // Arama kutusu — Dream Road'daki gibi listenin üstünde. Sekiz harita
+            // × varyantlarla oda sayısı hızla artıyor, isimle filtrelemeden
+            // arkadaşının odasını bulmak kaydırmaya kalıyor.
+            var searchInput = MakeInputField(lobbyPanel, "SearchInput", "Oda ara…",
+                                             new Vector2(-400f, 400f));
+
             var lobbyUI = lobbyPanel.AddComponent<LobbyUI>();
             lobbyUI.createRoomInput = createNameInput;
             lobbyUI.createButton = createBtn;
             lobbyUI.quickJoinButton = quickJoinBtn;
             lobbyUI.roomListParent = roomListParent;
+            lobbyUI.searchInput = searchInput;
+            // Harita adını çözmek için — LobbyManager ve RoomCreatorUI ile aynı varlık.
+            lobbyUI.mapCatalog = Procedural.Maps.ProceduralMapGenerator.LoadMapCatalog();
             // roomEntryPrefab hiç atanmıyordu: Refresh() erken çıkıyor, oda listesi
             // hep boş kalıyor ve oyuncu hiçbir odaya giremiyordu.
             lobbyUI.roomEntryPrefab = MakeRoomEntryTemplate(lobbyPanel, "RoomEntryTemplate");
@@ -599,8 +614,12 @@ namespace DreamCar.EditorTools
             var gaugeImg = gaugeGo.GetComponent<Image>();
             Skin(gaugeImg, "ring", Palette.AccentDim);
             gaugeImg.raycastTarget = false;
-            AnchorTo(gaugeGo.GetComponent<RectTransform>(),
-                     new Vector2(0.5f, 0f), new Vector2(0f, 210f), new Vector2(280f, 280f));
+            // Gösterge SAĞ ÜSTTE. Eskiden alt ortadaydı ve tam da baş parmakların
+            // gaz/fren için gittiği yere oturuyordu; üstelik sürüş sırasında göz
+            // yolun ortasından aşağı inmek zorunda kalıyordu. Tür standardı sağ
+            // üst köşe — göz yoldan çok az sapıyor ve pedallara yer açılıyor.
+            AnchorCorner(gaugeGo.GetComponent<RectTransform>(),
+                         new Vector2(1f, 1f), new Vector2(190f, 190f), new Vector2(300f, 300f));
 
             // İğne göstergenin MERKEZİNDE duruyor ama pivotu tabanında: dönüş
             // ekseni merkez olsun diye. sizeDelta yüksekliği yarıçapı belirliyor.
@@ -620,23 +639,30 @@ namespace DreamCar.EditorTools
             // kendisi buluyor.
             hudPanel.AddComponent<SpeedometerNeedle>().needle = needleRt;
 
-            var speedText = MakeText(hudPanel, "SpeedText", "0 km/h", Vector2.zero, 44);
-            AnchorTo(speedText.GetComponent<RectTransform>(),
-                     new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(240f, 70f));
+            // Hız yazısı artık kadranın ALTINDA ve küçük: asıl okuma iğneden
+            // yapılıyor, rakam teyit için. Gösterge çocuğu OLARAK değil kardeş
+            // olarak duruyor — kadran ileride ölçeklenirse yazı bozulmasın.
+            var speedText = MakeText(hudPanel, "SpeedText", "0 km/h", Vector2.zero, 30);
+            AnchorCorner(speedText.GetComponent<RectTransform>(),
+                         new Vector2(1f, 1f), new Vector2(190f, 375f), new Vector2(260f, 50f));
 
             var playerCountText = MakeText(hudPanel, "PlayerCount", "0/16", Vector2.zero, 32);
+            // Üst şeride, oda adının yanına. Eskiden sağ üstteydi ve gösterge
+            // oraya taşınınca kadranın altında kalıyordu.
             AnchorCorner(playerCountText.GetComponent<RectTransform>(),
-                         new Vector2(1f, 1f), new Vector2(260f, 190f), new Vector2(360f, 60f));
+                         new Vector2(0f, 1f), new Vector2(960f, 70f), new Vector2(220f, 60f));
 
             var roomNameText = MakeText(hudPanel, "RoomName", "-", Vector2.zero, 32);
             roomNameText.alignment = TextAlignmentOptions.MidlineLeft;
             AnchorCorner(roomNameText.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(330f, 70f), new Vector2(600f, 70f));
+                         new Vector2(0f, 1f), new Vector2(640f, 70f), new Vector2(300f, 60f));
             // Sağ ALT köşe artık gaz/fren/el freni için ayrıldı; çıkış butonu orada
             // kalsaydı gaz pedalıyla çakışırdı. Sağ üste, köşeye sabitlendi.
+            // Çıkış ve duraklat üst ORTADA: sağ üst köşenin tamamı artık
+            // göstergenin ve ikon sütununun.
             var leaveBtn = MakeButton(hudPanel, "LeaveButton", "Çıkış", Vector2.zero);
             AnchorCorner(leaveBtn.GetComponent<RectTransform>(),
-                         new Vector2(1f, 1f), new Vector2(160f, 70f), new Vector2(240f, 100f));
+                         new Vector2(0f, 1f), new Vector2(1500f, 70f), new Vector2(140f, 90f));
 
             // Para göstergesi. Serbest sürüş artık kilometre ve drift başına
             // ödeme yapıyor (FreeRoamMode); bakiye ekranda olmazsa oyuncu
@@ -644,7 +670,7 @@ namespace DreamCar.EditorTools
             var moneyText = MakeText(hudPanel, "MoneyText", "0 ₺", Vector2.zero, 34);
             moneyText.alignment = TextAlignmentOptions.MidlineLeft;
             AnchorCorner(moneyText.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(250f, 150f), new Vector2(440f, 60f));
+                         new Vector2(0f, 1f), new Vector2(330f, 70f), new Vector2(280f, 60f));
 
             var hud = hudPanel.AddComponent<InGameHUD>();
             hud.speedText = speedText;
@@ -661,8 +687,8 @@ namespace DreamCar.EditorTools
             var repairBg = new GameObject("RepairBG", typeof(RectTransform), typeof(Image));
             repairBg.transform.SetParent(hudPanel.transform, false);
             Skin(repairBg.GetComponent<Image>(), "pill", Palette.SurfaceDeep);
-            AnchorCorner(repairBg.GetComponent<RectTransform>(), new Vector2(1f, 1f),
-                         new Vector2(260f, 400f), new Vector2(280f, 18f));
+            AnchorCorner(repairBg.GetComponent<RectTransform>(), new Vector2(0f, 1f),
+                         new Vector2(250f, 395f), new Vector2(280f, 18f));
 
             var repairFillGo = new GameObject("RepairFill", typeof(RectTransform), typeof(Image));
             repairFillGo.transform.SetParent(repairBg.transform, false);
@@ -675,12 +701,14 @@ namespace DreamCar.EditorTools
             repairFillRt.offsetMin = Vector2.zero; repairFillRt.offsetMax = Vector2.zero;
 
             var repairPrice = MakeText(hudPanel, "RepairPrice", "-", Vector2.zero, 22);
-            AnchorCorner(repairPrice.GetComponent<RectTransform>(), new Vector2(1f, 1f),
-                         new Vector2(430f, 400f), new Vector2(160f, 40f));
+            // Fiyat çubuğun SAĞINA. Eskiden ikisi de (…,400) hizasındaydı ve
+            // x aralıkları çakışıyordu — fiyat yazısı çubuğun üstüne biniyordu.
+            AnchorCorner(repairPrice.GetComponent<RectTransform>(), new Vector2(0f, 1f),
+                         new Vector2(530f, 395f), new Vector2(200f, 40f));
 
             var repairBtn = MakeButton(hudPanel, "RepairButton", "Tamir", Vector2.zero, key: "repair");
-            AnchorCorner(repairBtn.GetComponent<RectTransform>(), new Vector2(1f, 1f),
-                         new Vector2(260f, 320f), new Vector2(220f, 90f));
+            AnchorCorner(repairBtn.GetComponent<RectTransform>(), new Vector2(0f, 1f),
+                         new Vector2(150f, 470f), new Vector2(220f, 90f));
 
             var repair = hudPanel.AddComponent<RepairPanel>();
             repair.healthFill = repairFill;
@@ -691,18 +719,24 @@ namespace DreamCar.EditorTools
             // Vites etiketi, drift skoru+combo ve drift seansı sayacı
             // hesaplanıyordu ama HİÇBİRİNİN ekran tüketicisi yoktu; yarış
             // sıralama tablosu (LeaderboardUI) da hiçbir sahneye eklenmiyordu.
-            var gearLabel = MakeText(hudPanel, "GearLabel", "N", Vector2.zero, 44);
-            // Göstergenin sağına: (0,200) iğnenin tam üstüne denk geliyordu.
-            AnchorTo(gearLabel.GetComponent<RectTransform>(),
-                     new Vector2(0.5f, 0f), new Vector2(215f, 130f), new Vector2(120f, 70f));
+            // Vites rakamı kadranın İÇİNDE — gerçek araç göstergelerinde de orada
+            // durur ve tek bakışta hız+vites birlikte okunur. Gösterge nesnesinin
+            // çocuğu, böylece kadranla birlikte taşınıyor.
+            var gearLabel = MakeText(gaugeGo, "GearLabel", "N", Vector2.zero, 52);
+            var gearRt = gearLabel.GetComponent<RectTransform>();
+            gearRt.anchorMin = new Vector2(0.5f, 0.5f);
+            gearRt.anchorMax = new Vector2(0.5f, 0.5f);
+            gearRt.anchoredPosition = new Vector2(0f, -52f);
+            gearRt.sizeDelta = new Vector2(110f, 70f);
+            gearLabel.alignment = TextAlignmentOptions.Center;
 
             var driftLabel = MakeText(hudPanel, "DriftScore", "", Vector2.zero, 36);
             AnchorTo(driftLabel.GetComponent<RectTransform>(),
-                     new Vector2(0.5f, 1f), new Vector2(0f, -110f), new Vector2(520f, 60f));
+                     new Vector2(0.5f, 1f), new Vector2(0f, -510f), new Vector2(520f, 60f));
 
             var driftTimer = MakeText(hudPanel, "DriftTimer", "", Vector2.zero, 40);
             AnchorTo(driftTimer.GetComponent<RectTransform>(),
-                     new Vector2(0.5f, 1f), new Vector2(0f, -50f), new Vector2(260f, 60f));
+                     new Vector2(0.5f, 1f), new Vector2(0f, -450f), new Vector2(260f, 60f));
 
             var driveHud = hudPanel.AddComponent<DriveHud>();
             driveHud.gearLabel = gearLabel;
@@ -715,8 +749,9 @@ namespace DreamCar.EditorTools
             // açılamazdı.
             var lbText = MakeText(hudPanel, "RaceStandings", "", Vector2.zero, 24);
             lbText.alignment = TextAlignmentOptions.TopRight;
-            AnchorCorner(lbText.GetComponent<RectTransform>(),
-                         new Vector2(1f, 1f), new Vector2(230f, 800f), new Vector2(420f, 200f));
+            // Sağ altta gaz pedalının tam üstündeydi. Orta üste alındı.
+            AnchorTo(lbText.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 1f), new Vector2(0f, -330f), new Vector2(420f, 140f));
             var standings = hudPanel.AddComponent<Race.LeaderboardUI>();
             standings.label = lbText;
 
@@ -734,46 +769,48 @@ namespace DreamCar.EditorTools
 
             var camBtn = MakeIconButton(hudPanel, "CameraButton", "", Vector2.zero, "icon_camera");
             AnchorCorner(camBtn.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(100f, 340f), new Vector2(120f, 110f));
+                         new Vector2(0f, 1f), new Vector2(360f, 155f), new Vector2(110f, 110f));
             actions.cameraButton = camBtn;
 
             var hornBtn = MakeIconButton(hudPanel, "HornButton", "", Vector2.zero, "icon_horn");
             AnchorCorner(hornBtn.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(100f, 460f), new Vector2(120f, 110f));
+                         new Vector2(0f, 1f), new Vector2(480f, 155f), new Vector2(110f, 110f));
             actions.hornButton = hornBtn;
 
             var sigLeft = MakeChevronButton(hudPanel, "SignalLeft", Vector2.zero, pointRight: false);
             AnchorCorner(sigLeft.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(100f, 580f), new Vector2(120f, 110f));
+                         new Vector2(0f, 1f), new Vector2(600f, 155f), new Vector2(110f, 110f));
             actions.signalLeftButton = sigLeft;
 
             var sigRight = MakeChevronButton(hudPanel, "SignalRight", Vector2.zero, pointRight: true);
             AnchorCorner(sigRight.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(100f, 700f), new Vector2(120f, 110f));
+                         new Vector2(0f, 1f), new Vector2(720f, 155f), new Vector2(110f, 110f));
             actions.signalRightButton = sigRight;
 
             var hazardBtn = MakeIconButton(hudPanel, "HazardButton", "", Vector2.zero, "icon_hazard");
             AnchorCorner(hazardBtn.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(100f, 820f), new Vector2(120f, 110f));
+                         new Vector2(0f, 1f), new Vector2(840f, 155f), new Vector2(110f, 110f));
             actions.hazardButton = hazardBtn;
 
             var emoteBtn = MakeIconButton(hudPanel, "EmoteButton", "", Vector2.zero, "icon_emote");
             AnchorCorner(emoteBtn.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(100f, 940f), new Vector2(120f, 110f));
+                         new Vector2(0f, 1f), new Vector2(960f, 155f), new Vector2(110f, 110f));
             actions.emoteButton = emoteBtn;
 
             // Kurtarma butonu. Sol sütun 940'ta bitiyor, bir sonrası ekran
             // dışına taşardı; ayrıca bu buton nadir ama KRİTİK — takla atan,
             // haritadan düşen veya yakıtı biten araç için tek çıkış. Çıkış
             // butonunun yanına, sağ üste koyuyoruz.
-            var rescueBtn = MakeButton(hudPanel, "RescueButton", "Kurtar", Vector2.zero, key: "rescue");
+            // Kurtar da aynı sütunda. Eskiden (420,70)'teydi ve DURAKLAT
+            // butonuyla çakışıyordu: aynı köşede, aynı hizada, üst üste.
+            var rescueBtn = MakeIconButton(hudPanel, "RescueButton", "", Vector2.zero, "icon_car");
             AnchorCorner(rescueBtn.GetComponent<RectTransform>(),
-                         new Vector2(1f, 1f), new Vector2(420f, 70f), new Vector2(240f, 100f));
+                         new Vector2(0f, 1f), new Vector2(1080f, 155f), new Vector2(110f, 110f));
             actions.rescueButton = rescueBtn;
 
             var pingText = MakeText(hudPanel, "PingText", "-- ms", Vector2.zero, 24);
             AnchorCorner(pingText.GetComponent<RectTransform>(),
-                         new Vector2(1f, 1f), new Vector2(260f, 250f), new Vector2(360f, 50f));
+                         new Vector2(0f, 1f), new Vector2(1180f, 70f), new Vector2(180f, 50f));
             hudPanel.AddComponent<PingIndicator>().label = pingText;
 
             // Minimap — 8 harita var, yön bulma olmadan oyuncu kayboluyor.
@@ -803,8 +840,12 @@ namespace DreamCar.EditorTools
             var minimapRt = minimapGo.GetComponent<RectTransform>();
             // (760,200) merkeze göreydi: iPad 4:3'te görünür yatay yarı-aralık
             // ±831 ve minimap'in sağ kenarı 890'a düşüyordu — ekran dışında.
-            AnchorCorner(minimapRt, new Vector2(1f, 1f),
-                         new Vector2(170f, 560f), new Vector2(260f, 260f));
+            // Minimap SOL ÜSTE. Sağ tarafta (170,560) duruyordu ve orası nitro
+            // butonu, nitro çubuğu ve yakıt çubuğuyla ZATEN çakışıyordu —
+            // minimap üçünün de üstüne biniyordu. Sağ sütun artık göstergenin,
+            // ikon sütununun ve pedalların; minimap'e yer yok.
+            AnchorCorner(minimapRt, new Vector2(0f, 1f),
+                         new Vector2(150f, 240f), new Vector2(260f, 260f));
 
             var minimap = minimapGo.AddComponent<Minimap>();
             minimap.minimapCamera = minimapCam;
@@ -848,15 +889,15 @@ namespace DreamCar.EditorTools
             var chatMessages = MakeText(chatPanel, "ChatMessages", "", Vector2.zero, 24);
             chatMessages.alignment = TextAlignmentOptions.BottomLeft;
             AnchorCorner(chatMessages.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(510f, 430f), new Vector2(620f, 420f));
+                         new Vector2(0f, 1f), new Vector2(480f, 545f), new Vector2(420f, 170f));
 
             var chatInput = MakeInputField(chatPanel, "ChatInput", "Mesaj…", Vector2.zero);
             AnchorCorner(chatInput.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(460f, 700f), new Vector2(500f, 70f));
+                         new Vector2(0f, 0f), new Vector2(1040f, 90f), new Vector2(440f, 70f));
 
             var chatSend = MakeButton(chatPanel, "ChatSend", "Gönder", Vector2.zero);
             AnchorCorner(chatSend.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(820f, 700f), new Vector2(200f, 70f));
+                         new Vector2(0f, 0f), new Vector2(1360f, 90f), new Vector2(150f, 70f));
             // RichChatUI bir MonoBehaviourPun ve RPC'lerini bu görünüm üzerinden
             // atıyor, o yüzden PhotonView şart.
             AssignSceneViewId(chatPanel.AddComponent<Photon.Pun.PhotonView>(), ChatSceneViewId);
@@ -1090,7 +1131,7 @@ namespace DreamCar.EditorTools
             // Persistent listener şart: onClick.AddListener sahneye serialize edilmez.
             var pauseBtn = MakeButton(hudPanel, "PauseButton", "❚❚", Vector2.zero);
             AnchorCorner(pauseBtn.GetComponent<RectTransform>(),
-                         new Vector2(1f, 1f), new Vector2(400f, 70f), new Vector2(120f, 100f));
+                         new Vector2(0f, 1f), new Vector2(1360f, 70f), new Vector2(140f, 90f));
             UnityEventTools.AddPersistentListener(pauseBtn.onClick, pauseScript.Toggle);
         }
 
@@ -1395,23 +1436,23 @@ namespace DreamCar.EditorTools
             // dışına taşıyordu.
             var navSettings = MakeIconButton(mainPanel, "NavSettings", "Ayarlar", Vector2.zero, "icon_gear", key: "settings");
             AnchorTo(navSettings.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
-                     new Vector2(-600f, 290f), new Vector2(280f, 120f));
+                     new Vector2(600f, 190f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navSettings.onClick, settings.Open);
             var navLeaderboard = MakeIconButton(mainPanel, "NavLeaderboard", "Liderlik", Vector2.zero, "icon_trophy", key: "leaderboard");
             AnchorTo(navLeaderboard.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
-                     new Vector2(-300f, 290f), new Vector2(280f, 120f));
+                     new Vector2(-450f, 75f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navLeaderboard.onClick, leaderboard.Open);
             var navAchievements = MakeIconButton(mainPanel, "NavAchievements", "Başarımlar", Vector2.zero, "icon_flag", key: "achievements");
             AnchorTo(navAchievements.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
-                     new Vector2(0f, 290f), new Vector2(280f, 120f));
+                     new Vector2(-150f, 75f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navAchievements.onClick, achievements.Open);
             var navShop = MakeIconButton(mainPanel, "NavShop", "Mağaza", Vector2.zero, "icon_coin", key: "shop");
             AnchorTo(navShop.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
-                     new Vector2(300f, 290f), new Vector2(280f, 120f));
+                     new Vector2(-300f, 190f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navShop.onClick, coinShop.Open);
             var navStats = MakeIconButton(mainPanel, "NavStats", "İstatistik", Vector2.zero, "icon_chart", key: "stats.title");
             AnchorTo(navStats.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
-                     new Vector2(600f, 290f), new Vector2(280f, 120f));
+                     new Vector2(150f, 75f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navStats.onClick, stats.Open);
 
             // İkinci sıra — birinci sıra beş butonla dolu.
@@ -1419,18 +1460,18 @@ namespace DreamCar.EditorTools
             // açıp kapatıyoruz. GameObject.SetActive kalıcı listener hedefi olabiliyor.
             var navCreate = MakeIconButton(mainPanel, "NavCreateRoom", "Oda Kur", Vector2.zero, "icon_plus", key: "room.create");
             AnchorTo(navCreate.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
-                     new Vector2(-150f, 160f), new Vector2(280f, 120f));
+                     new Vector2(0f, 190f), new Vector2(280f, 100f));
             UnityEventTools.AddBoolPersistentListener(navCreate.onClick, createPanel.SetActive, true);
             UnityEventTools.AddBoolPersistentListener(rcClose.onClick, createPanel.SetActive, false);
             var navRegion = MakeIconButton(mainPanel, "NavRegion", "Bölge", Vector2.zero, "icon_globe");
             AnchorTo(navRegion.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
-                     new Vector2(150f, 160f), new Vector2(280f, 120f));
+                     new Vector2(300f, 190f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navRegion.onClick, region.Open);
 
             // ShopUI'de Open/Close yok — paneli doğrudan açıp kapatıyoruz.
             var navCarShop = MakeIconButton(mainPanel, "NavCarShop", "Araçlar", Vector2.zero, "icon_car", key: "garage");
             AnchorTo(navCarShop.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
-                     new Vector2(450f, 160f), new Vector2(280f, 120f));
+                     new Vector2(-600f, 190f), new Vector2(280f, 100f));
             UnityEventTools.AddBoolPersistentListener(navCarShop.onClick, carShopPanel.SetActive, true);
             UnityEventTools.AddBoolPersistentListener(carShopClose.onClick, carShopPanel.SetActive, false);
 
@@ -1479,7 +1520,7 @@ namespace DreamCar.EditorTools
 
             var navSocial = MakeIconButton(mainPanel, "NavSocial", "Sosyal", Vector2.zero, "icon_emote", key: "played_with");
             AnchorTo(navSocial.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
-                     new Vector2(-450f, 160f), new Vector2(280f, 120f));
+                     new Vector2(450f, 75f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navSocial.onClick, social.Open);
 
             // --- KVKK / GDPR onayı (ilk açılış) ---
@@ -2302,11 +2343,55 @@ namespace DreamCar.EditorTools
             Skin(go.GetComponent<Image>(), "panel", Palette.Surface);
             go.GetComponent<LayoutElement>().preferredHeight = 76f;
 
-            var label = MakeText(go, "Label", "", Vector2.zero, 28);
-            var lRt = label.GetComponent<RectTransform>();
-            lRt.anchorMin = Vector2.zero; lRt.anchorMax = Vector2.one;
-            lRt.offsetMin = new Vector2(20f, 0f); lRt.offsetMax = new Vector2(-20f, 0f);
-            label.alignment = TextAlignmentOptions.MidlineLeft;
+            // Eskiden tek bir Label vardı ve LobbyUI ona
+            // "Oda  (3/6)" diye tek satır yazıyordu: hangi harita, gündüz mü
+            // gece mi, şifreli mi — hiçbiri görünmüyordu. Oysa üçü de Photon'a
+            // zaten yayımlanıyor (RoomPassword.Lobby), yalnızca gösterilmiyordu.
+            //
+            // Sütunlar ADLARIYLA bulunuyor (LobbyUI.Find), sıraya göre değil:
+            // şablona ileride bir çocuk eklenirse dizinler kayardı.
+
+            // Kilit — yalnızca şifreli odada açılıyor.
+            var lockGo = new GameObject("Lock", typeof(RectTransform), typeof(Image));
+            lockGo.transform.SetParent(go.transform, false);
+            var lockImg = lockGo.GetComponent<Image>();
+            Skin(lockImg, "icon_lock", Palette.TextDim);
+            lockImg.raycastTarget = false;
+            var lockRt = lockGo.GetComponent<RectTransform>();
+            lockRt.anchorMin = new Vector2(0f, 0.5f);
+            lockRt.anchorMax = new Vector2(0f, 0.5f);
+            lockRt.anchoredPosition = new Vector2(34f, 0f);
+            lockRt.sizeDelta = new Vector2(30f, 30f);
+            lockGo.SetActive(false);
+
+            // Oda adı — solda, kilide yer bırakacak kadar içeride.
+            var nameText = MakeText(go, "Name", "", Vector2.zero, 28);
+            var nRt = nameText.GetComponent<RectTransform>();
+            nRt.anchorMin = new Vector2(0f, 0f); nRt.anchorMax = new Vector2(0.55f, 1f);
+            nRt.offsetMin = new Vector2(58f, 0f); nRt.offsetMax = Vector2.zero;
+            nameText.alignment = TextAlignmentOptions.MidlineLeft;
+            nameText.enableWordWrapping = false;
+            nameText.overflowMode = TextOverflowModes.Ellipsis;
+
+            // Harita + zaman dilimi — sağa yaslı, doluluk sütunundan önce.
+            var mapText = MakeText(go, "Map", "", Vector2.zero, 24);
+            var mRt = mapText.GetComponent<RectTransform>();
+            mRt.anchorMin = new Vector2(0.55f, 0f); mRt.anchorMax = new Vector2(1f, 1f);
+            mRt.offsetMin = Vector2.zero; mRt.offsetMax = new Vector2(-110f, 0f);
+            mapText.alignment = TextAlignmentOptions.MidlineRight;
+            mapText.color = Palette.TextDim;
+            mapText.enableWordWrapping = false;
+            mapText.overflowMode = TextOverflowModes.Ellipsis;
+
+            // Doluluk — sabit genişlik, uzun harita adı onu itmesin.
+            var countText = MakeText(go, "Count", "", Vector2.zero, 26);
+            var cRt = countText.GetComponent<RectTransform>();
+            cRt.anchorMin = new Vector2(1f, 0f); cRt.anchorMax = new Vector2(1f, 1f);
+            cRt.pivot = new Vector2(1f, 0.5f);
+            cRt.anchoredPosition = new Vector2(-20f, 0f);
+            cRt.sizeDelta = new Vector2(90f, 0f);
+            countText.alignment = TextAlignmentOptions.MidlineRight;
+
             return go;
         }
 
