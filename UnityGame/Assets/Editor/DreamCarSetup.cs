@@ -228,6 +228,24 @@ namespace DreamCar.EditorTools
             var turntable = Procedural.ProceduralGarage.Build(null);
             Procedural.ProceduralGarage.FrameCamera(cam);
 
+            // Garaj KAPALI bir mekân: aydınlatmanın tamamı tavandaki şeritlerden
+            // ve öndeki dolgu ışığından gelmeli. Ortam ışığı varsayılan açık gri
+            // kalırsa duvarlar ve zemin ışık kaynağı olmadan da aydınlanıyor,
+            // tavan şeritlerinin etkisi kayboluyor ve mekân "içeride" görünmüyor.
+            // Koyu ve hafif mavi bir ortam, ışıkların sıcak sarısıyla kontrast
+            // yapıyor.
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.13f, 0.15f, 0.19f);
+            RenderSettings.ambientEquatorColor = new Color(0.10f, 0.11f, 0.13f);
+            RenderSettings.ambientGroundColor = new Color(0.05f, 0.05f, 0.06f);
+            RenderSettings.fog = false;
+
+            // Menüde gökyüzü görünmemeli — garajın açık ön cephesinden dışarısı
+            // görünüyor. Düz koyu bir zemin, kutunun dışını mekânın parçası gibi
+            // gösteriyor.
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = new Color(0.055f, 0.06f, 0.07f);
+
             // AudioListener YOKTU — ana menü tamamen sessizdi. Sahneye kamera
             // "new GameObject(...) + AddComponent<Camera>()" ile kuruluyor;
             // bu yol, Unity'nin hazır kamera nesnesinin aksine AudioListener
@@ -465,6 +483,38 @@ namespace DreamCar.EditorTools
             var sun = sunGo.AddComponent<Light>();
             sun.type = LightType.Directional;
             sunGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+
+            // GÖLGELER AÇIKÇA AÇILIYOR — bu satır olmadan Game sahnesinde
+            // HİÇBİR GÖLGE YOKTU.
+            //
+            // AddComponent<Light>() ile kurulan ışığın shadows varsayılanı None.
+            // Hiyerarşi menüsünden "Directional Light" eklendiğinde Unity bir
+            // preset uyguluyor ve gölge açık geliyor; kodla eklenince gelmiyor.
+            // Sahne kurulumu kodla yapıldığı için şehir bugüne kadar gölgesiz
+            // render ediliyordu: araçlar zemine oturmuyor, binaların hiçbiri yere
+            // gölge düşürmüyordu. Hata basmaz, sadece düz görünür.
+            //
+            // Harita sahneleri (ProceduralMapGenerator) bu satırı zaten
+            // içeriyordu — yani sekiz haritada gölge vardı, ana şehirde yoktu.
+            sun.shadows = LightShadows.Soft;
+            sun.shadowStrength = 0.82f;
+            sun.color = new Color(1f, 0.97f, 0.90f);
+            sun.intensity = 1.15f;
+
+            // Ortam ışığı gradyan — düz ortam ışığında yukarı ve aşağı bakan
+            // yüzeyler aynı aydınlığı alıyor ve araç zemine oturmuyor.
+            RenderSettings.sun = sun;
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.52f, 0.60f, 0.72f);
+            RenderSettings.ambientEquatorColor = new Color(0.40f, 0.43f, 0.47f);
+            RenderSettings.ambientGroundColor = new Color(0.18f, 0.17f, 0.16f);
+
+            // Şehrin uzak binalarını yumuşatan sis. Kamera far clip'i 1400,
+            // sissiz haliyle uzak bina siluetleri keskin bir çizgide bitiyordu.
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.ExponentialSquared;
+            RenderSettings.fogColor = new Color(0.62f, 0.70f, 0.80f);
+            RenderSettings.fogDensity = 0.0011f;
 
             // Camera
             var camGo = new GameObject("Main Camera");

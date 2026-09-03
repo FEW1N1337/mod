@@ -501,7 +501,22 @@ namespace DreamCar.EditorTools.Procedural.Maps
             sunGo.transform.rotation = Quaternion.Euler(arch.sunPitch, arch.sunYaw, 0f);
 
             RenderSettings.sun = sun;
-            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+
+            // DÜZ ORTAM IŞIĞI YERİNE GRADYAN.
+            //
+            // Flat modda her yüzey — gökyüzüne bakan da, yere bakan da, yandaki
+            // duvar da — aynı ortam ışığını alıyordu. Sonuç: araç ve proplar
+            // zemine "oturmuyor", her şey aynı düzlemde yüzüyormuş gibi
+            // görünüyordu. Gölgeler vardı ama gölgesiz taraflar da eşit aydınlıktı.
+            //
+            // Trilight yukarı bakan yüzeye gökyüzü rengini, aşağı bakana yerden
+            // yansıyan koyu rengi veriyor. Maliyeti sıfır: her ikisi de tek bir
+            // küresel harmonik, ek geçiş yok. Araç kaportasının üstü ile altı
+            // arasındaki fark buradan geliyor.
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = Color.Lerp(arch.ambient, arch.skyTint, 0.55f) * 1.1f;
+            RenderSettings.ambientEquatorColor = arch.ambient;
+            RenderSettings.ambientGroundColor = arch.ambient * 0.45f;
             RenderSettings.ambientLight = arch.ambient;
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;

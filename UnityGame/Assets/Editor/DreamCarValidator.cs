@@ -112,6 +112,19 @@ namespace DreamCar.EditorTools
             if (!All<Camera>().Any(c => c.CompareTag("MainCamera")))
                 errors.Add($"{name}: 'MainCamera' etiketli kamera YOK — Camera.main null olur.");
 
+            // 3b) Yönlü ışık ve GÖLGE. Kodla eklenen Light'ın shadows varsayılanı
+            //     None — hiyerarşi menüsünden eklenen ışığın aksine. Sahne
+            //     kurulumu kodla yapıldığı için Game sahnesi uzun süre tamamen
+            //     gölgesiz render edildi ve bu hiçbir uyarı üretmedi. Araçların
+            //     zemine oturmaması, binaların yere gölge düşürmemesi buradan
+            //     geliyordu.
+            var directionals = All<Light>().Where(l => l.type == LightType.Directional).ToArray();
+            if (directionals.Length == 0)
+                notes.Add($"{name}: yönlü ışık yok — sahne yalnızca ortam ışığıyla aydınlanıyor.");
+            else if (directionals.All(l => l.shadows == LightShadows.None))
+                errors.Add($"{name}: yönlü ışığın GÖLGESİ KAPALI — hiçbir nesne " +
+                           "gölge düşürmez, her şey düz görünür.");
+
             // 4) Canvas + GraphicRaycaster — raycaster olmadan arayüz dokunma almaz.
             foreach (var canvas in All<Canvas>())
             {

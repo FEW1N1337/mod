@@ -18,17 +18,39 @@ namespace DreamCar.EditorTools.Procedural
         {
             EnsureFolders();
 
-            SaveTexture(BuildAsphalt(512), "asphalt");
-            SaveTexture(BuildSidewalk(256), "sidewalk");
-            SaveTexture(BuildBuildingFacade(256, 512), "facade_day");
+            // Her yüzey için ALBEDO + NORMAL üretiliyor.
+            //
+            // Normal harita olmadan bütün dünya kâğıt gibi düzdü: asfaltın
+            // taneleri, kaldırımın derzi, cephedeki pencere girintisi ve garaj
+            // fayansının fugası yalnızca renk farkıydı, ışık onlara hiç tepki
+            // vermiyordu. SSAO, bloom ve ACES açık olsa bile yüzeyler plastik
+            // görünüyordu — sebebi buydu.
+            //
+            // Şiddet değerleri yüzeyin gerçek kabartma derinliğine göre: asfalt
+            // ince taneli (düşük), cephe pencere girintili (yüksek).
+            SaveWithNormal(BuildAsphalt(512), "asphalt", normalStrength: 2.2f);
+            SaveWithNormal(BuildSidewalk(256), "sidewalk", normalStrength: 4.5f);
+            SaveWithNormal(BuildGrass(256), "grass", normalStrength: 1.8f);
+
+            // Cephenin normal haritası GÜNDÜZ dokusundan üretilip ikisine de
+            // veriliyor. Gece dokusunda pencereler ışıklı — parlaklığı yükseklik
+            // saymak pencereleri DIŞARI çıkıntı yapardı, oysa girinti olmalı.
+            var facadeDay = BuildBuildingFacade(256, 512);
+            var facadeNormal = BuildNormalMap(facadeDay, 6f, "facade_n");
+            SaveTexture(facadeDay, "facade_day");
             SaveTexture(BuildBuildingFacade(256, 512, night: true), "facade_night");
+            SaveNormalTexture(CopyTexture(facadeNormal), "facade_day_n");
+            SaveNormalTexture(facadeNormal, "facade_night_n");
+
+            // Yol çizgisinin normal haritası YOK: boya asfaltın üstünde ince bir
+            // katman, kabartması yok. Üretilseydi çizgi kenarları ışıkta
+            // kabarık görünürdü.
             SaveTexture(BuildRoadMarking(128), "road_marking");
-            SaveTexture(BuildGrass(256), "grass");
 
             // Ana menü garajı. Sahne bugüne kadar tamamen boştu (yalnızca kamera
             // ve UI), o yüzden bu iki dokunun karşılığı da yoktu.
-            SaveTexture(BuildGarageFloor(512), "garage_floor");
-            SaveTexture(BuildGarageWall(256), "garage_wall");
+            SaveWithNormal(BuildGarageFloor(512), "garage_floor", normalStrength: 5f);
+            SaveWithNormal(BuildGarageWall(256), "garage_wall", normalStrength: 3.5f);
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -341,7 +363,8 @@ namespace DreamCar.EditorTools.Procedural
 
         public static Material CreateTexturedMaterial(string name, string textureName,
                                                       float metallic = 0f, float smoothness = 0.3f,
-                                                      Vector2 tiling = default)
+                                                      Vector2 tiling = default,
+                                                      float normalStrength = 1f)
         {
             var mat = NewMaterial(name);
             var tex = AssetDatabase.LoadAssetAtPath<Texture2D>($"{TextureFolder}/{textureName}.png");
@@ -355,11 +378,126 @@ namespace DreamCar.EditorTools.Procedural
                     if (mat.HasProperty("_MainTex")) mat.SetTextureScale("_MainTex", tiling);
                 }
             }
+            // Normal harita adla bulunuyor: "asphalt" → "asphalt_n". Böylece
+            // mevcut hiçbir çağrı noktası değişmeden bütün yüzeyler kabartma
+            // kazanıyor; olmayan yüzeyde de sessizce atlanıyor.
+            ApplyNormalMap(mat, textureName + "_n", normalStrength, tiling);
+
             SetFloat(mat, "_Metallic", metallic);
             SetFloat(mat, "_Smoothness", smoothness);
             SetFloat(mat, "_Glossiness", smoothness);
             SaveMaterial(mat, name);
             return mat;
+        }
+
+        // BU METODUN EN ÖNEMLİ SATIRI EnableKeyword.
+        //
+        // URP Lit (ve Built-in Standard) normal haritayı yalnızca _NORMALMAP
+        // shader keyword'ü açıksa örnekliyor. Yalnızca _BumpMap'e doku atamak
+        // HİÇBİR ŞEY yapmaz: doku materyalde görünür, Inspector'da durur,
+        // hata basılmaz ve yüzey yine dümdüz render edilir. Materyali koda
+        // kuran her yerde düşülen klasik tuzak.
+        static void ApplyNormalMap(Material mat, string normalTextureName, float strength, Vector2 tiling)
+        {
+            if (!mat.HasProperty("_BumpMap")) return;
+
+            var normal = AssetDatabase.LoadAssetAtPath<Texture2D>($"{TextureFolder}/{normalTextureName}.png");
+            if (normal == null) return;
+
+            mat.SetTexture("_BumpMap", normal);
+            mat.EnableKeyword("_NORMALMAP");
+            SetFloat(mat, "_BumpScale", strength);
+
+            // Normal, albedo ile AYNI döşemeyi kullanmalı; farklı olursa kabartma
+            // rengin üstünde kayar ve yüzey titrek görünür.
+            if (tiling != default) mat.SetTextureScale("_BumpMap", tiling);
+        }
+
+        // ------------------------------------------------------ Normal haritalar
+
+        // Yükseklikten normal haritası (Sobel).
+        //
+        // Kaynak dokunun PARLAKLIĞI yükseklik kabul ediliyor: koyu = çukur,
+        // açık = tümsek. Prosedürel dokularımızda bu varsayım doğru — derz ve
+        // fuga çizgileri zaten koyu, çakıl taneleri zaten açık çiziliyor.
+        //
+        // Örnekleme SARMALI (x+1 yerine (x+1) % width): dokular Repeat modunda
+        // döşeniyor, kenarda kırpsaydık her döşeme sınırında görünür bir dikiş
+        // izi oluşurdu.
+        public static Texture2D BuildNormalMap(Texture2D source, float strength, string name)
+        {
+            int w = source.width, h = source.height;
+            var src = source.GetPixels();
+            var heights = new float[w * h];
+
+            for (int i = 0; i < heights.Length; i++)
+                heights[i] = src[i].r * 0.299f + src[i].g * 0.587f + src[i].b * 0.114f;
+
+            var tex = NewTexture(w, h, name);
+            var pixels = new Color[w * h];
+
+            for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                int xl = (x - 1 + w) % w, xr = (x + 1) % w;
+                int yd = (y - 1 + h) % h, yu = (y + 1) % h;
+
+                float dx = (heights[y * w + xr] - heights[y * w + xl]) * strength;
+                float dy = (heights[yu * w + x] - heights[yd * w + x]) * strength;
+
+                var n = new Vector3(-dx, -dy, 1f).normalized;
+
+                // Teğet uzay kodlaması: [-1,1] → [0,1]. Alfa 1 — bazı sıkıştırma
+                // formatları normalin x bileşenini alfada taşıyor, importer bunu
+                // NormalMap tipiyle kendisi hallediyor.
+                pixels[y * w + x] = new Color(n.x * 0.5f + 0.5f, n.y * 0.5f + 0.5f, n.z * 0.5f + 0.5f, 1f);
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return tex;
+        }
+
+        // Albedo + ondan türetilen normal haritayı birlikte kaydeder.
+        // Normal, albedo yok edilmeden ÖNCE üretilmeli — SaveTexture kaynağı
+        // DestroyImmediate ediyor.
+        static void SaveWithNormal(Texture2D albedo, string name, float normalStrength)
+        {
+            var normal = BuildNormalMap(albedo, normalStrength, name + "_n");
+            SaveTexture(albedo, name);
+            SaveNormalTexture(normal, name + "_n");
+        }
+
+        static Texture2D CopyTexture(Texture2D source)
+        {
+            var copy = NewTexture(source.width, source.height, source.name);
+            copy.SetPixels(source.GetPixels());
+            copy.Apply();
+            return copy;
+        }
+
+        // Normal haritası PNG olarak kaydedilir ve importer'a NORMAL MAP olduğu
+        // söylenir. Bu satır atlanırsa Unity dokuyu sıradan bir sRGB renk dokusu
+        // gibi alır: gamma düzeltmesi uygulanır, sıkıştırma formatı yanlış seçilir
+        // ve yüzeyler ışıkta yanlış yöne eğilmiş görünür. Hata basmaz — yalnızca
+        // yanlış görünür.
+        static void SaveNormalTexture(Texture2D tex, string name)
+        {
+            EnsureFolders();
+            string path = $"{TextureFolder}/{name}.png";
+            File.WriteAllBytes(path, tex.EncodeToPNG());
+            AssetDatabase.ImportAsset(path);
+
+            var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+            if (importer != null)
+            {
+                importer.textureType = TextureImporterType.NormalMap;
+                importer.convertToNormalmap = false;   // PNG zaten normal haritası
+                importer.wrapMode = TextureWrapMode.Repeat;
+                importer.mipmapEnabled = true;
+                importer.SaveAndReimport();
+            }
+            Object.DestroyImmediate(tex);
         }
 
         // ---------------------------------------------------------- Yardımcılar

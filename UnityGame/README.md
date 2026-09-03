@@ -1537,6 +1537,70 @@ Gerçek tork eğrisi Faz 3'te motor modeliyle gelecek ve tek noktadan değişece
 
 ---
 
+## 25) v1.7 — Grafik: normal haritalar, gölge, gradyan ortam ışığı
+
+Üç kusur bulundu; üçü de **hata basmıyordu, yalnızca düz görünüyordu.**
+
+### 1. Hiçbir yüzeyin normal haritası yoktu
+
+Asfalt, kaldırım, bina cephesi, çim, garaj zemini ve duvarı — hepsi düz
+albedo dokusuydu. Asfaltın taneleri, kaldırımın derzi, cephedeki pencere
+girintisi ve fayans fugası yalnızca **renk** farkıydı; ışık onlara hiç
+tepki vermiyordu. SSAO, bloom ve ACES tonemapping açık olmasına rağmen
+yüzeylerin plastik görünmesinin sebebi buydu.
+
+Her doku için artık albedodan **normal haritası türetiliyor** (parlaklık =
+yükseklik, Sobel). Örnekleme sarmalı yapılıyor, yoksa her döşeme sınırında
+dikiş izi çıkardı. Cephenin normali gündüz dokusundan üretilip ikisine de
+veriliyor — gece dokusunda pencereler ışıklı, parlaklığı yükseklik saymak
+pencereleri dışarı çıkıntı yapardı.
+
+Materyal tarafında kritik satır **`EnableKeyword("_NORMALMAP")`**: URP Lit
+normal haritayı yalnızca bu keyword açıksa örnekliyor. Sadece `_BumpMap`'e
+doku atamak hiçbir şey yapmaz — doku Inspector'da durur, hata basılmaz,
+yüzey yine dümdüz render edilir.
+
+Normal haritalar ada göre bulunuyor (`asphalt` → `asphalt_n`), bu yüzden
+**mevcut materyal çağrılarının hiçbiri değişmedi.**
+
+### 2. Game sahnesinde hiç gölge yoktu
+
+`AddComponent<Light>()` ile kurulan ışığın `shadows` varsayılanı `None`.
+Hiyerarşi menüsünden "Directional Light" eklendiğinde Unity bir preset
+uyguluyor ve gölge açık geliyor; kodla eklenince gelmiyor.
+
+Sahne kurulumu kodla yapıldığı için şehir bugüne kadar **tamamen gölgesiz**
+render ediliyordu: araçlar zemine oturmuyor, binaların hiçbiri yere gölge
+düşürmüyordu. Sekiz harita sahnesinde gölge vardı (`ProceduralMapGenerator`
+o satırı içeriyordu), ana şehirde yoktu.
+
+Denetçiye kalıcı bir kontrol eklendi: sahnedeki yönlü ışıkların hepsinin
+gölgesi kapalıysa hata veriyor.
+
+### 3. Ortam ışığı düzdü
+
+`AmbientMode.Flat`'te gökyüzüne bakan yüzey de, yere bakan da, yandaki duvar
+da aynı ortam ışığını alıyordu. Gölgeler vardı ama gölgesiz taraflar eşit
+aydınlıktaydı; araç ve proplar zemine oturmuyor, her şey aynı düzlemde
+yüzüyor gibi görünüyordu.
+
+`Trilight`'a geçildi: yukarı bakan yüzeye gökyüzü rengi, aşağı bakana yerden
+yansıyan koyu renk. **Maliyeti sıfır** — ikisi de tek bir küresel harmonik,
+ek render geçişi yok. Araç kaportasının üstü ile altı arasındaki fark
+buradan geliyor.
+
+Menüde ayrıca ortam ışığı koyulaştırıldı: garaj kapalı bir mekân, aydınlatma
+tavan şeritlerinden gelmeli. Varsayılan açık gri ortamda duvarlar ışık
+kaynağı olmadan da aydınlanıyor ve mekân "içeride" görünmüyordu.
+
+### Değişmeyen
+
+Zaten doğru olanlara dokunulmadı: SSAO, HDR, MSAA 4x, ACES tonemapping,
+HDR renk derecelendirme, 4 gölge kademesi, yansıma probları, kalite kademesi
+başına post-processing profilleri. Bunlar önceki turlarda kurulmuştu.
+
+---
+
 ## Dosya haritası
 
 | Dosya | Görev |
