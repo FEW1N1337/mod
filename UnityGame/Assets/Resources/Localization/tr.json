@@ -1,0 +1,116 @@
+{
+  "entries": [
+    { "key": "play",              "value": "Oyna" },
+    { "key": "shop",              "value": "Mağaza" },
+    { "key": "garage",            "value": "Garaj" },
+    { "key": "settings",          "value": "Ayarlar" },
+    { "key": "buy",               "value": "Satın Al" },
+    { "key": "owned",             "value": "Sahip" },
+    { "key": "locked",            "value": "Kilitli" },
+    { "key": "select",            "value": "Seç" },
+    { "key": "selected",          "value": "Seçili" },
+    { "key": "close",             "value": "Kapat" },
+    { "key": "cancel",            "value": "İptal" },
+    { "key": "confirm",           "value": "Onayla" },
+    { "key": "back",              "value": "Geri" },
+
+    { "key": "room.password",     "value": "Şifre" },
+    { "key": "room.create",       "value": "Oda Kur" },
+    { "key": "room.join",         "value": "Katıl" },
+    { "key": "room.quick_join",   "value": "Hızlı Katıl" },
+    { "key": "room.name",         "value": "Oda Adı" },
+    { "key": "room.max_players",  "value": "Maksimum Oyuncu" },
+    { "key": "room.visible",      "value": "Herkese Açık" },
+    { "key": "room.wrong_password", "value": "Şifre yanlış" },
+
+    { "key": "mode.free",         "value": "Serbest Sürüş" },
+    { "key": "mode.race",         "value": "Yarış" },
+    { "key": "mode.drift",        "value": "Drift" },
+
+    { "key": "money.short",       "value": "₺" },
+    { "key": "money.insufficient","value": "Yetersiz para" },
+
+    { "key": "race.lap",          "value": "Tur" },
+    { "key": "race.best_lap",     "value": "En İyi Tur" },
+    { "key": "race.go",           "value": "BAŞLA!" },
+    { "key": "race.finished",     "value": "Yarış bitti" },
+
+    { "key": "drift.score",       "value": "Drift Skoru" },
+    { "key": "drift.finished",    "value": "Drift bitti" },
+
+    { "key": "nitro",             "value": "Nitro" },
+    { "key": "fuel",              "value": "Yakıt" },
+    { "key": "fuel.low",          "value": "Yakıt az — istasyona uğra" },
+    { "key": "fuel.filled",       "value": "Depo dolduruldu" },
+    { "key": "fuel.station",      "value": "Benzin İstasyonu" },
+    { "key": "fuel.pay_and_fill", "value": "Öde ve Doldur" },
+
+    { "key": "repair",            "value": "Tamir Et" },
+    { "key": "repair.done",       "value": "Tamir edildi" },
+    { "key": "damage",            "value": "Hasar" },
+    { "key": "rescue",            "value": "Kurtar" },
+
+    { "key": "pause",             "value": "Duraklat" },
+    { "key": "pause.resume",      "value": "Devam" },
+    { "key": "pause.leave_room",  "value": "Odadan Çık" },
+    { "key": "pause.main_menu",   "value": "Ana Menü" },
+
+    { "key": "settings.quality",  "value": "Grafik Kalitesi" },
+    { "key": "settings.fps",      "value": "Kare Hızı" },
+    { "key": "settings.master",   "value": "Genel Ses" },
+    { "key": "settings.music",    "value": "Müzik" },
+    { "key": "settings.sfx",      "value": "Efektler" },
+    { "key": "settings.steering", "value": "Direksiyon Hassasiyeti" },
+    { "key": "settings.language", "value": "Dil" },
+    { "key": "settings.support",  "value": "Destek" },
+    { "key": "settings.privacy",  "value": "Gizlilik Politikası" },
+
+    { "key": "stats.title",       "value": "İstatistikler" },
+    { "key": "stats.distance",    "value": "Mesafe" },
+    { "key": "stats.drive_time",  "value": "Sürüş Süresi" },
+    { "key": "stats.top_speed",   "value": "En Yüksek Hız" },
+    { "key": "stats.races",       "value": "Yarış" },
+    { "key": "stats.wins",        "value": "Galibiyet" },
+    { "key": "stats.win_rate",    "value": "Kazanma Oranı" },
+    { "key": "stats.best_drift",  "value": "En İyi Drift" },
+    { "key": "stats.money_earned","value": "Kazanılan Para" },
+    { "key": "stats.cars_owned",  "value": "Araç Sayısı" },
+    { "key": "stats.crashes",     "value": "Çarpışma" },
+
+    { "key": "leaderboard",       "value": "Liderlik Tablosu" },
+    { "key": "leaderboard.empty", "value": "Henüz kayıt yok" },
+    { "key": "achievements",      "value": "Başarımlar" },
+
+    { "key": "daily.title",       "value": "Günlük Ödül" },
+    { "key": "daily.claim",       "value": "Al" },
+    { "key": "daily.day",         "value": "gün" },
+
+    { "key": "referral.title",    "value": "Davet Kodu" },
+    { "key": "referral.redeem",   "value": "Kodu Kullan" },
+    { "key": "referral.invalid",  "value": "Geçersiz kod" },
+    { "key": "referral.used",     "value": "Bu kod zaten kullanıldı" },
+
+    { "key": "friends",           "value": "Arkadaşlar" },
+    { "key": "friends.add",       "value": "Arkadaş Ekle" },
+    { "key": "played_with",       "value": "Beraber Oynadıkların" },
+
+    { "key": "report",            "value": "Şikayet Et" },
+    { "key": "report.sent",       "value": "Rapor gönderildi. Teşekkürler." },
+    { "key": "kick",              "value": "At" },
+    { "key": "ban",               "value": "Yasakla" },
+    { "key": "mute",              "value": "Sustur" },
+
+    { "key": "chat.placeholder",  "value": "Mesaj…" },
+    { "key": "chat.send",         "value": "Gönder" },
+
+    { "key": "net.reconnecting",  "value": "Yeniden bağlanıyor…" },
+    { "key": "net.reconnected",   "value": "Yeniden bağlanıldı" },
+    { "key": "net.failed",        "value": "Bağlanılamadı" },
+    { "key": "net.connecting",    "value": "Bağlanıyor…" },
+    { "key": "net.online",        "value": "Çevrimiçi" },
+
+    { "key": "loading",           "value": "Yükleniyor" },
+    { "key": "watch_ad",          "value": "Reklam İzle" },
+    { "key": "nickname",          "value": "Kullanıcı Adı" }
+  ]
+}
