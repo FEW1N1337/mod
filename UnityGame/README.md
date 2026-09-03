@@ -1780,11 +1780,69 @@ yazan CarController'dır. `DrivingAssists` yoksa davranış birebir eskisi.
 
 ---
 
+## 28) v2.0 — İlerleme: sürücü seviyesi + günlük görevler
+
+Oyuna "sürmeye devam et" diyen döngü. `PlayerStats` mesafe, drift, yarış,
+kazanılan parayı baştan beri topluyordu ama hiçbiri seviyeye veya göreve
+dönüşmüyordu — yani toplanan veri okunuyor ama kullanılmıyordu. Dream Road'un
+ana tutundurma mekaniği bu.
+
+### XP tek yerden türetiliyor
+
+Her ödül noktasına ayrı XP kancası TAKMADIM. Sebebi bu projenin baskın
+hatası: "bir yerde vermeyi unutmak". Bunun yerine XP, oyuncunun **ömür-boyu
+istatistiklerinden** hesaplanıyor (`GameMath.DriverXpFromStats`): mesafe,
+para, yarış, galibiyet, drift, süre. Bütün gelir zaten `PlayerStats`'e
+aktığı için seviye kendiliğinden ilerliyor, hiçbir yeri unutmak mümkün değil.
+Görevler buna AYRICA bonus XP ekliyor.
+
+| Dosya | Görev |
+|---|---|
+| `Scripts/Util/GameMath.cs` | `DriverXpFromStats`, `LevelForXp`, `XpForLevel`, `LevelProgress` — saf, testlenebilir |
+| `Scripts/Core/DriverProfile.cs` | XP/seviye singleton; `PlayerStats.OnChanged`'i dinler, seviye atlamada ödül |
+| `Scripts/Progression/MissionSystem.cs` | Günlük 3 görev; ilerleme stat deltalarından |
+| `Scripts/UI/DriverLevelBadge.cs` | Menüde seviye + XP çubuğu |
+| `Scripts/UI/MissionPanel.cs` | Görev ekranı (ilerleme çubuğu + "Al") |
+| `Scripts/UI/LevelUpAnnouncer.cs` | Seviye atlama toast'ı (oyun içinde de) |
+
+### Seviye eğrisi
+
+L. seviyeye ulaşmak için kümülatif XP = `250 × (L−1) × L` (L2=500, L3=1500,
+L4=3000…). Seviye atlayınca `seviye × 1500 ₺` ödül. Ödül parası tekrar XP'ye
+sayılıyor ama katkı (75×seviye XP) seviye aralığından (500×seviye) küçük
+olduğu için zincirleme atlama olmuyor; yine de yeniden-giriş bayrağıyla
+korundu.
+
+### Günlük görevler
+
+Her gün 3 görev, güne göre deterministik üretiliyor (yeniden açılışta
+rerollanmıyor). Türler: mesafe (5 km), yarış (3 bitir), para (3.000 ₺),
+süre (10 dk). İlerleme = güncel ömür-boyu stat − görev atandığındaki baseline;
+ayrı bir sayaç tutulmuyor. Tamamlanınca "Al" butonu para + bonus XP veriyor.
+
+### Denetçi
+
+Ana menüde `DriverProfile` ve `MissionSystem` yoksa hata; rozet/panel yoksa
+not. Sistem çalışıp görünmez kalmasın diye.
+
+### Dürüst sınır
+
+- **XP istemci tarafında** (PlayerStats PlayerPrefs'te) — projenin geri
+  kalanıyla aynı güven seviyesi. Sunucu doğrulaması Faz 10.
+- Görev türleri kümülatif stat'lara bağlı (mesafe/yarış/para/süre); drift
+  bir "en iyi" değeri olduğu için günlük göreve konmadı.
+
+---
+
 ## Dosya haritası
 
 | Dosya | Görev |
 |---|---|
 | `Scripts/Car/CarController.cs` | WheelCollider tabanlı fizik |
+| `Scripts/Core/DriverProfile.cs` | Sürücü seviyesi / XP (PlayerStats'ten türetilir) |
+| `Scripts/Progression/MissionSystem.cs` | Günlük görevler |
+| `Scripts/UI/DriverLevelBadge.cs` | Menüde seviye + XP çubuğu |
+| `Scripts/UI/MissionPanel.cs` | Görev ekranı |
 | `Scripts/Vehicle/DrivingAssists.cs` | ABS · TC · ESP · diferansiyel · aero |
 | `Scripts/UI/AssistTelltale.cs` | Sürüş yardımcısı HUD göstergesi |
 | `Scripts/Economy/ModCatalog.cs` | Modifikasyon parça kataloğu |

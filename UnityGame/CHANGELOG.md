@@ -5,6 +5,18 @@ Oyun henüz `0.x` — yani API'ler kırılabilir.
 
 ---
 
+## [0.9.0] — İlerleme: sürücü seviyesi ve günlük görevler
+
+### Eklendi
+- **Sürücü seviyesi (XP)**: XP oyuncunun ömür-boyu istatistiklerinden
+  türetiliyor (mesafe, para, yarış, drift, süre) — her ödül noktasına ayrı
+  kanca yok. Menüde seviye rozeti + XP çubuğu, seviye atlama ödülü ve toast.
+- **Günlük görevler**: her gün 3 görev (mesafe/yarış/para/süre), güne göre
+  deterministik. İlerleme stat deltalarından; tamamlanınca para + bonus XP.
+- **Denetçi kontrolleri**: ana menüde DriverProfile/MissionSystem zorunlu.
+
+---
+
 ## [0.8.0] — Oynanış: araç sözleşmeleri, modifikasyon, sürüş yardımcıları
 
 0.7.0'dan bu yana eklenen oyuncu-görünür sistemler. Ayrıntılı gerekçeler

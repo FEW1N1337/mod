@@ -145,6 +145,22 @@ namespace DreamCar.EditorTools
                                "RPC'leri sessizce düşer (sohbet çalışmaz).");
             }
 
+            // 5b) Ana menüde ilerleme arayüzü. DriverProfile ~Bootstrap'te XP'yi
+            //     PlayerStats'ten türetiyor ama rozet/görev ekranı menüde olmazsa
+            //     oyuncu seviyesini hiç göremez — sistem çalışır ama görünmez.
+            if (name == "MainMenu")
+            {
+                if (All<DreamCar.Core.DriverProfile>().Length == 0)
+                    errors.Add($"{name}: DriverProfile YOK (~Bootstrap) — sürücü " +
+                               "seviyesi hiç hesaplanmaz.");
+                if (All<DreamCar.Progression.MissionSystem>().Length == 0)
+                    errors.Add($"{name}: MissionSystem YOK — günlük görevler çalışmaz.");
+                if (All<DreamCar.UI.DriverLevelBadge>().Length == 0)
+                    notes.Add($"{name}: DriverLevelBadge yok — seviye rozeti görünmez.");
+                if (All<DreamCar.UI.MissionPanel>().Length == 0)
+                    notes.Add($"{name}: MissionPanel yok — görev ekranı açılamaz.");
+            }
+
             // 6) BİLGİ AMAÇLI: DreamCar bileşenlerindeki null referans alanları.
             //    Hata DEĞİL — çoğu alan bilerek opsiyonel. Ama bu oturumdaki
             //    hataların bıraktığı iz tam olarak bu, o yüzden gözle

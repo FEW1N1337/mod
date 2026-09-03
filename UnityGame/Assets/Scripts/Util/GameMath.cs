@@ -50,6 +50,55 @@ namespace DreamCar.Util
             return 1f;
         }
 
+        // --- Sürücü seviyesi (XP) ---
+        //
+        // XP her ödül noktasına ayrı bağlanmıyor; oyuncunun ÖMÜR BOYU
+        // istatistiklerinden türetiliyor. Böylece "bir yerde XP vermeyi
+        // unutmak" hatası oluşamaz — bütün gelir zaten PlayerStats'e akıyor.
+        // Görev bonusu buna AYRICA ekleniyor (DriverProfile).
+        public static long DriverXpFromStats(float distanceMeters, long moneyEarned,
+                                             int racesFinished, int racesWon,
+                                             int bestDrift, float driveSeconds)
+        {
+            double xp = 0;
+            xp += Math.Max(0f, distanceMeters) * 0.02;   // 100 m ≈ 2 XP
+            xp += Math.Max(0L, moneyEarned)   * 0.05;    // 20 ₺ ≈ 1 XP
+            xp += Math.Max(0, racesFinished)  * 40;      // yarış bitirme
+            xp += Math.Max(0, racesWon)       * 80;      // galibiyet bonusu
+            xp += Math.Max(0, bestDrift)      * 0.1;     // en iyi drift (bir kez)
+            xp += Math.Max(0f, driveSeconds)  * 0.5;     // sürüş süresi
+            return (long)xp;
+        }
+
+        // L. seviyeye ULAŞMAK için gereken toplam (kümülatif) XP.
+        // L1 = 0, L2 = 500, L3 = 1500, L4 = 3000 … ikinci dereceden büyür.
+        public static long XpForLevel(int level)
+        {
+            if (level <= 1) return 0;
+            long l = level;
+            return 250L * (l - 1) * l;
+        }
+
+        // Verilen XP'nin karşılık geldiği seviye (en az 1).
+        public static int LevelForXp(long xp)
+        {
+            if (xp <= 0) return 1;
+            int level = 1;
+            // Seviye üst sınırı makul; döngü birkaç yüz iterasyonu geçmez.
+            while (XpForLevel(level + 1) <= xp) level++;
+            return level;
+        }
+
+        // Bu seviyedeki ilerleme 0..1 (mevcut seviye tabanı ile sonraki taban arası).
+        public static float LevelProgress(long xp)
+        {
+            int level = LevelForXp(xp);
+            long baseXp = XpForLevel(level);
+            long nextXp = XpForLevel(level + 1);
+            if (nextXp <= baseXp) return 0f;
+            return (float)(xp - baseXp) / (nextXp - baseXp);
+        }
+
         // İki tarih arasındaki gün farkına göre yeni streak değeri.
         // 1 gün = devam, 0 gün = değişmez, diğer = sıfırlanır.
         public static int NextStreak(int currentStreak, int daysSinceLastLogin)

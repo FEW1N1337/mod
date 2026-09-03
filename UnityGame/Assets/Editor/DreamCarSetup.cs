@@ -26,6 +26,7 @@ using DreamCar.Backend;
 using DreamCar.AppMeta;
 using DreamCar.Game;
 using DreamCar.Maps;
+using DreamCar.Progression;
 
 namespace DreamCar.EditorTools
 {
@@ -281,6 +282,15 @@ namespace DreamCar.EditorTools
             boot.AddComponent<CarInventory>().catalog =
                 Procedural.ProceduralCarGenerator.LoadCatalog();
             boot.AddComponent<Core.PlayerStats>();
+
+            // İlerleme sistemi. DriverProfile XP'yi PlayerStats'ten türetiyor,
+            // MissionSystem günlük görevleri onun deltalarından izliyor;
+            // ikisi de PlayerStats'ten SONRA ama Start'ta yeniden bağlandığı
+            // için sıra kritik değil. LevelUpAnnouncer seviye atlama toast'ı.
+            boot.AddComponent<Core.DriverProfile>();
+            boot.AddComponent<Progression.MissionSystem>();
+            boot.AddComponent<LevelUpAnnouncer>();
+
             boot.AddComponent<Core.ObjectPool>();
             boot.AddComponent<CrashReporter>();
             boot.AddComponent<MusicManager>();
@@ -347,6 +357,18 @@ namespace DreamCar.EditorTools
             // OYNA altta ortada — garaj artik ekranin ortasini kapliyor.
             var playBtn = MakeButton(mainPanel, "PlayButton", "OYNA", new Vector2(200f, -230f), key: "play");
             var statusText = MakeText(mainPanel, "StatusText", "Bağlanıyor…", new Vector2(0f, 400f), 26);
+
+            // Sürücü seviyesi rozeti — sağ üst. Kullanıcı adının (sol üst)
+            // karşısında. DriverProfile ~Bootstrap'te; rozet Start'ta bağlanıyor.
+            var levelLabel = MakeText(mainPanel, "LevelLabel", "Sv 1", new Vector2(660f, 500f), 44);
+            levelLabel.alignment = TextAlignmentOptions.Right;
+            var xpFill = MakeFillBar(mainPanel, "XpBar", new Vector2(660f, 458f), new Vector2(300f, 20f));
+            var xpLabel = MakeText(mainPanel, "XpLabel", "0 / 0 XP", new Vector2(660f, 432f), 22);
+            xpLabel.alignment = TextAlignmentOptions.Right;
+            var levelBadge = mainPanel.AddComponent<DriverLevelBadge>();
+            levelBadge.levelLabel = levelLabel;
+            levelBadge.xpLabel = xpLabel;
+            levelBadge.xpFill = xpFill;
 
             var mainMenuUI = mainPanel.AddComponent<MainMenuUI>();
             mainMenuUI.nicknameInput = nickInput;
@@ -1560,6 +1582,28 @@ namespace DreamCar.EditorTools
             modShop.slotTitleLabel = modSlotTitle;
             modShop.closeButton = modClose;
 
+            // --- Günlük görevler ekranı ---
+            var missionPanel = MakeUiChild(canvasGo, "MissionScreen", modal: true);
+            missionPanel.SetActive(false);
+            MakeText(missionPanel, "Title", "Günlük Görevler", new Vector2(0f, 430f), 64);
+            MakeText(missionPanel, "Subtitle", "Her gün yenilenir", new Vector2(0f, 350f), 28);
+
+            var missionList = MakeListContainer(missionPanel, "List",
+                new Vector2(0f, -20f), new Vector2(1000f, 560f));
+            var missionRow = MakeMissionRowTemplate(missionPanel, "MissionRowTemplate");
+
+            var missionClose = MakeButton(missionPanel, "Close", "Kapat", Vector2.zero, key: "close");
+            AnchorTo(missionClose.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
+
+            // Bileşen Canvas'ta (panelde değil): Start paneli kapatıyor, panelin
+            // üstünde olsaydı ilk açılışta hemen kapanırdı. SocialScreen deseni.
+            var missions = canvasGo.AddComponent<MissionPanel>();
+            missions.panel = missionPanel;
+            missions.listParent = missionList;
+            missions.rowPrefab = missionRow;
+            missions.closeButton = missionClose;
+
             // --- Ana menüdeki açma butonları ---
             // DİKKAT: onClick.AddListener çalışma anında listener ekler ve sahneye
             // SERIALIZE EDİLMEZ. Sahne kaydedilip build'de yüklendiğinde bu beş
@@ -1664,6 +1708,12 @@ namespace DreamCar.EditorTools
             AnchorTo(navMod.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(-750f, 75f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navMod.onClick, modShop.Open);
+
+            // Görevler — ikinci sıranın sağ ucundaki boş yuva (x=750).
+            var navMissions = MakeIconButton(mainPanel, "NavMissions", "Görevler", Vector2.zero, "icon_flag", key: null);
+            AnchorTo(navMissions.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
+                     new Vector2(750f, 75f), new Vector2(280f, 100f));
+            UnityEventTools.AddPersistentListener(navMissions.onClick, missions.Open);
 
             // --- KVKK / GDPR onayı (ilk açılış) ---
             // KVKKConsent hiçbir sahneye eklenmiyordu: onay hiç sorulmuyor,
@@ -2672,6 +2722,99 @@ namespace DreamCar.EditorTools
             t.fontSizeMin = fontSize * 0.7f;
             t.fontSizeMax = fontSize;
             t.overflowMode = TextOverflowModes.Ellipsis;
+        }
+
+        // Basit dolum çubuğu (arka plan + yatay Filled fill). XP ve görev
+        // ilerlemesi için. Fill Image'ini döndürür.
+        static Image MakeFillBar(GameObject parent, string name, Vector2 pos, Vector2 size)
+        {
+            var bg = new GameObject(name, typeof(RectTransform), typeof(Image));
+            bg.transform.SetParent(parent.transform, false);
+            Skin(bg.GetComponent<Image>(), "pill", Palette.SurfaceDeep);
+            var bgRt = bg.GetComponent<RectTransform>();
+            bgRt.anchoredPosition = pos; bgRt.sizeDelta = size;
+
+            var fillGo = new GameObject("Fill", typeof(RectTransform), typeof(Image));
+            fillGo.transform.SetParent(bg.transform, false);
+            var fill = fillGo.GetComponent<Image>();
+            Skin(fill, "pill", Palette.Accent);
+            fill.type = Image.Type.Filled;
+            fill.fillMethod = Image.FillMethod.Horizontal;
+            var fillRt = fillGo.GetComponent<RectTransform>();
+            fillRt.anchorMin = Vector2.zero; fillRt.anchorMax = Vector2.one;
+            fillRt.offsetMin = Vector2.zero; fillRt.offsetMax = Vector2.zero;
+            return fill;
+        }
+
+        // Görev satırı şablonu: açıklama · ilerleme · ödül · ilerleme çubuğu ·
+        // "Al" butonu. MissionPanel metinleri OLUŞTURMA SIRASINA göre okuyor
+        // (GetComponentsInChildren<TMP_Text>), o yüzden üç bilgi metni butondan
+        // ÖNCE kuruluyor — buton etiketi texts[3] olsun, bilgi metinlerini
+        // ezmesin. İlerleme çubuğunun fill'i "Fill" adıyla doğrudan çocuk;
+        // MissionPanel onu transform.Find("Fill") ile buluyor.
+        static GameObject MakeMissionRowTemplate(GameObject parent, string name)
+        {
+            var row = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+            row.transform.SetParent(parent.transform, false);
+            row.SetActive(false);
+            row.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 100f);
+            Skin(row.GetComponent<Image>(), "panel", Palette.Surface);
+            row.GetComponent<LayoutElement>().preferredHeight = 100f;
+
+            // METİN OLUŞTURMA SIRASI = MissionPanel'in texts[] indeksi. Sıra:
+            // açıklama(0) → ilerleme(1) → ödül(2). Çubuğu, ilerleme metninden
+            // ÖNCE kuruyoruz ki metin çubuğun üstünde çizilsin (render sırası =
+            // hiyerarşi sırası) ama TMP_Text sayımını bozmasın (çubuk Image,
+            // metin değil).
+            MissionColumn(row, "Text0", 0.03f, 0.50f, 0.62f, 0.94f, 30, TextAlignmentOptions.MidlineLeft);
+
+            // İlerleme çubuğu — satırın alt şeridi. Fill "Fill" adıyla doğrudan
+            // çocuk (MissionPanel öyle arıyor); arkasına bir bg koyuyoruz.
+            var barBg = new GameObject("ProgressBG", typeof(RectTransform), typeof(Image));
+            barBg.transform.SetParent(row.transform, false);
+            Skin(barBg.GetComponent<Image>(), "pill", Palette.SurfaceDeep);
+            SetAnchors(barBg.GetComponent<RectTransform>(), 0.03f, 0.14f, 0.82f, 0.38f);
+
+            var fillGo = new GameObject("Fill", typeof(RectTransform), typeof(Image));
+            fillGo.transform.SetParent(row.transform, false);
+            var fill = fillGo.GetComponent<Image>();
+            Skin(fill, "pill", Palette.Accent);
+            fill.type = Image.Type.Filled;
+            fill.fillMethod = Image.FillMethod.Horizontal;
+            SetAnchors(fillGo.GetComponent<RectTransform>(), 0.03f, 0.14f, 0.82f, 0.38f);
+
+            // İlerleme metni (texts[1]) çubuğun üstünde, ortalı.
+            MissionColumn(row, "Text1", 0.03f, 0.14f, 0.82f, 0.38f, 22, TextAlignmentOptions.Center);
+            // Ödül (texts[2]) üst sağ, butondan önce.
+            MissionColumn(row, "Text2", 0.64f, 0.50f, 0.82f, 0.94f, 26, TextAlignmentOptions.MidlineLeft);
+
+            // Buton EN SON (etiketi son TMP_Text olsun).
+            var btn = MakeButton(row, "ClaimButton", "Al", Vector2.zero);
+            var btnRt = btn.GetComponent<RectTransform>();
+            btnRt.anchorMin = new Vector2(1f, 0.5f);
+            btnRt.anchorMax = new Vector2(1f, 0.5f);
+            btnRt.anchoredPosition = new Vector2(-95f, 0f);
+            btnRt.sizeDelta = new Vector2(160f, 62f);
+            return row;
+        }
+
+        static void MissionColumn(GameObject row, string name, float xMin, float yMin,
+                                  float xMax, float yMax, int fontSize, TextAlignmentOptions align)
+        {
+            var t = MakeText(row, name, "", Vector2.zero, fontSize);
+            SetAnchors(t.GetComponent<RectTransform>(), xMin, yMin, xMax, yMax);
+            t.alignment = align;
+            t.enableAutoSizing = true;
+            t.fontSizeMin = fontSize * 0.7f;
+            t.fontSizeMax = fontSize;
+            t.overflowMode = TextOverflowModes.Ellipsis;
+        }
+
+        static void SetAnchors(RectTransform rt, float xMin, float yMin, float xMax, float yMax)
+        {
+            rt.anchorMin = new Vector2(xMin, yMin);
+            rt.anchorMax = new Vector2(xMax, yMax);
+            rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
         }
 
         // "Etiket ............ değer" satırı; değer TMP_Text'i döner.
