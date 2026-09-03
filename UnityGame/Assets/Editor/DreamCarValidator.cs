@@ -186,6 +186,14 @@ namespace DreamCar.EditorTools
                     if (Resources.Load<GameObject>(def.resourcePrefabName) == null)
                         errors.Add($"CarDefinition '{def.id}': Resources/{def.resourcePrefabName} " +
                                    "bulunamadı — o araç seçilince doğmaz.");
+
+                    // Küçük resim yoksa garajda ve mağazada BOŞ bir dikdörtgen
+                    // görünür. Hata vermez, sadece araç görünmez — tam olarak
+                    // bu denetimin var olma sebebi olan sessiz kusur.
+                    if (def.thumbnail == null)
+                        errors.Add($"CarDefinition '{def.id}': küçük resmi yok — " +
+                                   "garajda boş dikdörtgen görünür " +
+                                   "(DreamCar → Procedural → Araç küçük resimlerini üret).");
                 }
 
             // Harita kataloğu — sahnesi Build Settings'te olmayan harita
