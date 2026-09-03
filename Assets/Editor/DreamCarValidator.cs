@@ -192,8 +192,15 @@ namespace DreamCar.EditorTools
                     // bu denetimin var olma sebebi olan sessiz kusur.
                     if (def.thumbnail == null)
                         errors.Add($"CarDefinition '{def.id}': küçük resmi yok — " +
-                                   "garajda boş dikdörtgen görünür " +
+                                   "mağaza satırında boş kare görünür " +
                                    "(DreamCar → Procedural → Araç küçük resimlerini üret).");
+
+                    // Menü garajındaki 3B önizleme buna bağlı. Çözülmezse
+                    // garajın ortası boş kalır — yine sessizce.
+                    if (string.IsNullOrEmpty(def.previewPrefabName) ||
+                        Resources.Load<GameObject>(def.previewPrefabName) == null)
+                        errors.Add($"CarDefinition '{def.id}': önizleme prefabı yok " +
+                                   $"('{def.previewPrefabName}') — menü garajında araç görünmez.");
                 }
 
             // Harita kataloğu — sahnesi Build Settings'te olmayan harita

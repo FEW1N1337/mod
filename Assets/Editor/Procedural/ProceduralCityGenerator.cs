@@ -433,7 +433,10 @@ namespace DreamCar.EditorTools.Procedural
         }
 
         // ---------------------------------------------------------- Yardımcılar
-        static GameObject CreateMeshObject(GameObject parent, string name, Mesh mesh, Material material)
+        // ProceduralGarage da bunu kullanıyor: mesh'i varlık olarak kaydedip
+        // nesneyi kurma mantığı (var olan mesh'i CopySerialized ile tazeleme
+        // dahil) iki yerde ayrı yazılırsa yeniden üretimde ayrışır.
+        internal static GameObject CreateMeshObject(GameObject parent, string name, Mesh mesh, Material material)
         {
             SaveMesh(mesh, mesh.name);
 

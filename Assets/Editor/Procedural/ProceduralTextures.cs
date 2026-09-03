@@ -25,6 +25,11 @@ namespace DreamCar.EditorTools.Procedural
             SaveTexture(BuildRoadMarking(128), "road_marking");
             SaveTexture(BuildGrass(256), "grass");
 
+            // Ana menü garajı. Sahne bugüne kadar tamamen boştu (yalnızca kamera
+            // ve UI), o yüzden bu iki dokunun karşılığı da yoktu.
+            SaveTexture(BuildGarageFloor(512), "garage_floor");
+            SaveTexture(BuildGarageWall(256), "garage_wall");
+
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log("[Procedural] Texture ve materyaller üretildi.");
@@ -78,6 +83,85 @@ namespace DreamCar.EditorTools.Procedural
 
                 float v = joint ? 0.34f : 0.56f + noise;
                 pixels[y * size + x] = new Color(v, v * 0.985f, v * 0.96f, 1f);
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return tex;
+        }
+
+        // Garaj zemini: koyu kare fayans ızgarası + iki kırmızı vurgu bandı.
+        //
+        // Fayans deseni bilerek kontrastlı: garaj aydınlatması tepeden geliyor
+        // ve düz bir zemin o ışıkta ölçeksiz görünüyor — ızgara hem derinlik
+        // hem araç boyutu algısı veriyor.
+        public static Texture2D BuildGarageFloor(int size)
+        {
+            var tex = NewTexture(size, size, "garage_floor");
+            var pixels = new Color[size * size];
+            int tile = size / 8;
+
+            for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                int lx = x % tile, ly = y % tile;
+                bool joint = lx < 2 || ly < 2;
+
+                float nx = (float)x / size, ny = (float)y / size;
+                float grain = Mathf.PerlinNoise(nx * 90f, ny * 90f) * 0.035f;
+
+                // Kırmızı bantlar: fayans sütunlarından ikisi. Referans zeminde
+                // olduğu gibi mekâna yön veriyor.
+                int col = x / tile;
+                bool red = col == 2 || col == 5;
+
+                Color c;
+                if (red)
+                {
+                    float v = joint ? 0.26f : 0.44f + grain;
+                    c = new Color(v, v * 0.24f, v * 0.22f, 1f);
+                }
+                else
+                {
+                    float v = joint ? 0.13f : 0.24f + grain;
+                    c = new Color(v, v * 1.02f, v * 1.06f, 1f);
+                }
+                pixels[y * size + x] = c;
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return tex;
+        }
+
+        // Garaj duvarı: dikey lamel panel. Lamel genişliği hafif değişiyor —
+        // eşit aralıklı çizgi deseni yakından bakınca yapay duruyor.
+        public static Texture2D BuildGarageWall(int size)
+        {
+            var tex = NewTexture(size, size, "garage_wall");
+            var pixels = new Color[size * size];
+            var rng = new System.Random(7);
+
+            // Lamel sınırlarını önceden çıkar: her sütun için hangi lamelde
+            // olduğunu ve o lamelin tonunu biliyoruz.
+            var shade = new float[size];
+            int x0 = 0;
+            while (x0 < size)
+            {
+                int w = 10 + rng.Next(6);
+                float tone = 0.82f + (float)rng.NextDouble() * 0.36f;
+                for (int x = x0; x < Mathf.Min(size, x0 + w); x++)
+                    shade[x] = (x == x0 || x == x0 + w - 1) ? tone * 0.55f : tone;
+                x0 += w;
+            }
+
+            for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float nx = (float)x / size, ny = (float)y / size;
+                float grain = Mathf.PerlinNoise(nx * 30f, ny * 120f) * 0.05f;
+                float v = (0.30f + grain) * shade[x];
+                pixels[y * size + x] = new Color(v * 1.06f, v * 0.94f, v * 0.78f, 1f);
             }
 
             tex.SetPixels(pixels);

@@ -66,9 +66,12 @@ namespace DreamCar.UI
             }
 
             if (_preview) Destroy(_preview);
-            if (previewMount && !string.IsNullOrEmpty(def.resourcePrefabName))
+            // resourcePrefabName DEĞİL: o prefab PhotonView ve Rigidbody
+            // taşıyor, menüde odaya bağlı olmadan doğurmak hata üretiyor.
+            // previewPrefabName yalnızca görünen hiyerarşiyi içeriyor.
+            if (previewMount && !string.IsNullOrEmpty(def.previewPrefabName))
             {
-                var prefab = Resources.Load<GameObject>(def.resourcePrefabName);
+                var prefab = Resources.Load<GameObject>(def.previewPrefabName);
                 if (prefab) _preview = Instantiate(prefab, previewMount.position, previewMount.rotation, previewMount);
             }
         }

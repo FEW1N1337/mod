@@ -214,7 +214,14 @@ namespace DreamCar.EditorTools
             new GameObject("EventSystem").AddComponent<EventSystem>().gameObject.AddComponent<StandaloneInputModule>();
             var cam = new GameObject("Main Camera").AddComponent<Camera>();
             cam.tag = "MainCamera";
-            cam.transform.position = new Vector3(0f, 1f, -10f);
+
+            // Ana menü sahnesi bugüne kadar TAMAMEN BOŞTU: yalnızca bu kamera
+            // ve UI. Garaj diye bir mekân, aydınlatma, zemin — hiçbiri yoktu ve
+            // araç önizlemesi düz bir panele basılan küçük resimdi. Referans
+            // görüntünün oluşmamasının sebebi model kalitesi değil, sahnenin
+            // boş olmasıydı.
+            var turntable = Procedural.ProceduralGarage.Build(null);
+            Procedural.ProceduralGarage.FrameCamera(cam);
 
             // AudioListener YOKTU — ana menü tamamen sessizdi. Sahneye kamera
             // "new GameObject(...) + AddComponent<Camera>()" ile kuruluyor;
@@ -319,14 +326,11 @@ namespace DreamCar.EditorTools
             // GarageCarousel yazılmıştı ama hiçbir sahneye eklenmiyordu: oyuncu araç
             // satın alabiliyor ama satın aldığını SEÇEMİYORDU, hep başlangıç aracıyla
             // oynuyordu. Sol sütuna kuruluyor; nav butonları y=-300'de, burası boş.
-            var garageThumbGo = new GameObject("GarageThumb", typeof(RectTransform), typeof(Image));
-            garageThumbGo.transform.SetParent(mainPanel.transform, false);
-            var garageThumbRt = garageThumbGo.GetComponent<RectTransform>();
-            garageThumbRt.anchoredPosition = new Vector2(0f, 110f);
-            garageThumbRt.sizeDelta = new Vector2(760f, 340f);
-            var garageThumb = garageThumbGo.GetComponent<Image>();
-            Skin(garageThumb, "panel", Palette.Surface);
-            garageThumb.preserveAspect = true;
+            // Ortadaki DÜZ PANEL KALDIRILDI: arkasında gerçek araç dönerken
+            // önünde gri bir dikdörtgen durması onu tamamen gizlerdi.
+            // GarageCarousel.thumbnail alanı opsiyonel (if (thumbnail) ile
+            // korumalı) ve küçük resimler mağaza satırlarında kullanılmaya
+            // devam ediyor (ShopUI).
 
             var garagePrev = MakeChevronButton(mainPanel, "GaragePrev", new Vector2(-490f, 110f), pointRight: false);
             garagePrev.GetComponent<RectTransform>().sizeDelta = new Vector2(120f, 120f);
@@ -345,7 +349,10 @@ namespace DreamCar.EditorTools
             garage.selectButton = garageSelect;
             garage.nameLabel = garageName;
             garage.priceOrOwnedLabel = garagePrice;
-            garage.thumbnail = garageThumb;
+            // Canlı 3B önizleme artık mümkün: ProceduralCarGenerator ayrı bir
+            // Preview_<id> prefabı üretiyor (Rigidbody/PhotonView/collider yok),
+            // yani menüde doğurmanın eski engeli kalktı.
+            garage.previewMount = turntable;
             // previewMount bilerek boş: 3B önizleme araç prefabını Instantiate ederdi,
             // o prefab PhotonView ve Rigidbody taşıyor — menü sahnesinde odaya bağlı
             // olmadan doğurmak hata üretir. Alan zaten null kontrolüyle korunuyor.
