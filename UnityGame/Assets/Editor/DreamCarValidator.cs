@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using UnityEditor;
+using UnityEditor.Build;          // NamedBuildTarget
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -59,6 +60,7 @@ namespace DreamCar.EditorTools
                 ValidateScene(path, errors, notes);
 
             ValidateProjectWide(errors);
+            ValidatePlatform(errors, notes);
             ReportBackend(notes);
 
             if (!string.IsNullOrEmpty(reopen))
@@ -208,6 +210,37 @@ namespace DreamCar.EditorTools
             if (UnityEngine.Rendering.GraphicsSettings.defaultRenderPipeline == null)
                 errors.Add("URP varlığı atanmamış — bütün yüzeyler macenta görünür " +
                            "(DreamCar → Procedural → Setup Render Pipeline).");
+        }
+
+        // Mağazaya çıkarken patlayan, ama Editor'de hiçbir belirti vermeyen ayarlar.
+        static void ValidatePlatform(List<string> errors, List<string> notes)
+        {
+            // Android 64-bit: Play Store şartı. ARM32-only bir yükleme reddedilir.
+            var arch = PlayerSettings.Android.targetArchitectures;
+            if ((arch & AndroidArchitecture.ARM64) == 0)
+                errors.Add("Android ARM64 kapalı — Play Store 64-bit zorunlu tutuyor.");
+
+            // IL2CPP olmadan ARM64 seçilemiyor.
+            if (PlayerSettings.GetScriptingBackend(NamedBuildTarget.Android) != ScriptingImplementation.IL2CPP)
+                errors.Add("Android scripting backend IL2CPP değil — ARM64 üretilemez.");
+
+            // Renk uzayı: Gamma'da bütün PBR malzemeler cansız görünür.
+            if (PlayerSettings.colorSpace != ColorSpace.Linear)
+                errors.Add("Renk uzayı Linear değil — metalik araç boyası ve aydınlatma yanlış görünür.");
+
+            // ATT çağrısı kodda var (KVKKConsent → _RequestTracking). iOS, bu
+            // açıklama yokken ATT çağıran uygulamayı ANINDA SONLANDIRIR.
+            // Post-build betiği Info.plist'e yazıyor, ama Player Settings alanı
+            // da doluysa Unity kendi de yazar — ikisinden biri yeterli, hiçbiri
+            // yoksa çökme kesin.
+            if (string.IsNullOrWhiteSpace(PlayerSettings.iOS.appleDeveloperTeamID))
+                notes.Add("iOS: Apple Developer Team ID boş — imzalı build alırken gerekecek.");
+
+            // Hedef API sabit bir sayıya çakılıysa bir sonraki Play eşiğinde
+            // yayın engellenir; Auto kurulu SDK'yı takip ediyor.
+            if (PlayerSettings.Android.targetSdkVersion != AndroidSdkVersions.AndroidApiLevelAuto)
+                notes.Add($"Android hedef API sabit ({PlayerSettings.Android.targetSdkVersion}). " +
+                          "Play eşiği her ağustos yükseliyor; 'Auto' bunu kendiliğinden takip eder.");
         }
 
         // Backend HATA değil, DURUM: oyun PlayFab'siz tam oynanır (para,

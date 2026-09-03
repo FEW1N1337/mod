@@ -1256,6 +1256,60 @@ değil, "ilerleme telefon değişince kaybolur".
 
 ---
 
+## 20) v1.2 — iOS / Android mağaza gereklilikleri
+
+### 20a) iOS'ta ATT çağrısı uygulamayı ÇÖKERTİRDİ
+
+`Plugins/iOS/DreamCarNative.mm` içinde ATT kodu yazılmış ve `KVKKConsent`
+onu çağırıyor (`Decide → RequestATT → _RequestTracking`). Ama
+**`NSUserTrackingUsageDescription` Info.plist'e hiç girmiyordu.**
+
+Bu eksik meta veri değil, **çökme sebebi**: iOS, o anahtar yokken
+`requestTrackingAuthorization` çağıran uygulamayı anında sonlandırır. Yani
+oyuncunun KVKK onayında "Kabul ediyorum"a basması uygulamayı öldürürdü.
+Native dosyanın kendi yorumu "Player Settings'ten doldur" diyordu, ama o
+alan boştu ve kontrol eden hiçbir şey yoktu.
+
+`Editor/iOS/DreamCarIOSPostBuild.cs` artık build sonrası Info.plist'e
+yazıyor: ATT açıklaması, Photon UDP için `NSAppTransportSecurity` ve iPad
+yatay yön kilidi.
+
+### 20b) `PrivacyInfo.xcprivacy` yoktu
+
+Apple 1 Mayıs 2024'ten beri zorunlu tutuyor; olmadan App Store Connect
+yüklemeyi reddediyor.
+
+Manifest **build anında üretiliyor**, depoda sabit durmuyor — içeriği hangi
+derleme sembollerinin aktif olduğuna bağlı:
+
+| Sembol | Manifeste eklenen |
+|---|---|
+| `CAS_INSTALLED` / `UNITY_ADS` | `NSPrivacyTracking = true`, reklam verisi |
+| `PLAYFAB_INSTALLED` | Cihaz kimliği (hesaba bağlı, izleme değil) |
+| `UNITY_ANALYTICS` | Ürün etkileşimi |
+| *(her zaman)* | `NSPrivacyAccessedAPICategoryUserDefaults`, sebep `CA92.1` |
+
+Sabit bir dosya ilk sembol değişiminde yalan söylemeye başlardı; Apple
+yanlış beyanı eksik beyan kadar reddediyor.
+
+### 20c) Android hedef API sabit 34'te çakılıydı
+
+Play Store hedef API eşiğini her yıl ağustosta yükseltiyor. Sabit yazılan
+her sayı bir sonraki ağustosta yayını engelliyor ve bunu ancak yükleme
+reddedilince fark ediyorsun.
+
+`targetSdkVersion` artık `AndroidApiLevelAuto` — kurulu Android SDK'nın en
+yükseğini kullanıyor, yani SDK'yı güncellemek hedefi de güncelliyor.
+Workflow'daki sabit `androidTargetSdkVersion: AndroidApiLevel34` kaldırıldı.
+
+### 20d) Denetçi bunları da kontrol ediyor
+
+`DreamCarValidator` artık platform ayarlarına da bakıyor: Android ARM64
+açık mı, scripting backend IL2CPP mi, renk uzayı Linear mı (hata olarak);
+Apple Team ID ve sabitlenmiş hedef API (bilgi olarak).
+
+---
+
 ## Dosya haritası
 
 | Dosya | Görev |
@@ -1268,6 +1322,7 @@ değil, "ilerleme telefon değişince kaybolur".
 | `Editor/DreamCarValidator.cs` | Sahne kablolama denetimi (§18f) |
 | `Editor/CI/DreamCarCI.cs` | Batch-mode üretim + build (§19a) |
 | `Editor/DreamCarPlayFabSetup.cs` | PLAYFAB_INSTALLED define'ı (§19c) |
+| `Editor/iOS/DreamCarIOSPostBuild.cs` | Info.plist + gizlilik manifesti (§20) |
 | `Scripts/Input/MobileTouchInput.cs` | Dokunmatik + klavye input |
 | `Scripts/Network/PhotonConnector.cs` | Master bağlantısı, singleton |
 | `Scripts/Network/LobbyManager.cs` | Oda listesi/oluştur/katıl |

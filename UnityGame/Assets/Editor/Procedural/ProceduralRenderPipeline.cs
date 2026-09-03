@@ -229,6 +229,18 @@ namespace DreamCar.EditorTools.Procedural
             PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
             PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel24;
 
+            // HEDEF API'yi SABİT BİR SAYIYA ÇAKMIYORUZ.
+            //
+            // Play Store hedef API eşiğini her yıl ağustosta yükseltiyor; sabit
+            // yazılan her sayı bir sonraki ağustosta yayını engelliyor ve bunu
+            // ancak yükleme reddedilince fark ediyorsun. "Auto", kurulu Android
+            // SDK'nın en yükseğini kullanıyor — yani SDK'yı güncellemek hedefi
+            // de güncelliyor.
+            //
+            // CI tarafında da workflow'daki sabit "AndroidApiLevel34" kaldırıldı;
+            // orası da artık bu ayarı takip ediyor.
+            PlayerSettings.Android.targetSdkVersion = AndroidSdkVersions.AndroidApiLevelAuto;
+
             EnsureBothInputBackends();
             ApplyQualitySettings();
 
