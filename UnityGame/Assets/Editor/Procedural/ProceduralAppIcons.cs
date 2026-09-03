@@ -531,12 +531,18 @@ namespace DreamCar.EditorTools.Procedural
                     // Adaptive iki katmanlı — ApplyAdaptiveIcon ayrıca ele alıyor.
                     if (kind.ToString() == "Adaptive") continue;
 
-                    int count = PlayerSettings.GetIconSizes(target, kind).Length;
-                    if (count == 0) continue;
+                    // Modern ikon API'si. Unity 6000.6'da GetSupportedIconKinds
+                    // PlatformIconKind döndürüyor ama eski SetIcons/GetIconSizes
+                    // hâlâ IconKind bekliyor (CS1503). PlatformIcon üzerinden
+                    // gidiyoruz — ApplyAdaptiveIcon ile aynı yol.
+                    var icons = PlayerSettings.GetPlatformIcons(target, kind);
+                    if (icons == null || icons.Length == 0) continue;
 
-                    var icons = new Texture2D[count];
-                    for (int i = 0; i < count; i++) icons[i] = source;
-                    PlayerSettings.SetIcons(target, icons, kind);
+                    foreach (var icon in icons)
+                        for (int layer = 0; layer < icon.maxLayerCount; layer++)
+                            icon.SetTexture(source, layer);
+
+                    PlayerSettings.SetPlatformIcons(target, kind, icons);
                 }
             }
             catch (System.Exception e)

@@ -2019,16 +2019,18 @@ namespace DreamCar.EditorTools
                 // İkon 78 birim yer aldı: 280 genişlikte etikete ~186 kalıyor
                 // ve "Başarımlar" 36 punto ile oraya sığmıyor. Otomatik
                 // küçültme, kısa etiketleri küçültmeden uzunları sığdırıyor.
-                var label = labelRt.GetComponent<TMP_Text>();
-                if (label)
+                // 'label' ADI DEĞİL: bu metodun 'string label' parametresiyle
+                // çakışıyor (CS0136). Yerel TMP_Text ayrı adla.
+                var labelText = labelRt.GetComponent<TMP_Text>();
+                if (labelText)
                 {
-                    label.enableAutoSizing = true;
-                    label.fontSizeMin = 20f;
-                    label.fontSizeMax = 36f;
+                    labelText.enableAutoSizing = true;
+                    labelText.fontSizeMin = 20f;
+                    labelText.fontSizeMax = 36f;
                     // enableWordWrapping Unity 6'da [Obsolete]; sarma zaten
                     // 120 birim yükseklikte sorun değil, taşma da otomatik
                     // küçültmeden sonra nadiren oluşuyor.
-                    label.overflowMode = TextOverflowModes.Ellipsis;
+                    labelText.overflowMode = TextOverflowModes.Ellipsis;
                 }
             }
 
