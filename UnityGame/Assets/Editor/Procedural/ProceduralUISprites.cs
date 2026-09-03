@@ -43,6 +43,9 @@ namespace DreamCar.EditorTools.Procedural
             Save(EmoteIcon(96, Color.white), "icon_emote");
             Save(HazardIcon(96, Color.white), "icon_hazard");
 
+            // Lobi oda satırı: şifreli odayı gösteren asma kilit.
+            Save(LockIcon(96, Color.white), "icon_lock");
+
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log("[Procedural] UI sprite'ları üretildi: " + Folder);
@@ -415,6 +418,39 @@ namespace DreamCar.EditorTools.Procedural
         }
 
         // Fotoğraf makinesi — kamera modu butonu.
+        // Asma kilit — lobide şifreli odaların yanında.
+        //
+        // İki parça: altta gövde (dolu dikdörtgen), üstte kanca (halkanın üst
+        // yarısı). Halkanın alt yarısı gövdenin içinde kalacağı için ayrıca
+        // kırpmaya gerek yok; gövde onu zaten örtüyor.
+        static Texture2D LockIcon(int size, Color color)
+        {
+            float aa = Aa(size);
+            var shackleCenter = new Vector2(0.5f, 0.62f);
+
+            return Icon(size, color, p =>
+            {
+                // Gövde
+                float body = Box(p, 0.26f, 0.16f, 0.74f, 0.56f, aa);
+
+                // Kanca: halkanın yalnızca gövdenin ÜSTÜNDE kalan kısmı.
+                // p.y eşiği gövdenin üst kenarıyla aynı, yoksa halka gövdenin
+                // içinden geçip anahtar deliğini bozuyor.
+                float shackle = p.y >= 0.55f
+                    ? Ring(p, shackleCenter, 0.17f, 0.075f, aa)
+                    : 0f;
+
+                float lockShape = Union(body, shackle);
+
+                // Anahtar deliği — gövdeden çıkarılıyor.
+                float keyhole = Union(
+                    Disc(p, new Vector2(0.5f, 0.40f), 0.055f, aa),
+                    Box(p, 0.475f, 0.27f, 0.525f, 0.41f, aa));
+
+                return Subtract(lockShape, keyhole);
+            });
+        }
+
         static Texture2D CameraIcon(int size, Color color)
         {
             float aa = Aa(size);

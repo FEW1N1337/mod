@@ -1310,6 +1310,59 @@ Apple Team ID ve sabitlenmiş hedef API (bilgi olarak).
 
 ---
 
+## 21) v1.3 — Arayüz düzeni
+
+Referans olarak Dream Road: Online'ın üç ekranı alındı. Taklit edilen şey
+**düzen kuralları** — garaj karuseli, oda satırı sütunları, analog gösterge.
+Bunlar bu türün ortak dili. Logo, araç modelleri ve dokular kopyalanmadı.
+
+### 21a) Lobi oda satırı tek satıra sıkışmıştı
+
+`LobbyUI` şunu yazıyordu: `"Oda  (3/6)"`. Hangi harita, gündüz mü gece mi,
+şifreli mi — hiçbiri görünmüyordu. Oysa **üçü de Photon'a zaten
+yayımlanıyordu** (`RoomPassword.Lobby`), yalnızca gösterilmiyordu.
+
+Satır artık dört sütun: kilit · oda adı · harita + zaman · doluluk.
+Harita adı `MapDefinition.displayName`'den geliyor ve zaman dilimini zaten
+içeriyor ("Otoyol (Gece)"). Şifreli odada `icon_lock` beliriyor — oyuncu
+artık neden giremediğini görüyor. Listenin üstüne isim filtresi eklendi.
+
+### 21b) Garaj kenarda duruyordu
+
+Araç `x = -600`'de, ekranın kenarındaydı; ortası boştu. Artık ortada, oklar
+iki yanında, adı ve fiyatı altında, SEÇ ve OYNA yan yana.
+
+### 21c) HUD yeniden yerleştirildi — ve **dokuz çakışma** çıktı
+
+Gösterge alt ortadaydı: baş parmakların gaz/frene gittiği yerin tam üstünde
+ve göz sürekli yoldan aşağı inmek zorundaydı. Sağ üste alındı, vites rakamı
+kadranın içine girdi, hız yazısı küçülüp altına indi.
+
+Taşıma sırasında yerleşimi programla denetledim ve **eskiden beri var olan**
+çakışmalar ortaya çıktı:
+
+| Çakışma | Sonucu |
+|---|---|
+| Kurtar ↔ Duraklat | Aynı köşede üst üste — biri diğerine basılıyordu |
+| Sohbet giriş kutusu ↔ direksiyon pedi | Sohbete dokunmak direksiyonu çeviriyordu |
+| Sinyal/dörtlü/emote ↔ direksiyon pedi | Üç buton pedin alanının içindeydi |
+| Minimap ↔ nitro butonu + nitro/yakıt çubukları | Minimap üçünün üstüne biniyordu |
+| Yarış sıralaması ↔ gaz pedalı | Sıralama pedalın üstündeydi |
+| Tamir fiyatı ↔ tamir çubuğu | Yazı çubuğun üstüne biniyordu |
+
+Yeni düzen: gösterge sağ üstte, ikon şeridi (kamera/korna/sinyal/dörtlü/
+emote/**Kurtar**) üst şeridin altında yatay, minimap sol üstte, sohbet
+girişi pedalların ve pedin arasındaki boş banda alındı.
+
+Ana menüde de aynı denetim **21 çakışma** buldu (dokuz nav butonu garajın ve
+OYNA'nın üstündeydi); iki temiz sıraya dizildi.
+
+**Doğrulama otomatik:** her iki ekranın yerleşimi 1920×1080 referansında
+program tarafından taranıyor — HUD 33 eş-zamanlı öğe, ana menü 19 öğe,
+ikisinde de sıfır çakışma ve sıfır ekran taşması.
+
+---
+
 ## Dosya haritası
 
 | Dosya | Görev |
