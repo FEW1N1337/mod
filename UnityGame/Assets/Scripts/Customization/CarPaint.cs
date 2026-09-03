@@ -12,6 +12,16 @@ namespace DreamCar.Customization
         public string metallicProperty = "_Metallic";
         public string smoothnessProperty = "_Smoothness";
 
+        // CarCustomization tarafından Awake'te set ediliyor.
+        //
+        // NEDEN GEREKLİ: bu bileşen Start'ta global PlayerPrefs anahtarından
+        // (car.color) renk yüklüyor, modifikasyon sistemi ise ARAÇ BAŞINA
+        // kayıttan. İkisi de Start'ta koşsaydı hangisinin kazandığı Unity'nin
+        // bileşen sırasına kalırdı — aynı build'de bile araçtan araca değişen
+        // bir renk. Yönetici varsa bu bileşen kendi yüklemesini yapmıyor,
+        // yalnızca Apply çağrılarını uyguluyor (Photon senkronu dahil).
+        [HideInInspector] public bool externallyManaged;
+
         MaterialPropertyBlock _mpb;
         int _colorId, _metallicId, _smoothnessId;
 
@@ -25,6 +35,7 @@ namespace DreamCar.Customization
 
         void Start()
         {
+            if (externallyManaged) return;
             if (photonView.IsMine) LoadFromPrefs();
             else LoadFromOwnerProperties();
         }

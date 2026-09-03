@@ -198,6 +198,12 @@ namespace DreamCar.EditorTools.RCCPTools
             Get<DreamCar.Car.VehicleStatSheet>(root);
             Get<DreamCar.Car.VehicleTelemetry>(root);
             Get<DreamCar.Car.VehicleAuthority>(root);
+
+            // Modifikasyon yöneticisi. RCCP aracında "Glass" ve "*_Rim" adlı
+            // nesneler olmayabilir; görsel modüller hedef bulamazsa sessizce
+            // atlıyor. İstatistik modülleri (motor, turbo, fren, lastik) RCCP'de
+            // de çalışıyor — VehicleStatSheet fizik sağlayıcısından bağımsız.
+            Get<DreamCar.Customization.CarCustomization>(root);
             log.AppendLine("• Oynanış: drift, vites, yakıt, kurtarma, hasar, istatistik");
 
             // --- Drift dumanı + fren izi (tekerlek başına) ---

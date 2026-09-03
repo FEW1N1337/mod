@@ -126,6 +126,14 @@ namespace DreamCar.EditorTools.Procedural
                 EditorUtility.DisplayProgressBar("DreamCar", "Araç küçük resimleri…", 0.45f);
                 ProceduralCarThumbnails.GenerateAll();
 
+                // Modifikasyon kataloğu ARAÇLARDAN SONRA: spoiler ürünlerinin
+                // childName alanı ProceduralCarGenerator.SpoilerChildName'den
+                // geliyor ve denetçi o çocuğun araç prefabında gerçekten var
+                // olduğunu kontrol ediyor. Önce koşsaydı kontrol edilecek
+                // prefab henüz olmazdı.
+                EditorUtility.DisplayProgressBar("DreamCar", "Modifikasyon kataloğu…", 0.47f);
+                ProceduralModCatalog.GenerateAll();
+
                 // Sahnelerden ÖNCE: hem AchievementsScreen hem PlayFabAchievements bu
                 // kataloğa referans veriyor. Sonra üretilseydi bağlanacak varlık henüz
                 // olmaz, başarım ekranı boş kalır ve hiçbir başarım değerlendirilmezdi.

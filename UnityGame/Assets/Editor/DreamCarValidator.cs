@@ -60,6 +60,7 @@ namespace DreamCar.EditorTools
                 ValidateScene(path, errors, notes);
 
             ValidateProjectWide(errors);
+            ValidateModCatalog(errors, notes);
             ValidatePlatform(errors, notes);
             ReportBackend(notes);
 
@@ -323,6 +324,89 @@ namespace DreamCar.EditorTools
             if (prefab.GetComponent<DreamCar.Car.IVehicleAuthority>() == null)
                 errors.Add($"Araç '{carId}': IVehicleAuthority sağlayan bileşen yok " +
                            "(VehicleAuthority) — sahiplik sorusu tek noktadan yanıtlanamaz.");
+
+            if (prefab.GetComponent<Customization.CarCustomization>() == null)
+                errors.Add($"Araç '{carId}': CarCustomization yok — satın alınan " +
+                           "modifikasyonların hiçbiri bu araçta görünmez.");
+        }
+
+        // Modifikasyon kataloğu ile kod arasındaki sözleşme.
+        //
+        // Üç şey birbirine bağlı ve üçü de sessizce kopabiliyor:
+        //   • katalogdaki slot adı ↔ modülün Slot değeri
+        //   • ürünün childName'i ↔ araç prefabındaki kapalı çocuk
+        //   • kataloğun kendisi ↔ Resources altındaki konumu
+        // Herhangi biri eşleşmezse oyuncu parçayı satın alır, "Tak"a basar ve
+        // HİÇBİR ŞEY olmaz. Hata da basılmaz.
+        static void ValidateModCatalog(List<string> errors, List<string> notes)
+        {
+            var catalog = Resources.Load<Economy.ModCatalog>("ModCatalog");
+            if (catalog == null)
+            {
+                errors.Add("Resources/ModCatalog.asset YOK — modifikasyon ekranı " +
+                           "tamamen boş görünür (DreamCar → BUILD EVERYTHING).");
+                return;
+            }
+
+            if (catalog.items == null || catalog.items.Count == 0)
+            {
+                errors.Add("ModCatalog BOŞ — modifikasyon ekranında hiçbir parça listelenmez.");
+                return;
+            }
+
+            var knownSlots = new HashSet<string>(Customization.CustomizationRuntime.KnownSlots());
+            var missingSlots = new HashSet<string>();
+
+            // Araç prefabları: childName kontrolü için hepsine bakıyoruz, çünkü
+            // spoiler geometrisi yalnızca prosedürel üretilen araçlarda var.
+            var carPrefabs = new List<GameObject>();
+            var carCatalog = FindFirst<Economy.CarCatalog>();
+            if (carCatalog != null && carCatalog.cars != null)
+                foreach (var def in carCatalog.cars)
+                {
+                    if (def == null || string.IsNullOrEmpty(def.resourcePrefabName)) continue;
+                    var prefab = Resources.Load<GameObject>(def.resourcePrefabName);
+                    if (prefab != null) carPrefabs.Add(prefab);
+                }
+
+            foreach (var item in catalog.items)
+            {
+                if (item == null) continue;
+
+                if (!knownSlots.Contains(item.slot))
+                {
+                    // Slot başına tek hata: on ürünlü bir slot on satır basmasın.
+                    if (missingSlots.Add(item.slot))
+                        errors.Add($"ModCatalog: '{item.slot}' slotunun MODÜLÜ YOK " +
+                                   "(CustomizationRuntime.Factories) — o slottaki her parça " +
+                                   "satın alınır ve hiçbir şey yapmaz.");
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(item.childName)) continue;
+
+                foreach (var prefab in carPrefabs)
+                    if (FindChild(prefab.transform, item.childName) == null)
+                        notes.Add($"'{item.displayName}' parçası '{prefab.name}' aracında " +
+                                  $"'{item.childName}' nesnesini bulamıyor — o araçta görünmez.");
+            }
+
+            // Kodda olup katalogda hiç ürünü olmayan slot: hata değil, ama
+            // sekme boş görünür.
+            foreach (var slot in knownSlots)
+                if (catalog.InSlot(slot).Count == 0)
+                    notes.Add($"'{slot}' slotunda hiç parça yok — sekmesi boş açılır.");
+        }
+
+        static Transform FindChild(Transform root, string name)
+        {
+            if (root.name == name) return root;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                var found = FindChild(root.GetChild(i), name);
+                if (found != null) return found;
+            }
+            return null;
         }
 
         static T FindFirst<T>() where T : UnityEngine.Object

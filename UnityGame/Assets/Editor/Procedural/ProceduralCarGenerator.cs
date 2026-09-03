@@ -744,8 +744,28 @@ namespace DreamCar.EditorTools.Procedural
             root.AddComponent<DreamCar.Car.VehicleTelemetry>();
             root.AddComponent<DreamCar.Car.VehicleAuthority>();
 
+            // Modifikasyon yöneticisi. Modüllerin KENDİSİ bileşen değil (bkz.
+            // CustomizationRuntime) — araca eklenen tek bileşen bu.
+            root.AddComponent<Customization.CarCustomization>();
+
+            // Modifikasyon geometrisi: üç spoiler varyantı ve neon şeridi
+            // prefaba KAPALI çocuk olarak konuyor. Modül SetActive yapıyor.
+            // Çalışma anında mesh üretmemenin gerekçesi MakeSpoiler'da.
+            var paintedExtras = new List<Renderer> { bodyRenderer };
+            for (int spoilerLevel = 1; spoilerLevel <= 3; spoilerLevel++)
+            {
+                var spoiler = MakeSpoiler(root, preset, spoilerLevel, paint);
+                if (spoiler) paintedExtras.Add(spoiler);
+            }
+            MakeNeonStrip(root, preset, ProceduralTextures.CreateEmissiveMaterial(
+                "mat_neon", Color.white));
+
+            // Spoiler'lar boya listesine giriyor: gövde rengi değiştiğinde
+            // spoiler fabrika renginde kalsaydı takılı spoiler her zaman
+            // uyumsuz görünürdü. CarPaint MaterialPropertyBlock kullandığı için
+            // kapalı nesneye yazmak da zararsız.
             var carPaint = root.AddComponent<CarPaint>();
-            carPaint.paintRenderers = new[] { bodyRenderer };
+            carPaint.paintRenderers = paintedExtras.ToArray();
 
             var hdr = root.AddComponent<CarPaintHDR>();
             hdr.paintRenderers = new[] { bodyRenderer };
@@ -791,6 +811,115 @@ namespace DreamCar.EditorTools.Procedural
             r.sharedMaterial = mat;
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             return r;
+        }
+
+        // ----------------------------------------------- Modifikasyon geometrisi
+
+        // Spoiler varyantının prefabdaki çocuk adı. TEK KAYNAK: katalog üreticisi
+        // (ProceduralModCatalog) de bu metodu çağırıyor. İki yerde ayrı dize
+        // yazsaydık biri değişince diğeri sessizce eşleşmez olur, oyuncu
+        // spoiler satın alır ve araçta hiçbir şey görünmezdi.
+        internal static string SpoilerChildName(int level) => "Spoiler_" + level;
+
+        // Spoiler: iki yan destek + kanat. Prefabda KAPALI duruyor; SpoilerModule
+        // yalnızca SetActive yapıyor.
+        //
+        // Neden çalışma anında mesh üretmiyoruz: her araç doğuşunda mesh tahsisi
+        // olurdu ve bu odadaki her uzak oyuncu için de tekrarlanırdı. Kapalı
+        // çocuk yaklaşımı ayrıca garaj önizlemesinde de çalışıyor —
+        // SavePreviewPrefab bileşenleri siliyor ama GameObject'leri değil.
+        static Renderer MakeSpoiler(GameObject root, CarPreset preset, int level, Material material)
+        {
+            // Seviyeye göre yükseklik ve kanat derinliği. 1 = alçak lip,
+            // 3 = yarış kanadı.
+            float height = new[] { 0.10f, 0.26f, 0.42f }[Mathf.Clamp(level - 1, 0, 2)];
+            float chord  = new[] { 0.16f, 0.22f, 0.30f }[Mathf.Clamp(level - 1, 0, 2)];
+            float halfWidth = preset.trackHalfWidth * 0.82f;
+
+            // Gövdenin en arka kesitinin üst çizgisi — kanat oradan yükseliyor.
+            var rear = preset.sections[0];
+            float baseY = rear.centerY + rear.halfHeight;
+            float z = rear.z + 0.10f;
+
+            var mb = new MeshBuilder();
+
+            // İki dikey destek
+            float supportX = halfWidth * 0.72f;
+            foreach (float sx in new[] { -supportX, supportX })
+                mb.AddBox(new Vector3(sx, baseY + height * 0.5f, z),
+                          new Vector3(0.05f, height, chord * 0.75f));
+
+            // Kanat
+            mb.AddBox(new Vector3(0f, baseY + height, z),
+                      new Vector3(halfWidth * 2f, 0.045f, chord));
+
+            var go = new GameObject(SpoilerChildName(level));
+            go.transform.SetParent(root.transform, false);
+            go.AddComponent<MeshFilter>().sharedMesh =
+                SaveAndReturnMesh(mb.ToMesh($"{preset.id}_spoiler{level}"),
+                                  $"{ToPrefabName(preset.id)}_spoiler{level}");
+            var renderer = go.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+
+            // KAPALI doğuyor. Modül açıyor.
+            go.SetActive(false);
+            return renderer;
+        }
+
+        // Alt neon: aracın altına, zemine bakan ince bir şerit + gerçek Light.
+        //
+        // Yalnızca emissive olsaydı yerde ışık havuzu olmazdı; yalnızca Light
+        // olsaydı şeridin kendisi görünmezdi. İkisi birden gerekiyor.
+        //
+        // Renk MODÜL tarafından veriliyor (MaterialPropertyBlock + Light.color),
+        // burada nötr beyaz kuruluyor: her renk için ayrı materyal üretmek
+        // beş katı varlık demekti.
+        static void MakeNeonStrip(GameObject root, CarPreset preset, Material material)
+        {
+            float halfWidth = preset.trackHalfWidth * 0.92f;
+            float frontZ = preset.frontAxleZ + 0.25f;
+            float rearZ = preset.rearAxleZ - 0.25f;
+            float y = 0.06f;   // zeminin hemen üstü
+
+            var mb = new MeshBuilder();
+
+            // Dört kenar: iki yan + ön + arka. AddFlatQuad kendi normalini
+            // hesaplıyor; köşe sırası aşağı bakacak şekilde veriliyor.
+            void Strip(Vector3 a, Vector3 b, float thickness)
+            {
+                var dir = (b - a).normalized;
+                var side = Vector3.Cross(Vector3.up, dir) * thickness * 0.5f;
+                mb.AddFlatQuad(a - side, b - side, b + side, a + side);
+            }
+
+            Strip(new Vector3(-halfWidth, y, rearZ), new Vector3(-halfWidth, y, frontZ), 0.07f);
+            Strip(new Vector3( halfWidth, y, frontZ), new Vector3( halfWidth, y, rearZ), 0.07f);
+            Strip(new Vector3(-halfWidth, y, frontZ), new Vector3( halfWidth, y, frontZ), 0.07f);
+            Strip(new Vector3( halfWidth, y, rearZ), new Vector3(-halfWidth, y, rearZ), 0.07f);
+
+            var go = new GameObject("NeonStrip");
+            go.transform.SetParent(root.transform, false);
+            go.AddComponent<MeshFilter>().sharedMesh =
+                SaveAndReturnMesh(mb.ToMesh($"{preset.id}_neon"),
+                                  $"{ToPrefabName(preset.id)}_neon");
+            var renderer = go.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+            // Şerit gölge düşürmemeli: aracın altında, kendi gölgesi altındaki
+            // ışık havuzunu siyahlatırdı.
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+            // Yerdeki ışık havuzu. Menzil dar, şiddet ölçülü — dört araçlı bir
+            // odada beş neon ışığı mobilde ışık sayısını hızla doldurur.
+            var lightGo = new GameObject("NeonLight");
+            lightGo.transform.SetParent(go.transform, false);
+            lightGo.transform.localPosition = new Vector3(0f, 0.12f, 0f);
+            var light = lightGo.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.range = 4.5f;
+            light.intensity = 2.2f;
+            light.shadows = LightShadows.None;
+
+            go.SetActive(false);
         }
 
         // NOS alev püskürtücüsü. CarNitro Play()/Stop() çağırdığı için
@@ -991,6 +1120,30 @@ namespace DreamCar.EditorTools.Procedural
                 EditorUtility.SetDirty(existing);
             }
             else AssetDatabase.CreateAsset(mesh, path);
+        }
+
+        // SaveMesh'in KALICI VARLIĞI DÖNDÜREN hâli.
+        //
+        // SaveMesh var olan bir varlığa yazarken içeriği kopyalıyor ve geriye
+        // bir şey döndürmüyor; çağıran taraf elindeki geçici mesh'i kullanmaya
+        // devam ediyor. Prefab geçici bir mesh'e referans veremez — kaydedilince
+        // referans boşa düşer. Modifikasyon geometrisi bu yüzden her zaman
+        // diskteki örneği kullanıyor.
+        static Mesh SaveAndReturnMesh(Mesh mesh, string name)
+        {
+            string path = $"{MeshFolder}/{name}.asset";
+            var existing = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            if (existing != null)
+            {
+                existing.Clear();
+                EditorUtility.CopySerialized(mesh, existing);
+                EditorUtility.SetDirty(existing);
+                Object.DestroyImmediate(mesh);
+                return existing;
+            }
+
+            AssetDatabase.CreateAsset(mesh, path);
+            return mesh;
         }
 
         static void EnsureFolders()

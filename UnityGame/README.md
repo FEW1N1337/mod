@@ -1601,11 +1601,126 @@ başına post-processing profilleri. Bunlar önceki turlarda kurulmuştu.
 
 ---
 
+## 26) v1.8 — Faz 5: araç modifikasyon sistemi
+
+Dream Road tarzı bir oyunun can damarı. Altyapısı Faz 1'de kurulmuştu
+(`ICustomizationModule`, `ItemId`, `VehicleContext`, `VehicleStatSheet`) ama
+**hiçbir modül yoktu** — yani sözleşmelerin tüketicisi yoktu. Bu faz onu
+kapatıyor.
+
+### Bir düzeltme
+
+Önceki turda "cam filmi var" demiştim. **Yoktu.** `WindowTint` diye bir tip
+aramada yalnızca kendi yazdığım arayüz dosyasının yorumunda geçiyordu.
+`Customization/` klasöründe boya, HDR boya ve plaka vardı; modifikasyon
+diye bir sistem hiç yoktu.
+
+### Bulunan ölü sistem: boya
+
+`CarPaint` baştan beri projede duruyor — MaterialPropertyBlock'la boyayı
+değiştiriyor, Photon üzerinden diğer oyunculara bildiriyor, PlayerPrefs'e
+kaydediyor. Ama **`Apply()`'ı hiçbir arayüzden çağıran yok.** Oyuncunun
+aracının rengini değiştirmesinin hiçbir yolu yoktu; `car.color` anahtarı
+hiç yazılmadığı için `LoadFromPrefs` her zaman varsayılan kırmızıyı
+döndürüyordu. Hata basmıyor, sadece hiçbir şey yapmıyor — bu projenin
+baskın hata ailesi.
+
+Boya artık modifikasyon ekranının bir slotu.
+
+### Sistem
+
+| Dosya | Görev |
+|---|---|
+| `Scripts/Economy/ModCatalog.cs` | Parça kataloğu (`ModItem`: slot, fiyat, renk, istatistik) |
+| `Scripts/Customization/ModSave.cs` | Sahiplik (oyuncu başına) + takılı (ARAÇ başına) |
+| `Scripts/Customization/CustomizationRuntime.cs` | Bir araç örneğine takılı modüllerin tamamı |
+| `Scripts/Customization/CarCustomization.cs` | Araç üzerindeki tek bileşen: yükle, kaydet, ağa bildir |
+| `Scripts/Customization/Modules/` | 11 modül |
+| `Scripts/UI/ModShopUI.cs` | Modifikasyon ekranı |
+| `Editor/Procedural/ProceduralModCatalog.cs` | 11 slot, 47 parça üretiyor |
+
+**11 slot:** boya · cam filmi · jant · spoiler · neon · motor · turbo ·
+egzoz · lastik · fren · süspansiyon.
+
+### Üç karar ve nedenleri
+
+**1. Modüller MonoBehaviour DEĞİL, düz C# sınıfı.**
+Garaj önizlemesi `Preview_<id>.prefab` kullanıyor ve `SavePreviewPrefab`
+o prefabdaki **bütün MonoBehaviour'ları atıyor**. Modüller bileşen olsaydı
+menüde hiç çalışmazlardı: oyuncu cam filmi satın alır, garajda hiçbir şey
+değişmezdi. Düz sınıf olunca aynı kod hem gerçek araçta hem önizlemede
+koşuyor; araca erişim `VehicleContext` üzerinden.
+
+**2. Kayıt araç başına.**
+`mod.<carId>.<slot>`. İkinci aracını alan oyuncu birincinin cam filmiyle
+görmemeli. `CarPaint`'in global anahtarı (`car.color`) tam bu sorunu
+yaşıyordu; ona `externallyManaged` bayrağı eklendi — yönetici varsa kendi
+yüklemesini yapmıyor, yoksa hangisinin kazandığı Unity'nin bileşen sırasına
+kalırdı.
+
+**3. Yeni geometri prefabda KAPALI çocuk olarak duruyor.**
+Spoiler (3 varyant) ve neon şeridi `ProceduralCarGenerator` tarafından
+prefaba kapalı olarak konuyor; modül yalnızca `SetActive` yapıyor. Çalışma
+anında mesh üretmek her araç doğuşunda — odadaki her uzak oyuncu için de —
+tahsisat demekti. Ayrıca `SavePreviewPrefab` bileşenleri siliyor ama
+GameObject'leri değil, yani kapalı çocuklar önizlemede de duruyor.
+
+### Ağ
+
+Sahip tek bir Photon Custom Property yazıyor:
+`car.mods = "tint=mod.tint.2;rim=mod.rim.1"`. Uzak istemci ayrıştırıp
+**yalnızca görünen** modülleri uyguluyor — uzak araçta fizik simüle
+edilmiyor, tork değiştirmenin karşılığı yok. Slot başına ayrı anahtar
+yazmak yerine tek dize: hem ucuz hem atomik, yarım uygulanmış görünüm
+oluşmuyor.
+
+### Denge
+
+Yükseltmelerin **bedeli** var: turbo yakıt tüketimini artırıyor
+(`FuelDrain`), süspansiyon aracı alçaltıyor. Bedelsiz yükseltme ekonomiyi
+anlamsızlaştırır — oyuncu her şeyi alır ve seçim kalmaz. Motor 5. seviyede
+toplam +%45 tork; daha agresif değerler serbest sürüşü kontrol edilemez
+yapıyor çünkü `CarController`'ın direksiyon kısma eğrisi 140 km/s'e ayarlı.
+
+Her slotta ücretsiz bir "geri dön" seçeneği var (boyada "Fabrika"), yoksa
+sade renge dönmek için tekrar ödemek gerekirdi.
+
+### Denetçi
+
+Katalog ile kod arasındaki sözleşme sessizce kopabiliyor. Dört yeni kontrol:
+
+- `Resources/ModCatalog.asset` var ve boş değil
+- Katalogdaki her slotun `CustomizationRuntime.Factories` içinde modülü var
+  (yoksa o slottaki her parça satın alınır ve hiçbir şey yapmaz)
+- `childName` alanı olan her ürün için araç prefabında o çocuk var
+- Araç prefabında `CarCustomization` var
+
+### Dürüst sınır
+
+- **Body kit yok.** Gövde mesh'i `preset.sections`'tan loft ediliyor; body
+  kit gerçek bir gövde varyantı demek ve prosedürel üreticinin yeniden
+  yazılması olur. Ayrı bir faz.
+- **Jantın şekli değişmiyor**, rengi ve yüzeyi değişiyor.
+- **Önizlemede neon ışığı yok**, yalnızca emissive şerit —
+  `SavePreviewPrefab` bütün `Light`'ları siliyor (menüde araç farlarının
+  sahneyi yıkmaması için). Oyunda ışık havuzu var.
+- **İstatistikler istemci tarafında.** `IsServerVerified` false; projenin
+  geri kalanıyla (PlayerPrefs'teki para) aynı güven seviyesi. Sunucu
+  otoriter ekonomi Faz 10.
+
+---
+
 ## Dosya haritası
 
 | Dosya | Görev |
 |---|---|
 | `Scripts/Car/CarController.cs` | WheelCollider tabanlı fizik |
+| `Scripts/Economy/ModCatalog.cs` | Modifikasyon parça kataloğu |
+| `Scripts/Customization/ModSave.cs` | Parça sahipliği + araç başına takılı parçalar |
+| `Scripts/Customization/CustomizationRuntime.cs` | Bir araca takılı modüllerin tamamı |
+| `Scripts/Customization/CarCustomization.cs` | Araç üzerindeki modifikasyon yöneticisi |
+| `Scripts/Customization/Modules/` | 11 modifikasyon modülü |
+| `Scripts/UI/ModShopUI.cs` | Modifikasyon ekranı (canlı garaj önizlemesi) |
 | `Scripts/Car/IVehicleStats.cs` | Araçtan okunan telemetri sözleşmesi |
 | `Scripts/Car/IVehicleAuthority.cs` | Sahiplik ve sunucu güveni sözleşmesi |
 | `Scripts/Car/VehicleStatSheet.cs` | İstatistik değiştiricileri (nitro, turbo, lastik) |

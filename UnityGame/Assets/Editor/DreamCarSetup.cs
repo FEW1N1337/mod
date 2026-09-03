@@ -147,6 +147,11 @@ namespace DreamCar.EditorTools
             car.AddComponent<DreamCar.Car.VehicleTelemetry>();
             car.AddComponent<DreamCar.Car.VehicleAuthority>();
 
+            // Modifikasyon yöneticisi. Bu basit kurulum aracında spoiler/neon
+            // geometrisi yok (o geometri prosedürel üreticide), o yüzden görsel
+            // slotlardan yalnızca cam filmi ve jant rengi etki eder.
+            car.AddComponent<DreamCar.Customization.CarCustomization>();
+
             // Audio
             var engineSrcIdle = car.AddComponent<AudioSource>();
             engineSrcIdle.loop = true; engineSrcIdle.spatialBlend = 1f; engineSrcIdle.volume = 0.6f;
@@ -448,7 +453,7 @@ namespace DreamCar.EditorTools
             toast.toastPrefab = MakeToastTemplate(canvasGo, "ToastTemplate");
 
             // Ek ekranlar (Ayarlar / Liderlik / Başarımlar / Mağaza / İstatistik)
-            BuildSecondaryScreens(canvasGo, mainPanel, boot);
+            BuildSecondaryScreens(canvasGo, mainPanel, boot, garage);
 
             // Loading overlay
             BuildLoadingScreen(canvasGo, boot);
@@ -1289,7 +1294,8 @@ namespace DreamCar.EditorTools
 
         // boot: ~Bootstrap. PlayedWithList ve RateAppPopup oraya ekleniyor ama
         // UI referansları burada kuruluyor.
-        static void BuildSecondaryScreens(GameObject canvasGo, GameObject mainPanel, GameObject boot)
+        static void BuildSecondaryScreens(GameObject canvasGo, GameObject mainPanel, GameObject boot,
+                                          GarageCarousel garage)
         {
             // --- Ayarlar ---
             var settings = BuildSettingsScreen(canvasGo);
@@ -1488,6 +1494,47 @@ namespace DreamCar.EditorTools
             carShop.moneyLabel = carShopMoney;
             carShop.entryPrefab = MakeCarShopRowTemplate(carShopPanel, "RowTemplate");
 
+            // --- Modifikasyon ekranı ---
+            // Solda slot sekmeleri, sağda o slottaki parçalar. Seçim garajdaki
+            // CANLI önizlemeye anında uygulanıyor; mağazada seçip "nasıl
+            // duruyor" diye oyuna girmek zorunda kalmak bu ekranı işe yaramaz
+            // hâle getirirdi.
+            var modPanel = MakeUiChild(canvasGo, "ModScreen", modal: true);
+            modPanel.SetActive(false);
+            MakeText(modPanel, "Title", "Modifiye", new Vector2(0f, 430f), 64);
+
+            var modBalance = MakeText(modPanel, "Balance", "0 ₺", new Vector2(-560f, 350f), 36);
+            var modSlotTitle = MakeText(modPanel, "SlotTitle", "-", new Vector2(300f, 350f), 40);
+
+            var modSlotList = MakeListContainer(modPanel, "SlotTabs",
+                new Vector2(-560f, -30f), new Vector2(420f, 620f));
+            var modItemList = MakeListContainer(modPanel, "ItemList",
+                new Vector2(300f, -30f), new Vector2(900f, 620f));
+
+            // Sekme şablonu tek metinli bir satır; ürün şablonu üç metinli +
+            // buton (ad · etki · fiyat/durum). Şablonlar KAPALI duruyor ve
+            // klonlanınca açılıyor — ShopUI'deki aynı tuzağın yorumu orada.
+            var modSlotTemplate = MakeSlotTabTemplate(modPanel, "SlotTabTemplate");
+            var modItemTemplate = MakeModRowTemplate(modPanel, "ModRowTemplate");
+
+            var modClose = MakeButton(modPanel, "Close", "Kapat", Vector2.zero, key: "close");
+            AnchorTo(modClose.GetComponent<RectTransform>(),
+                     new Vector2(0.5f, 0f), new Vector2(0f, 130f), new Vector2(300f, 120f));
+
+            // Bileşen CANVAS'ta, panelde DEĞİL: Start() paneli kapatıyor ve
+            // panelin üzerinde olsaydı ilk açılışta Start o anda koşup paneli
+            // hemen geri kapatırdı. SocialScreen ile aynı gerekçe.
+            var modShop = canvasGo.AddComponent<ModShopUI>();
+            modShop.panel = modPanel;
+            modShop.garage = garage;
+            modShop.slotTabParent = modSlotList;
+            modShop.slotTabPrefab = modSlotTemplate;
+            modShop.itemListParent = modItemList;
+            modShop.itemRowPrefab = modItemTemplate;
+            modShop.moneyLabel = modBalance;
+            modShop.slotTitleLabel = modSlotTitle;
+            modShop.closeButton = modClose;
+
             // --- Ana menüdeki açma butonları ---
             // DİKKAT: onClick.AddListener çalışma anında listener ekler ve sahneye
             // SERIALIZE EDİLMEZ. Sahne kaydedilip build'de yüklendiğinde bu beş
@@ -1584,6 +1631,14 @@ namespace DreamCar.EditorTools
             AnchorTo(navSocial.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(450f, 75f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navSocial.onClick, social.Open);
+
+            // İkinci sıranın boş kalan solundaki yuva. Yatayda 750 + 140 = 890,
+            // 1920 referans genişliğin yarısı olan 960'ın altında — 21:9'da
+            // ekran daha da geniş olduğu için orada da sığıyor.
+            var navMod = MakeIconButton(mainPanel, "NavMod", "Modifiye", Vector2.zero, "icon_gear", key: "garage");
+            AnchorTo(navMod.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
+                     new Vector2(-750f, 75f), new Vector2(280f, 100f));
+            UnityEventTools.AddPersistentListener(navMod.onClick, modShop.Open);
 
             // --- KVKK / GDPR onayı (ilk açılış) ---
             // KVKKConsent hiçbir sahneye eklenmiyordu: onay hiç sorulmuyor,
@@ -2509,6 +2564,87 @@ namespace DreamCar.EditorTools
             }
 
             return row;
+        }
+
+        // Modifikasyon ekranının slot sekmesi: TAM GENİŞLİKTE tek buton.
+        //
+        // Neden MakeRowPrefabTemplate kullanılmıyor: o şablonun ilk metin
+        // sütunu genişliğin yalnızca %10'u (sıra numarası gibi kısa bir değer
+        // için tasarlanmış) ve arkasında ikon duruyor. "Süspansiyon" gibi bir
+        // slot adı o sütuna sığmaz, kırpılır.
+        static GameObject MakeSlotTabTemplate(GameObject parent, string name)
+        {
+            var row = new GameObject(name, typeof(RectTransform), typeof(LayoutElement));
+            row.transform.SetParent(parent.transform, false);
+            row.SetActive(false);
+            row.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 76f);
+            row.GetComponent<LayoutElement>().preferredHeight = 76f;
+
+            var btn = MakeButton(row, "TabButton", "-", Vector2.zero);
+            var btnRt = btn.GetComponent<RectTransform>();
+            btnRt.anchorMin = Vector2.zero; btnRt.anchorMax = Vector2.one;
+            btnRt.offsetMin = new Vector2(8f, 4f); btnRt.offsetMax = new Vector2(-8f, -4f);
+            return row;
+        }
+
+        // Modifikasyon ürünü satırı: ikon · ad · etki · fiyat/durum · buton.
+        // Sütun oranları burada açıkça yazılı; ortak şablonun oranları bu
+        // dört sütunlu düzene uymuyor.
+        static GameObject MakeModRowTemplate(GameObject parent, string name)
+        {
+            var row = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+            row.transform.SetParent(parent.transform, false);
+            row.SetActive(false);
+            row.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 76f);
+            Skin(row.GetComponent<Image>(), "panel", Palette.Surface);
+            row.GetComponent<LayoutElement>().preferredHeight = 76f;
+
+            // İkon: renk kullanan slotlarda ModShopUI bunu ürünün rengine
+            // boyuyor — on farklı boyayı adından ayırt etmek zor.
+            var icon = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+            icon.transform.SetParent(row.transform, false);
+            var iconRt = icon.GetComponent<RectTransform>();
+            iconRt.anchorMin = new Vector2(0.015f, 0.18f);
+            iconRt.anchorMax = new Vector2(0.075f, 0.82f);
+            iconRt.offsetMin = Vector2.zero; iconRt.offsetMax = Vector2.zero;
+            var iconImg = icon.GetComponent<Image>();
+            Skin(iconImg, "circle", Color.white);
+            iconImg.preserveAspect = true;
+
+            // Metin sütunları BUTONDAN ÖNCE kuruluyor: ModShopUI
+            // GetComponentsInChildren<TMP_Text>() ile alıyor ve sıra oluşturma
+            // sırasına eşit. Buton önce gelseydi etiketi texts[0] olurdu.
+            Column(row, "Text0", 0.095f, 0.34f, 30, TextAlignmentOptions.MidlineLeft);
+            Column(row, "Text1", 0.44f,  0.26f, 24, TextAlignmentOptions.MidlineLeft);
+            Column(row, "Text2", 0.70f,  0.14f, 26, TextAlignmentOptions.MidlineRight);
+
+            var btn = MakeButton(row, "RowButton", "Tak", Vector2.zero);
+            var btnRt = btn.GetComponent<RectTransform>();
+            btnRt.anchorMin = new Vector2(1f, 0.5f);
+            btnRt.anchorMax = new Vector2(1f, 0.5f);
+            btnRt.anchoredPosition = new Vector2(-95f, 0f);
+            btnRt.sizeDelta = new Vector2(160f, 58f);
+            return row;
+        }
+
+        static void Column(GameObject row, string name, float anchorX, float width,
+                           int fontSize, TextAlignmentOptions alignment)
+        {
+            var t = MakeText(row, name, "", Vector2.zero, fontSize);
+            var rt = t.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(anchorX, 0f);
+            rt.anchorMax = new Vector2(anchorX + width, 1f);
+            rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+            t.alignment = alignment;
+
+            // enableWordWrapping Unity 6'da [Obsolete] — bu dosyanın kendi
+            // konvansiyonu (bkz. MakeIconButton) otomatik küçültme + üç nokta.
+            // Uzun parça adları ("Havalandırmalı", "Sport Süspansiyon")
+            // sütuna sığmadığında kırpılmak yerine küçülüyor.
+            t.enableAutoSizing = true;
+            t.fontSizeMin = fontSize * 0.7f;
+            t.fontSizeMax = fontSize;
+            t.overflowMode = TextOverflowModes.Ellipsis;
         }
 
         // "Etiket ............ değer" satırı; değer TMP_Text'i döner.

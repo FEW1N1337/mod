@@ -1,3 +1,5 @@
+using System;
+using DreamCar.Customization;
 using DreamCar.Economy;
 using TMPro;
 using UnityEngine;
@@ -21,6 +23,22 @@ namespace DreamCar.UI
 
         int _index;
         GameObject _preview;
+
+        // Önizleme örneğine takılı modifikasyon modülleri. ModShopUI buradan
+        // canlı değişiklik uyguluyor — mağazada seçilen parça anında garajdaki
+        // araçta görünüyor.
+        //
+        // Önizleme prefabında hiç MonoBehaviour yok (SavePreviewPrefab hepsini
+        // atıyor), o yüzden modüller bileşen değil düz sınıf ve sahibi bu
+        // bileşen.
+        public CustomizationRuntime PreviewMods { get; private set; }
+
+        // Şu an görünen aracın kimliği. Modifikasyon kaydı araç başına.
+        public string CurrentCarId { get; private set; }
+
+        // Araç değişince mağaza listesinin de yenilenmesi gerekiyor: takılı
+        // parçalar araç başına saklanıyor.
+        public event Action OnCarChanged;
 
         void Start()
         {
@@ -54,6 +72,8 @@ namespace DreamCar.UI
             var def = cat.cars[_index];
             if (!def) return;
 
+            CurrentCarId = def.id;
+
             if (nameLabel) nameLabel.text = def.displayName;
             bool owned = CarInventory.Instance.Owns(def.id);
             if (priceOrOwnedLabel) priceOrOwnedLabel.text = owned ? "Sahip" : def.price.ToString("N0") + " ₺";
@@ -69,11 +89,24 @@ namespace DreamCar.UI
             // resourcePrefabName DEĞİL: o prefab PhotonView ve Rigidbody
             // taşıyor, menüde odaya bağlı olmadan doğurmak hata üretiyor.
             // previewPrefabName yalnızca görünen hiyerarşiyi içeriyor.
+            PreviewMods = null;
             if (previewMount && !string.IsNullOrEmpty(def.previewPrefabName))
             {
                 var prefab = Resources.Load<GameObject>(def.previewPrefabName);
-                if (prefab) _preview = Instantiate(prefab, previewMount.position, previewMount.rotation, previewMount);
+                if (prefab)
+                {
+                    _preview = Instantiate(prefab, previewMount.position, previewMount.rotation, previewMount);
+
+                    // Kayıtlı modifikasyonlar HEMEN uygulanıyor. Yalnızca
+                    // mağazadan seçilince uygulansaydı, oyuncu menüye her
+                    // dönüşünde aracını sade görürdü — satın aldığı her şey
+                    // yokmuş gibi.
+                    PreviewMods = new CustomizationRuntime(_preview, CarCustomization.Catalog());
+                    PreviewMods.ApplySaved(def.id);
+                }
             }
+
+            OnCarChanged?.Invoke();
         }
 
         void Select()
