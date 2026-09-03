@@ -192,6 +192,12 @@ namespace DreamCar.EditorTools.RCCPTools
             Get<FuelSystem>(root);
             Get<CarRescue>(root);
             Get<DreamCar.Core.StatsTracker>(root);
+
+            // Faz 1 sözleşmeleri. RCCP'li araçta da aynı bileşenler: telemetri
+            // WheelCollider'lardan okuduğu için RCCP'nin API'sine bağımlı değil.
+            Get<DreamCar.Car.VehicleStatSheet>(root);
+            Get<DreamCar.Car.VehicleTelemetry>(root);
+            Get<DreamCar.Car.VehicleAuthority>(root);
             log.AppendLine("• Oynanış: drift, vites, yakıt, kurtarma, hasar, istatistik");
 
             // --- Drift dumanı + fren izi (tekerlek başına) ---

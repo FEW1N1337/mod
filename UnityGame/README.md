@@ -1462,11 +1462,92 @@ modeli hâlâ varlık işi.
 
 ---
 
+## 24) v1.6 — Faz 1: araç sözleşmeleri
+
+Mimari belgesindeki 15 fazlık yol haritasının ilk fazı. Kod yazmadan önce
+üzerinde anlaşılması gereken **arayüzler** burada.
+
+### Neden arayüz yazmakla başlanıyor
+
+Şartnamedeki sistemlerin çoğu aynı üç şeye dokunuyor: motor gücü, üst hız,
+tutuş. Turbo da, lastik seti de, süspansiyon ayarı da, nitro da. Bunların
+hepsi bugünkü yöntemle — bileşenin alanına doğrudan yazarak — eklenirse
+**birbirlerini ezerler ve bu hiç hata basmaz.**
+
+Bu artık varsayım değil, projede duran bir örnek: `CarNitro` üst hızı
+`_car.topSpeedKmh` alanına yazıyor, bırakınca `Awake`'te okuduğu değere
+geri döndürüyordu. Tek değiştirici varken doğru. Turbo yükseltmesi üst hızı
+220'ye çıkardığı gün, o sırada nitroya basıp bırakan oyuncunun aracı
+`Awake`'teki 180'e düşüyor ve **satın alınan turbo sessizce kayboluyor.**
+
+### Eklenen sözleşmeler
+
+| Dosya | Ne yapar |
+|---|---|
+| `Scripts/Car/IVehicleStats.cs` | Araçtan **okunan** her şey: hız, devir, vites, tork, yakıt, tekerlek kayması |
+| `Scripts/Car/IVehicleAuthority.cs` | "Bu araç benim mi, bu sayıya güvenilir mi" — tek noktada |
+| `Scripts/Car/VehicleStatSheet.cs` | İstatistik değiştiricileri: `(temel + Σ ekleme) × Π çarpan` |
+| `Scripts/Customization/ICustomizationModule.cs` | Modifikasyon alt sistemi sözleşmesi + `ItemId` + `VehicleContext` |
+
+`IDriveInput` (yazma tarafı) zaten vardı — sözleşme takımı artık tam:
+**yaz** (`IDriveInput`), **oku** (`IVehicleStats`), **kime ait**
+(`IVehicleAuthority`), **değiştir** (`VehicleStatSheet`).
+
+### Uygulamalar
+
+| Dosya | Ne yapar |
+|---|---|
+| `Scripts/Car/VehicleTelemetry.cs` | `IVehicleStats`'in tek uygulaması |
+| `Scripts/Car/VehicleAuthority.cs` | `IVehicleAuthority`'nin tek uygulaması — Photon'a bakan tek araç bileşeni |
+
+`VehicleTelemetry` sürücüden bağımsız: verinin tamamı WheelCollider'lardan,
+`GearBox`'tan, `FuelSystem`'den ve `IDriveInput` arayüzünden geliyor. RCCP de
+WheelCollider kullandığı için **aynı bileşen iki fizik sağlayıcısıyla da
+çalışıyor** — ikinci bir uygulama yazmak gerekmedi.
+
+`VehicleAuthority` bugün `IsServerVerified => false` döndürüyor. Bu bir
+eksiklik değil, PUN 2'nin tasarımı: istemci otoriter. Faz 10'daki göçte
+değişecek tek satır orası, ve o gün "hangi sayıya güveniyorduk" sorusu
+grep'lenebilir olacak.
+
+### Bağlanan yerler
+
+Sözleşmeler yazılıp bırakılmadı — bu projenin baskın hata ailesi tam olarak
+bu. Dört gerçek tüketici var:
+
+- `CarController` → tork, üst hız, fren, direksiyon açısı, downforce, kütle ve
+  tutuş artık **tablo üzerinden** hesaplanıyor. Alanların hiçbirine çalışma
+  anında yazılmıyor.
+- `CarNitro` → `topSpeedKmh` alanına yazmayı bıraktı, `"nitro"` kaynak adıyla
+  tabloya değiştirici koyuyor. Bırakınca yalnızca kendi katkısı kalkıyor.
+- `FuelSystem` → tüketim `VehicleStat.FuelDrain` üzerinden geçiyor; motor
+  yükseltmeleri buraya yazacak.
+- `DreamCarValidator` → her araç prefabında üç bileşenin varlığını denetliyor.
+  Yoksa araç **çalışır ama sessizce eksilir** — denetçinin var olma sebebi.
+
+Üç araç kurulum noktasının üçü de (`ProceduralCarGenerator`, `DreamCarSetup`,
+`RCCPCarConverter`) yeni bileşenleri ekliyor.
+
+### Dürüst sınır
+
+Devir (`EngineRpm`) **gerçek bir motor eğrisi değil**: vites bandı içindeki
+ilerlemeden türetiliyor. Otomatik şanzımanın davranışı zaten bu, gösterge ve
+motor sesi için doğru sonucu veriyor — ama fizik kararı buna dayandırılmamalı.
+Gerçek tork eğrisi Faz 3'te motor modeliyle gelecek ve tek noktadan değişecek.
+
+---
+
 ## Dosya haritası
 
 | Dosya | Görev |
 |---|---|
 | `Scripts/Car/CarController.cs` | WheelCollider tabanlı fizik |
+| `Scripts/Car/IVehicleStats.cs` | Araçtan okunan telemetri sözleşmesi |
+| `Scripts/Car/IVehicleAuthority.cs` | Sahiplik ve sunucu güveni sözleşmesi |
+| `Scripts/Car/VehicleStatSheet.cs` | İstatistik değiştiricileri (nitro, turbo, lastik) |
+| `Scripts/Car/VehicleTelemetry.cs` | `IVehicleStats` uygulaması — RCCP ile de çalışır |
+| `Scripts/Car/VehicleAuthority.cs` | `IVehicleAuthority` uygulaması — Photon'a bakan tek araç bileşeni |
+| `Scripts/Customization/ICustomizationModule.cs` | Modifikasyon modülü sözleşmesi + `ItemId` |
 | `Scripts/Car/CarCameraFollow.cs` | Kamera takibi |
 | `Scripts/Car/CarNetworkSync.cs` | Photon position/rotation sync |
 | `Scripts/Vehicle/CarRescue.cs` | Takla / düşme / yakıtsızlıktan kurtarma (§18c) |

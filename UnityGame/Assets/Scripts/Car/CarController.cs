@@ -59,10 +59,28 @@ namespace DreamCar.Car
         Rigidbody _rb;
         public float SpeedKmh => _rb ? _rb.linearVelocity.magnitude * 3.6f : 0f;
 
+        // Nitro, turbo, lastik ve süspansiyon gibi her şey bu tablo üzerinden
+        // etki ediyor; aşağıdaki alanların hiçbiri çalışma anında yazılmaz.
+        // Gerekçesi VehicleStatSheet'in başında.
+        VehicleStatSheet _sheet;
+        float _baseMass;
+        WheelFrictionCurve[] _baseForward;
+        WheelFrictionCurve[] _baseSideways;
+        WheelCollider[] _allWheels;
+        float _appliedGrip = 1f;
+
+        // Tabloya kimse dokunmadıysa Evaluate çağırmaya da gerek yok.
+        float Stat(VehicleStat stat, float baseValue)
+            => _sheet != null ? _sheet.Evaluate(stat, baseValue) : baseValue;
+
         void Awake()
         {
             _rb = GetComponent<Rigidbody>();
             _rb.centerOfMass = centerOfMassOffset;
+
+            _sheet = GetComponent<VehicleStatSheet>();
+            _baseMass = _rb.mass;
+            CacheWheelFriction();
 
             // Prefab'ta ayarlanmamışsa güvenli varsayılanlar. 180+ km/s'te (50 m/s) araç
             // 0.02 sn'lik fizik adımında 1 metreden fazla yol alıyor; Discrete çarpışma
@@ -88,16 +106,22 @@ namespace DreamCar.Car
             // Direksiyon açısı hızla birlikte kısılır — bkz. steerFalloffSpeedKmh yorumu.
             float steerFactor = Mathf.Lerp(1f, minSteeringFactor,
                 Mathf.InverseLerp(0f, Mathf.Max(1f, steerFalloffSpeedKmh), SpeedKmh));
-            float steer = maxSteeringAngle * steerFactor * steerInput;
+            float steer = Stat(VehicleStat.SteeringAngle, maxSteeringAngle) * steerFactor * steerInput;
 
-            float motor = maxMotorTorque * throttleInput;
-            if (SpeedKmh > topSpeedKmh) motor = 0f;
-            float brake = maxBrakeTorque * brakeInput;
-            float hand = handbrake ? maxBrakeTorque : 0f;
+            float torqueLimit = Stat(VehicleStat.MotorTorque, maxMotorTorque);
+            float speedLimit = Stat(VehicleStat.TopSpeed, topSpeedKmh);
+            float brakeLimit = Stat(VehicleStat.BrakeTorque, maxBrakeTorque);
+
+            float motor = torqueLimit * throttleInput;
+            if (SpeedKmh > speedLimit) motor = 0f;
+            float brake = brakeLimit * brakeInput;
+            float hand = handbrake ? brakeLimit : 0f;
+
+            ApplyGripIfChanged();
 
             // Yakıt bitti: gaz kesilir, fren uygulanır. Input alanlarına değil buraya
             // bakıyoruz ki her karede input yazan MobileTouchInput bunu ezemesin.
-            if (engineCutoff) { motor = 0f; brake = maxBrakeTorque; }
+            if (engineCutoff) { motor = 0f; brake = brakeLimit; }
 
             foreach (var axle in axles)
             {
@@ -118,7 +142,47 @@ namespace DreamCar.Car
                 SyncMesh(axle.rightWheel, axle.rightMesh);
             }
 
-            _rb.AddForce(-transform.up * downForce * _rb.linearVelocity.magnitude);
+            _rb.AddForce(-transform.up * Stat(VehicleStat.Downforce, downForce) * _rb.linearVelocity.magnitude);
+
+            // Kütle her karede yazılmıyor: Rigidbody.mass'e yazmak atalet tensörünü
+            // yeniden hesaplatıyor, sabit değerle bile boşuna maliyet.
+            float mass = Stat(VehicleStat.Mass, _baseMass);
+            if (!Mathf.Approximately(_rb.mass, mass)) _rb.mass = mass;
+        }
+
+        void CacheWheelFriction()
+        {
+            _allWheels = GetComponentsInChildren<WheelCollider>(true);
+            _baseForward = new WheelFrictionCurve[_allWheels.Length];
+            _baseSideways = new WheelFrictionCurve[_allWheels.Length];
+            for (int i = 0; i < _allWheels.Length; i++)
+            {
+                if (!_allWheels[i]) continue;
+                _baseForward[i] = _allWheels[i].forwardFriction;
+                _baseSideways[i] = _allWheels[i].sidewaysFriction;
+            }
+        }
+
+        // Tutuş, sürtünme eğrisinin stiffness'ı üzerinden uygulanıyor. Lastik ve
+        // süspansiyon modülleri (Faz 5) buraya yazacak. Değer değişmediyse eğrilere
+        // dokunulmuyor: WheelFrictionCurve atamak eğriyi yeniden derliyor.
+        void ApplyGripIfChanged()
+        {
+            float grip = Stat(VehicleStat.Grip, 1f);
+            if (Mathf.Approximately(grip, _appliedGrip) || _allWheels == null) return;
+            _appliedGrip = grip;
+
+            for (int i = 0; i < _allWheels.Length; i++)
+            {
+                if (!_allWheels[i]) continue;
+                var f = _baseForward[i];
+                f.stiffness = _baseForward[i].stiffness * grip;
+                _allWheels[i].forwardFriction = f;
+
+                var sf = _baseSideways[i];
+                sf.stiffness = _baseSideways[i].stiffness * grip;
+                _allWheels[i].sidewaysFriction = sf;
+            }
         }
 
         // Uzak (başka oyuncuya ait) araçlarda Rigidbody kinematik, WheelCollider

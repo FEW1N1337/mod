@@ -142,6 +142,11 @@ namespace DreamCar.EditorTools
             var horn = car.AddComponent<Emote.HornController>();
             car.AddComponent<Core.StatsTracker>();
 
+            // Faz 1 sözleşmeleri — bkz. ProceduralCarGenerator'daki aynı blok.
+            car.AddComponent<DreamCar.Car.VehicleStatSheet>();
+            car.AddComponent<DreamCar.Car.VehicleTelemetry>();
+            car.AddComponent<DreamCar.Car.VehicleAuthority>();
+
             // Audio
             var engineSrcIdle = car.AddComponent<AudioSource>();
             engineSrcIdle.loop = true; engineSrcIdle.spatialBlend = 1f; engineSrcIdle.volume = 0.6f;

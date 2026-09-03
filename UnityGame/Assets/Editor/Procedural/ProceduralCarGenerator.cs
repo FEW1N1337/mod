@@ -736,6 +736,14 @@ namespace DreamCar.EditorTools.Procedural
             root.AddComponent<CarRescue>();
             root.AddComponent<Core.StatsTracker>();
 
+            // Faz 1 sözleşmeleri. Üçü de veri taşıyıcı: telemetri okur,
+            // otorite "bu araç benim mi" sorusunu yanıtlar, tablo istatistik
+            // değiştiricilerini tutar. Nitro ve yakıt tüketimi tabloyu zaten
+            // kullanıyor, o yüzden bu bileşenler olmadan araç eksik doğar.
+            root.AddComponent<DreamCar.Car.VehicleStatSheet>();
+            root.AddComponent<DreamCar.Car.VehicleTelemetry>();
+            root.AddComponent<DreamCar.Car.VehicleAuthority>();
+
             var carPaint = root.AddComponent<CarPaint>();
             carPaint.paintRenderers = new[] { bodyRenderer };
 

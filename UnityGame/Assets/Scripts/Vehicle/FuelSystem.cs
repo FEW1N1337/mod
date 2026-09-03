@@ -35,12 +35,17 @@ namespace DreamCar.Vehicle
         public float pricePerLiter = 25f;
 
         IDriveInput _car;
+        VehicleStatSheet _sheet;
 
         public float Percent => Mathf.Clamp01(current / capacity);
         public bool IsEmpty => current <= 0.01f;
 
         // GetComponent arayüzleri de çözer; hangi somut sürücü varsa onu buluruz.
-        void Awake() => _car = GetComponent<IDriveInput>();
+        void Awake()
+        {
+            _car = GetComponent<IDriveInput>();
+            _sheet = GetComponent<VehicleStatSheet>();
+        }
 
         void Update()
         {
@@ -48,6 +53,10 @@ namespace DreamCar.Vehicle
             // açıkça null karşılaştırması yapıyoruz.
             if (_car == null) return;
             float drain = baseDrainPerSecond + Mathf.Abs(_car.ThrottleInput) * throttleDrainMultiplier;
+
+            // Motor yükseltmeleri ve ekonomi modu tüketimi buradan değiştirir:
+            // sabitlere değil, kaynak adıyla tabloya yazarlar (VehicleStatSheet).
+            if (_sheet != null) drain = _sheet.Evaluate(VehicleStat.FuelDrain, drain);
             current = Mathf.Max(0f, current - drain * Time.deltaTime);
             // Eskiden doğrudan gaz/fren alanlarına yazıyordu; MobileTouchInput her karede
             // Move() ile aynı alanları ezdiği ve Update sırası garanti olmadığı için yakıt

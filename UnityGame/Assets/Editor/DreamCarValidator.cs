@@ -183,9 +183,12 @@ namespace DreamCar.EditorTools
                         continue;
                     }
                     // PhotonNetwork.Instantiate prefabı Resources altında ADIYLA arıyor.
-                    if (Resources.Load<GameObject>(def.resourcePrefabName) == null)
+                    var carPrefab = Resources.Load<GameObject>(def.resourcePrefabName);
+                    if (carPrefab == null)
                         errors.Add($"CarDefinition '{def.id}': Resources/{def.resourcePrefabName} " +
                                    "bulunamadı — o araç seçilince doğmaz.");
+                    else
+                        CheckVehicleContracts(def.id, carPrefab, errors);
 
                     // Küçük resim yoksa garajda ve mağazada BOŞ bir dikdörtgen
                     // görünür. Hata vermez, sadece araç görünmez — tam olarak
@@ -285,6 +288,28 @@ namespace DreamCar.EditorTools
                           "başarım senkronu ve arkadaş listesi çalışmaz. " +
                           "Oyun bunsuz da tam oynanır (ilerleme yalnızca cihazda kalır).");
             }
+        }
+
+        // Faz 1 sözleşmeleri araç prefabında duruyor mu?
+        //
+        // Bu üç bileşen olmadan araç ÇALIŞIR ama sessizce eksilir: nitro üst hız
+        // bonusu vermez (VehicleStatSheet yoksa Set çağrısı atlanır), telemetriye
+        // dayanan hiçbir sistem veri bulamaz ve "bu araç benim mi" sorusu her
+        // bileşende yeniden yanıtlanır. Hiçbiri hata basmaz — tam olarak bu
+        // denetimin var olma sebebi.
+        static void CheckVehicleContracts(string carId, GameObject prefab, List<string> errors)
+        {
+            if (prefab.GetComponent<DreamCar.Car.VehicleStatSheet>() == null)
+                errors.Add($"Araç '{carId}': VehicleStatSheet yok — nitro ve " +
+                           "yükseltmelerin istatistik etkisi sessizce kaybolur.");
+
+            if (prefab.GetComponent<DreamCar.Car.IVehicleStats>() == null)
+                errors.Add($"Araç '{carId}': IVehicleStats sağlayan bileşen yok " +
+                           "(VehicleTelemetry) — devir, vites, tekerlek kayması okunamaz.");
+
+            if (prefab.GetComponent<DreamCar.Car.IVehicleAuthority>() == null)
+                errors.Add($"Araç '{carId}': IVehicleAuthority sağlayan bileşen yok " +
+                           "(VehicleAuthority) — sahiplik sorusu tek noktadan yanıtlanamaz.");
         }
 
         static T FindFirst<T>() where T : UnityEngine.Object
