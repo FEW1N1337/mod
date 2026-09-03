@@ -1710,11 +1710,83 @@ Katalog ile kod arasındaki sözleşme sessizce kopabiliyor. Dört yeni kontrol:
 
 ---
 
+## 27) v1.9 — Faz 3: sürüş yardımcıları (ABS · TC · ESP · diferansiyel · aero)
+
+Mimari belgesindeki Faz 3. İki nedenle yapıldı.
+
+### Faz 1'de kendi bıraktığım boşluğu kapatıyor
+
+`IVehicleStats` / `VehicleTelemetry` (tekerlek başına `forwardSlip` /
+`sidewaysSlip` veren okuma sözleşmesi) Faz 1'de **tam bu modüller okusun
+diye** yazılmıştı — ama hiçbir tüketicisi yoktu. `TireScreechAudio`,
+`DriftSmoke`, `WheelGlow` hepsi `WheelCollider.GetGroundHit`'i doğrudan
+okuyordu, telemetriyi değil. Yani telemetri de "yazılmış, tam görünen, hiç
+çağrılmayan" ailesindeydi. `DrivingAssists` ona ilk gerçek tüketicisini
+veriyor.
+
+### Sistem
+
+| Dosya | Görev |
+|---|---|
+| `Scripts/Vehicle/DrivingAssists.cs` | ABS, TC, ESP, diferansiyel, aero — hepsi tek bileşende |
+| `Scripts/Car/CarController.cs` | Aks döngüsünde per-wheel tork/fren modülasyonu |
+| `Scripts/Car/VehicleTelemetry.cs` | `IndexOf(WheelCollider)` eklendi |
+| `Scripts/Settings/GameSettings.cs` | `AbsEnabled` / `TractionControlEnabled` / `StabilityControlEnabled` |
+| `Scripts/UI/SettingsScreen.cs` | Üç toggle + anlık tazeleme |
+| `Scripts/UI/AssistTelltale.cs` | Müdahale anında yanan HUD göstergesi |
+
+- **ABS**: tekerlek kilitleniyorsa (çok negatif `forwardSlip`) fren
+  basıncını darbeli bırakıyor. El freni HARİÇ — drift el frenle yapılıyor,
+  ABS onu bozmamalı.
+- **TC**: çekiş tekerleği patinaj yapıyorsa motoru kısıyor.
+- **ESP**: istenen yaw (bisiklet modeli) ile gerçek yaw'ı karşılaştırıp
+  az dönüşte iç arka, aşırı dönüşte dış ön tekerleği frenliyor.
+- **Diferansiyel**: LSD benzeri — patinaj yapan tekerleğe torku kısıp tutan
+  tekerlekte bırakıyor.
+- **Aero**: hız-kare orantılı sürükleme, yüksek hızda düz çizgi kararlılığı.
+
+### CarController tek otorite kalıyor
+
+`DrivingAssists` tekerleklere **doğrudan yazmıyor**. `CarController` her fizik
+adımında `BeginStep`'i çağırıyor, sonra aks döngüsünde `ModulateMotor` /
+`ModulateBrake`'ten geçiriyor, `EndStep` ile telltale bayraklarını topluyor.
+FuelSystem'in `EngineCutoff` deseniyle aynı mantık: dış bileşen veri verir,
+yazan CarController'dır. `DrivingAssists` yoksa davranış birebir eskisi.
+
+### Görünürlük ve kontrol
+
+- HUD'da kilometre saatinin altında **ABS/TC/ESP göstergesi** müdahale anında
+  yanıyor — yardımcı sessizce çalışırsa oyuncu var olduğunu bilmez.
+- Ayarlar ekranı **iki sütuna** yeniden yerleşti; sağ sütunda üç yardımcı
+  toggle'ı. Değiştirilince sahnedeki araçlar anında tazeleniyor.
+- Varsayılan **açık**: mobil dokunmatikte araç yardımsız kolay savruluyor.
+
+### Denetçi
+
+- CarController'lı araç prefabında `DrivingAssists` var mı (yoksa sessizce
+  hiç çalışmaz).
+- `DrivingAssists` için `IVehicleStats` (VehicleTelemetry) var mı.
+
+### Dürüst sınır
+
+- **Yalnızca kendi `CarController`'ımızda.** RCCP kendi ABS/TC/ESP'ini
+  getiriyor; RCCP'li araçta `DrivingAssists` Awake'te kendini kapatıyor
+  (reflection ile güvenilir per-wheel tork müdahalesi yapılamaz).
+- **Simülasyon sınıfı fizik değil**: WheelCollider tabanlı, eşikli bir
+  model — mobil ve Dream Road için doğru his, gerçek bir ECU/darbe frekansı
+  modeli değil.
+- **ESP tek tekerlek frenlemesiyle**; gerçek ESP motor torkunu da yönetir,
+  burada onu TC ile bölüşüyor.
+
+---
+
 ## Dosya haritası
 
 | Dosya | Görev |
 |---|---|
 | `Scripts/Car/CarController.cs` | WheelCollider tabanlı fizik |
+| `Scripts/Vehicle/DrivingAssists.cs` | ABS · TC · ESP · diferansiyel · aero |
+| `Scripts/UI/AssistTelltale.cs` | Sürüş yardımcısı HUD göstergesi |
 | `Scripts/Economy/ModCatalog.cs` | Modifikasyon parça kataloğu |
 | `Scripts/Customization/ModSave.cs` | Parça sahipliği + araç başına takılı parçalar |
 | `Scripts/Customization/CustomizationRuntime.cs` | Bir araca takılı modüllerin tamamı |

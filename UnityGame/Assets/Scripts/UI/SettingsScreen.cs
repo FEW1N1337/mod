@@ -27,6 +27,11 @@ namespace DreamCar.UI
         public Slider steeringSensitivitySlider;
         public TMP_Text steeringValueLabel;
 
+        [Header("Sürüş yardımcıları")]
+        public Toggle absToggle;
+        public Toggle tractionToggle;
+        public Toggle stabilityToggle;
+
         [Header("Dil")]
         public TMP_Dropdown languageDropdown;
 
@@ -79,6 +84,10 @@ namespace DreamCar.UI
                 steeringSensitivitySlider.maxValue = 2f;
                 steeringSensitivitySlider.value = s.SteeringSensitivity;
             }
+            if (absToggle) absToggle.isOn = s.AbsEnabled;
+            if (tractionToggle) tractionToggle.isOn = s.TractionControlEnabled;
+            if (stabilityToggle) stabilityToggle.isOn = s.StabilityControlEnabled;
+
             if (languageDropdown && LocalizationManager.Instance != null)
                 languageDropdown.value = System.Array.IndexOf(_languageCodes, LocalizationManager.Instance.current) is var li && li >= 0 ? li : 0;
 
@@ -115,6 +124,37 @@ namespace DreamCar.UI
                 if (_applying || LocalizationManager.Instance == null) return;
                 LocalizationManager.Instance.SetLanguage(_languageCodes[Mathf.Clamp(v, 0, _languageCodes.Length - 1)]);
             });
+
+            // Yardımcı toggle'ları: değer GameSettings'e yazılıyor ve o an
+            // sahnedeki araçların DrivingAssists'i tazeleniyor — oyuncu duraklama
+            // menüsünden değiştirip devam ettiğinde etki anında görünsün.
+            if (absToggle) absToggle.onValueChanged.AddListener(v =>
+            {
+                if (_applying || !GameSettings.Instance) return;
+                GameSettings.Instance.AbsEnabled = v;
+                RefreshAssists();
+            });
+            if (tractionToggle) tractionToggle.onValueChanged.AddListener(v =>
+            {
+                if (_applying || !GameSettings.Instance) return;
+                GameSettings.Instance.TractionControlEnabled = v;
+                RefreshAssists();
+            });
+            if (stabilityToggle) stabilityToggle.onValueChanged.AddListener(v =>
+            {
+                if (_applying || !GameSettings.Instance) return;
+                GameSettings.Instance.StabilityControlEnabled = v;
+                RefreshAssists();
+            });
+        }
+
+        // Sahnedeki tüm araçların yardımcılarını yeni ayarla tazeler. Yardımcılar
+        // ayarı FixedUpdate'te değil önbellekten okuyor, o yüzden bu itme gerekli.
+        static void RefreshAssists()
+        {
+            foreach (var a in FindObjectsByType<DreamCar.Vehicle.DrivingAssists>(
+                         FindObjectsSortMode.None))
+                if (a) a.Refresh();
         }
 
         void UpdateSteeringLabel()

@@ -63,6 +63,11 @@ namespace DreamCar.Car
         // etki ediyor; aşağıdaki alanların hiçbiri çalışma anında yazılmaz.
         // Gerekçesi VehicleStatSheet'in başında.
         VehicleStatSheet _sheet;
+
+        // Sürüş yardımcıları (ABS/TC/ESP/diferansiyel/aero). Opsiyonel: yoksa
+        // davranış birebir eskisi. Yazan hâlâ biziz; yardımcı yalnızca
+        // tekerlek başına tork/fren değerini modüle ediyor.
+        DreamCar.Vehicle.DrivingAssists _assists;
         float _baseMass;
         WheelFrictionCurve[] _baseForward;
         WheelFrictionCurve[] _baseSideways;
@@ -79,6 +84,7 @@ namespace DreamCar.Car
             _rb.centerOfMass = centerOfMassOffset;
 
             _sheet = GetComponent<VehicleStatSheet>();
+            _assists = GetComponent<DreamCar.Vehicle.DrivingAssists>();
             _baseMass = _rb.mass;
             CacheWheelFriction();
 
@@ -123,6 +129,10 @@ namespace DreamCar.Car
             // bakıyoruz ki her karede input yazan MobileTouchInput bunu ezemesin.
             if (engineCutoff) { motor = 0f; brake = brakeLimit; }
 
+            // Yardımcılar adım durumunu (ESP yaw hatası, aero) döngüden ÖNCE
+            // bir kez hesaplasın; per-wheel çağrılar bunu okuyor.
+            if (_assists && _assists.enabled) _assists.BeginStep(steer, SpeedKmh);
+
             foreach (var axle in axles)
             {
                 if (axle.steering)
@@ -132,15 +142,20 @@ namespace DreamCar.Car
                 }
                 if (axle.motor)
                 {
-                    axle.leftWheel.motorTorque = motor;
-                    axle.rightWheel.motorTorque = motor;
+                    axle.leftWheel.motorTorque = ModulateMotor(axle.leftWheel, motor);
+                    axle.rightWheel.motorTorque = ModulateMotor(axle.rightWheel, motor);
                 }
-                axle.leftWheel.brakeTorque = brake + hand;
-                axle.rightWheel.brakeTorque = brake + hand;
+
+                // El freni yardımcıdan GEÇMİYOR: drift el frenle yapılıyor,
+                // ABS onu bozmamalı. Servis freni ayrı modüle ediliyor.
+                axle.leftWheel.brakeTorque = ModulateBrake(axle.leftWheel, brake) + hand;
+                axle.rightWheel.brakeTorque = ModulateBrake(axle.rightWheel, brake) + hand;
 
                 SyncMesh(axle.leftWheel, axle.leftMesh);
                 SyncMesh(axle.rightWheel, axle.rightMesh);
             }
+
+            if (_assists && _assists.enabled) _assists.EndStep();
 
             _rb.AddForce(-transform.up * Stat(VehicleStat.Downforce, downForce) * _rb.linearVelocity.magnitude);
 
@@ -149,6 +164,12 @@ namespace DreamCar.Car
             float mass = Stat(VehicleStat.Mass, _baseMass);
             if (!Mathf.Approximately(_rb.mass, mass)) _rb.mass = mass;
         }
+
+        float ModulateMotor(WheelCollider wheel, float requestedMotor)
+            => _assists && _assists.enabled ? _assists.ModulateMotor(wheel, requestedMotor) : requestedMotor;
+
+        float ModulateBrake(WheelCollider wheel, float requestedBrake)
+            => _assists && _assists.enabled ? _assists.ModulateBrake(wheel, requestedBrake) : requestedBrake;
 
         void CacheWheelFriction()
         {

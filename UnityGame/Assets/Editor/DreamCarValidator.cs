@@ -328,6 +328,22 @@ namespace DreamCar.EditorTools
             if (prefab.GetComponent<Customization.CarCustomization>() == null)
                 errors.Add($"Araç '{carId}': CarCustomization yok — satın alınan " +
                            "modifikasyonların hiçbiri bu araçta görünmez.");
+
+            // Sürüş yardımcıları YALNIZCA kendi CarController'ımızda çalışıyor;
+            // RCCP'li araçta bileşen kendini kapatıyor. Bu yüzden bileşeni
+            // yalnızca CarController varsa şart koşuyoruz.
+            if (prefab.GetComponent<DreamCar.Car.CarController>() != null)
+            {
+                if (prefab.GetComponent<DreamCar.Vehicle.DrivingAssists>() == null)
+                    errors.Add($"Araç '{carId}': CarController var ama DrivingAssists yok — " +
+                               "ABS/TC/ESP hiç çalışmaz (sessizce).");
+
+                // DrivingAssists slip verisini IVehicleStats'ten okuyor; yoksa
+                // hiçbir müdahale yapamaz.
+                if (prefab.GetComponent<DreamCar.Car.IVehicleStats>() == null)
+                    errors.Add($"Araç '{carId}': DrivingAssists için IVehicleStats yok " +
+                               "(VehicleTelemetry) — yardımcılar tekerlek kaymasını okuyamaz.");
+            }
         }
 
         // Modifikasyon kataloğu ile kod arasındaki sözleşme.

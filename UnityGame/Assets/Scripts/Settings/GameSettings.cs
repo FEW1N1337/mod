@@ -58,6 +58,27 @@ namespace DreamCar.Settings
             set => PlayerPrefs.SetFloat("input.steer", value);
         }
 
+        // Sürüş yardımcıları. Varsayılan AÇIK: mobil dokunmatik kontrolde
+        // araç yardımsız kolayca savruluyor, yeni oyuncu için açık gelmeli.
+        // DrivingAssists bunları FixedUpdate'te değil, Start/Refresh'te okuyor.
+        public bool AbsEnabled
+        {
+            get => PlayerPrefs.GetInt("assist.abs", 1) == 1;
+            set => PlayerPrefs.SetInt("assist.abs", value ? 1 : 0);
+        }
+
+        public bool TractionControlEnabled
+        {
+            get => PlayerPrefs.GetInt("assist.tc", 1) == 1;
+            set => PlayerPrefs.SetInt("assist.tc", value ? 1 : 0);
+        }
+
+        public bool StabilityControlEnabled
+        {
+            get => PlayerPrefs.GetInt("assist.esp", 1) == 1;
+            set => PlayerPrefs.SetInt("assist.esp", value ? 1 : 0);
+        }
+
         void SetMixerLinear(string param, float value01)
         {
             if (!mixer) return;

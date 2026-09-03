@@ -157,6 +157,20 @@ namespace DreamCar.Car
 
         public int WheelCount => _wheels != null ? _wheels.Length : 0;
 
+        // Bir WheelCollider'ın telemetri dizisindeki indeksi, yoksa -1.
+        //
+        // DrivingAssists kendi WheelCollider referansından slip verisine
+        // ulaşmak için bunu kullanıyor. Telemetri tek örnekleme noktası olsun
+        // diye: yardımcılar kendi GetGroundHit'lerini çağırsaydı her tekerlek
+        // fizik adımı başına iki kez örneklenirdi.
+        public int IndexOf(WheelCollider wheel)
+        {
+            if (_wheels == null || wheel == null) return -1;
+            for (int i = 0; i < _wheels.Length; i++)
+                if (_wheels[i] == wheel) return i;
+            return -1;
+        }
+
         public WheelTelemetry GetWheel(int index)
         {
             if (_wheels == null || index < 0 || index >= _wheels.Length) return default;

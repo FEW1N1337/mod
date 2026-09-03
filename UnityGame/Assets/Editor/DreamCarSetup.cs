@@ -147,6 +147,9 @@ namespace DreamCar.EditorTools
             car.AddComponent<DreamCar.Car.VehicleTelemetry>();
             car.AddComponent<DreamCar.Car.VehicleAuthority>();
 
+            // Sürüş yardımcıları — VehicleTelemetry'nin tüketicisi.
+            car.AddComponent<DreamCar.Vehicle.DrivingAssists>();
+
             // Modifikasyon yöneticisi. Bu basit kurulum aracında spoiler/neon
             // geometrisi yok (o geometri prosedürel üreticide), o yüzden görsel
             // slotlardan yalnızca cam filmi ve jant rengi etki eder.
@@ -713,6 +716,16 @@ namespace DreamCar.EditorTools
             AnchorCorner(speedText.GetComponent<RectTransform>(),
                          new Vector2(1f, 1f), new Vector2(190f, 375f), new Vector2(260f, 50f));
 
+            // Sürüş yardımcısı göstergesi (ABS/TC/ESP telltale). Kilometre
+            // saatinin ve hız yazısının hemen altında — bir yardımcı müdahale
+            // ettiğinde kısa süre yanıp söner. Yardımcı sessiz çalışırsa oyuncu
+            // var olduğunu bilmez; bu göstergenin tek işi onu görünür kılmak.
+            var assistText = MakeText(hudPanel, "AssistTelltale", "ABS", Vector2.zero, 30);
+            assistText.color = new Color(1f, 0.78f, 0.12f);   // uyarı sarısı
+            AnchorCorner(assistText.GetComponent<RectTransform>(),
+                         new Vector2(1f, 1f), new Vector2(190f, 430f), new Vector2(200f, 44f));
+            hudPanel.AddComponent<AssistTelltale>().label = assistText;
+
             var playerCountText = MakeText(hudPanel, "PlayerCount", "0/16", Vector2.zero, 32);
             // Üst şeride, oda adının yanına. Eskiden sağ üstteydi ve gösterge
             // oraya taşınınca kadranın altında kalıyordu.
@@ -1224,14 +1237,23 @@ namespace DreamCar.EditorTools
             var settingsPanel = MakeUiChild(canvasGo, "SettingsScreen", modal: true);
             settingsPanel.SetActive(false);
             MakeText(settingsPanel, "Title", "Ayarlar", new Vector2(0f, 420f), 64);
-            var qualityDd = MakeDropdown(settingsPanel, "QualityDropdown", new Vector2(0f, 300f));
-            var fpsDd = MakeDropdown(settingsPanel, "FpsDropdown", new Vector2(0f, 210f));
-            var masterSl = MakeSlider(settingsPanel, "MasterSlider", new Vector2(0f, 120f));
-            var musicSl = MakeSlider(settingsPanel, "MusicSlider", new Vector2(0f, 50f));
-            var sfxSl = MakeSlider(settingsPanel, "SfxSlider", new Vector2(0f, -20f));
-            var steerSl = MakeSlider(settingsPanel, "SteeringSlider", new Vector2(0f, -90f));
-            var steerVal = MakeText(settingsPanel, "SteeringValue", "1.0x", new Vector2(340f, -90f), 28);
-            var langDd = MakeDropdown(settingsPanel, "LanguageDropdown", new Vector2(0f, -170f));
+            // İKİ SÜTUN. Tek sütun sekiz kontrolü zaten zar zor sığdırıyordu;
+            // üç yardımcı toggle'ı eklenince taşma kesinleşiyordu. Sol: grafik +
+            // ses + dil. Sağ: kontrol hassasiyeti + sürüş yardımcıları.
+            var qualityDd = MakeDropdown(settingsPanel, "QualityDropdown", new Vector2(-300f, 300f));
+            var fpsDd = MakeDropdown(settingsPanel, "FpsDropdown", new Vector2(-300f, 195f));
+            var masterSl = MakeSlider(settingsPanel, "MasterSlider", new Vector2(-300f, 95f));
+            var musicSl = MakeSlider(settingsPanel, "MusicSlider", new Vector2(-300f, 15f));
+            var sfxSl = MakeSlider(settingsPanel, "SfxSlider", new Vector2(-300f, -65f));
+            var langDd = MakeDropdown(settingsPanel, "LanguageDropdown", new Vector2(-300f, -165f));
+
+            // Sağ sütun
+            var steerSl = MakeSlider(settingsPanel, "SteeringSlider", new Vector2(300f, 300f));
+            var steerVal = MakeText(settingsPanel, "SteeringValue", "1.0x", new Vector2(620f, 300f), 28);
+            MakeText(settingsPanel, "AssistsHeader", "Sürüş Yardımcıları", new Vector2(300f, 215f), 32);
+            var absTgl = MakeToggle(settingsPanel, "AbsToggle", "ABS", new Vector2(300f, 130f), true);
+            var tcTgl = MakeToggle(settingsPanel, "TractionToggle", "Patinaj denetimi", new Vector2(300f, 50f), true);
+            var espTgl = MakeToggle(settingsPanel, "StabilityToggle", "ESP savrulma önleme", new Vector2(300f, -30f), true);
 
             // Gizlilik politikası ve destek bağlantısı hiçbir sahnede yoktu.
             // PrivacyPolicyScreen ve SupportEmailLink yazılmış ama hiç
@@ -1288,6 +1310,9 @@ namespace DreamCar.EditorTools
             settings.sfxSlider = sfxSl;
             settings.steeringSensitivitySlider = steerSl;
             settings.steeringValueLabel = steerVal;
+            settings.absToggle = absTgl;
+            settings.tractionToggle = tcTgl;
+            settings.stabilityToggle = espTgl;
             settings.languageDropdown = langDd;
             return settings;
         }

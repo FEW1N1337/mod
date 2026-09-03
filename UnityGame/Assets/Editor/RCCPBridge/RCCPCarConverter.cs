@@ -199,6 +199,11 @@ namespace DreamCar.EditorTools.RCCPTools
             Get<DreamCar.Car.VehicleTelemetry>(root);
             Get<DreamCar.Car.VehicleAuthority>(root);
 
+            // Sürüş yardımcıları da ekleniyor ama RCCP'li araçta CarController
+            // olmadığı için Awake'te kendini kapatacak — RCCP kendi ABS/TC/ESP'ini
+            // getiriyor. Bileşenin varlığı zararsız; denetçi tutarlılık için bekliyor.
+            Get<DreamCar.Vehicle.DrivingAssists>(root);
+
             // Modifikasyon yöneticisi. RCCP aracında "Glass" ve "*_Rim" adlı
             // nesneler olmayabilir; görsel modüller hedef bulamazsa sessizce
             // atlıyor. İstatistik modülleri (motor, turbo, fren, lastik) RCCP'de

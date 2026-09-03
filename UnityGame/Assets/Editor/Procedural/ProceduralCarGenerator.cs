@@ -744,6 +744,11 @@ namespace DreamCar.EditorTools.Procedural
             root.AddComponent<DreamCar.Car.VehicleTelemetry>();
             root.AddComponent<DreamCar.Car.VehicleAuthority>();
 
+            // Sürüş yardımcıları (ABS/TC/ESP/diferansiyel/aero). VehicleTelemetry'yi
+            // TÜKETEN ilk bileşen — o telemetri Faz 1'de bunun için yazılmıştı ama
+            // tüketicisiz kalmıştı. CarController yoksa (RCCP) kendini kapatıyor.
+            root.AddComponent<DreamCar.Vehicle.DrivingAssists>();
+
             // Modifikasyon yöneticisi. Modüllerin KENDİSİ bileşen değil (bkz.
             // CustomizationRuntime) — araca eklenen tek bileşen bu.
             root.AddComponent<Customization.CarCustomization>();

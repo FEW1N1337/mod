@@ -5,6 +5,37 @@ Oyun henüz `0.x` — yani API'ler kırılabilir.
 
 ---
 
+## [0.8.0] — Oynanış: araç sözleşmeleri, modifikasyon, sürüş yardımcıları
+
+0.7.0'dan bu yana eklenen oyuncu-görünür sistemler. Ayrıntılı gerekçeler
+README'nin 24–27. bölümlerinde.
+
+### Eklendi
+- **Araç sözleşmeleri (Faz 1)**: `IVehicleStats` (okuma), `IVehicleAuthority`
+  (sahiplik), `VehicleStatSheet` (istatistik değiştiriciler). Nitro artık üst
+  hızı doğrudan alana yazmıyor; turbo/lastik gibi ikinci bir değiştirici
+  geldiğinde birbirini ezmiyor.
+- **Modifikasyon sistemi (Faz 5)**: 11 slot, 47 parça — boya, cam filmi, jant,
+  spoiler, neon, motor, turbo, egzoz, lastik, fren, süspansiyon. Ana menüde
+  "Modifiye" ekranı, garajda canlı önizleme. Kayıt araç başına; görsel modlar
+  ağ üzerinden diğer oyunculara yansıyor. Boya bugüne kadar hiç çağrılmayan
+  ölü bir sistemdi; artık bir slot.
+- **Sürüş yardımcıları (Faz 3)**: ABS, patinaj denetimi, ESP, diferansiyel,
+  aero. Ayarlardan açılıp kapanıyor, HUD'da müdahale göstergesi. Faz 1'de
+  yazılıp tüketicisiz kalan `VehicleTelemetry`'nin tüketicisi.
+- **Grafik**: her yüzeye normal harita, Game sahnesinde eksik olan gölgeler,
+  düz yerine gradyan ortam ışığı.
+
+### Düzeltildi
+- `CarPaint.Apply` hiçbir arayüzden çağrılmıyordu — araç rengi
+  değiştirilemiyordu.
+- Game sahnesinde yönlü ışığın gölgesi kapalıydı (kodla eklenen ışığın
+  varsayılanı `None`); şehir gölgesiz render ediliyordu.
+- Yüzeylerin normal haritası yoktu; SSAO/bloom açıkken bile her şey plastik
+  görünüyordu.
+
+---
+
 ## [0.7.0] — Prosedürel varlıklar, native iOS, testler
 
 Bu sürüme kadar oyun kod olarak hazırdı ama görsel/işitsel varlık yoktu; sahne
