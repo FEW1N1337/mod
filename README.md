@@ -1363,6 +1363,50 @@ ikisinde de sıfır çakışma ve sıfır ekran taşması.
 
 ---
 
+## 22) v1.4 — Garajda araç görünüyor
+
+`CarDefinition.thumbnail` alanı vardı. **İki** tüketicisi vardı:
+
+- `GarageCarousel.cs:60` → `thumbnail.sprite = def.thumbnail`
+- `ShopUI.cs:41` → satırdaki `Icon` çocuğuna atıyor
+
+Ama **projede o alana hiçbir yerden atama yoktu.** Sonuç: garajın ortasındaki
+760×340'lık alan boş bir dikdörtgen, mağaza satırlarında da araç görseli yok.
+Oklar, ad, fiyat — hepsi yerinde, araç yok.
+
+Yine aynı aile: alan var, okuyan var (hem de iki tane), **yazan yok** ve
+hiçbir hata çıkmıyor.
+
+`Editor/Procedural/ProceduralCarThumbnails.cs` her araç prefabından editör
+zamanında bir görsel render ediyor:
+
+- Sahneden uzakta (y = −5000) örnekleniyor — üretim sırasında açık olan
+  sahnede arazi ve şehir duruyor, kadraja onlar girmesin
+- Kamera mesafesi `Renderer.bounds`'tan hesaplanıyor; sabit sayı yazmak
+  farklı boyuttaki araçlarda kimini kırpar kimini nokta bırakırdı
+- 3/4 önden bakış, saydam arka plan (alfa 0) — panelin üstünde temiz durur
+- PNG olarak `Assets/Generated/CarThumbs/` altına, `ProceduralUISprites.Save`
+  ile aynı içe aktarma yolundan
+
+`BUILD EVERYTHING` içinde **katalogdan hemen sonra** koşuyor: hem prefabı hem
+`CarDefinition` varlığını gerektiriyor, ikisi de o noktada var. RCCP
+dönüştürücüsüyle eklenen araçlar da küçük resim alıyor, çünkü `BuildCatalog`
+dışarıdan gelen tanımları koruyor.
+
+Denetçi artık küçük resmi olmayan aracı hata olarak bildiriyor.
+
+**Canlı 3B önizleme neden değil:** `GarageCarousel.previewMount` bilerek
+boş — araç prefabı `PhotonView` ve `Rigidbody` taşıyor, menü sahnesinde
+odaya bağlı olmadan doğurmak hata üretiyor. Editörde render alıp sprite
+kaydetmek o sorunu hiç doğurmuyor.
+
+**Sınır:** bu, "araç görünmüyor"u "araç görünüyor"a çeviriyor. Dream Road'un
+garajı modellenmiş bir mekân, elle yapılmış araç modelleri ve dokular;
+bizimkiler prosedürel. Aradaki fark ayarla değil **gerçek 3B varlıkla**
+kapanır — RCCP'nin fizikte yaptığının görsel karşılığı.
+
+---
+
 ## Dosya haritası
 
 | Dosya | Görev |
@@ -1374,6 +1418,7 @@ ikisinde de sıfır çakışma ve sıfır ekran taşması.
 | `Scripts/Audio/ProceduralMusic.cs` | Çalışma anında müzik sentezi (§18e) |
 | `Editor/DreamCarValidator.cs` | Sahne kablolama denetimi (§18f) |
 | `Editor/CI/DreamCarCI.cs` | Batch-mode üretim + build (§19a) |
+| `Editor/Procedural/ProceduralCarThumbnails.cs` | Araç küçük resimleri (§22) |
 | `Editor/DreamCarPlayFabSetup.cs` | PLAYFAB_INSTALLED define'ı (§19c) |
 | `Editor/iOS/DreamCarIOSPostBuild.cs` | Info.plist + gizlilik manifesti (§20) |
 | `Scripts/Input/MobileTouchInput.cs` | Dokunmatik + klavye input |

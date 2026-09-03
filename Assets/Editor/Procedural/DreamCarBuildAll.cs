@@ -116,6 +116,16 @@ namespace DreamCar.EditorTools.Procedural
                 EditorUtility.DisplayProgressBar("DreamCar", "Araç kataloğu kuruluyor…", 0.42f);
                 ProceduralCarGenerator.BuildCatalog();
 
+                // Katalogdan HEMEN SONRA: küçük resimler hem prefabı hem
+                // CarDefinition varlığını gerektiriyor, ikisi de bu noktada var.
+                // Önce koşsaydı ne render edecek bir prefab ne yazacak bir alan
+                // bulurdu.
+                //
+                // Bunlar olmadan garajın ortası BOŞ bir dikdörtgen: alan var,
+                // GarageCarousel okuyor, yazan yoktu.
+                EditorUtility.DisplayProgressBar("DreamCar", "Araç küçük resimleri…", 0.45f);
+                ProceduralCarThumbnails.GenerateAll();
+
                 // Sahnelerden ÖNCE: hem AchievementsScreen hem PlayFabAchievements bu
                 // kataloğa referans veriyor. Sonra üretilseydi bağlanacak varlık henüz
                 // olmaz, başarım ekranı boş kalır ve hiçbir başarım değerlendirilmezdi.
