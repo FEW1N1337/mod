@@ -53,7 +53,7 @@ namespace DreamCar.UI
 
             if (driftTimerLabel)
             {
-                if (!_driftMode) _driftMode = FindFirstObjectByType<DriftMode>();
+                if (!_driftMode) _driftMode = FindAnyObjectByType<DriftMode>();
                 if (_driftMode)
                 {
                     float t = _driftMode.RemainingSeconds;

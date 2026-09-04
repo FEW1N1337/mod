@@ -158,7 +158,7 @@ namespace DreamCar.Vehicle
         bool TryNearestSpawn(out Transform spawn)
         {
             spawn = null;
-            var room = FindFirstObjectByType<Network.RoomManager>();
+            var room = FindAnyObjectByType<Network.RoomManager>();
             if (room == null || room.spawnPoints == null) return false;
 
             float best = float.MaxValue;

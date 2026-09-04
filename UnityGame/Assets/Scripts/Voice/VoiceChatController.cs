@@ -19,7 +19,7 @@ namespace DreamCar.Voice
 
         void Start()
         {
-            _recorder = FindFirstObjectByType<Recorder>();
+            _recorder = FindAnyObjectByType<Recorder>();
             if (_recorder == null) { Debug.LogWarning("[Voice] Recorder yok — Photon Voice sahnede eksik."); return; }
             _muted = startMuted;
             _recorder.TransmitEnabled = !_muted;

@@ -154,7 +154,7 @@ namespace DreamCar.Race
                 // En iyi tur hiç gönderilmiyordu: SubmitRaceBestLap'in proje
                 // genelinde tek geçişi tanımın kendisiydi, yani liderlik
                 // ekranının Yarış sekmesi her oyuncu için kalıcı olarak boştu.
-                var lb = FindFirstObjectByType<Backend.PlayFabLeaderboards>();
+                var lb = FindAnyObjectByType<Backend.PlayFabLeaderboards>();
                 if (lb && s.bestLapTime > 0f)
                     lb.SubmitRaceBestLap(Mathf.RoundToInt(s.bestLapTime * 1000f));
                 var rate = AppMeta.RateAppPopup.Instance;

@@ -17,7 +17,7 @@ namespace DreamCar.Effects
 
         Weather _weather;
 
-        void Awake() => _weather = FindFirstObjectByType<Weather>();
+        void Awake() => _weather = FindAnyObjectByType<Weather>();
 
         void Update()
         {

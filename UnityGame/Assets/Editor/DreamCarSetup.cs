@@ -668,7 +668,7 @@ namespace DreamCar.EditorTools
 
             // EventSystem olmadan HİÇBİR buton çalışmaz — harita sahnelerinde
             // hiç kurulmuyordu. Sahneye özel ve DontDestroyOnLoad değil.
-            if (!UnityEngine.Object.FindFirstObjectByType<EventSystem>())
+            if (!UnityEngine.Object.FindAnyObjectByType<EventSystem>())
                 new GameObject("EventSystem").AddComponent<EventSystem>()
                     .gameObject.AddComponent<StandaloneInputModule>();
 

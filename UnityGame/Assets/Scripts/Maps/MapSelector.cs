@@ -20,10 +20,10 @@ namespace DreamCar.Maps
             var def = catalog.Find(idObj as string);
             if (!def) return;
 
-            var weather = FindFirstObjectByType<Weather>();
+            var weather = FindAnyObjectByType<Weather>();
             if (weather) weather.SetType(def.weather);
 
-            var day = FindFirstObjectByType<DayNightCycle>();
+            var day = FindAnyObjectByType<DayNightCycle>();
             if (day) { day.startTimeOfDay = def.timeOfDay; day.enabled = false; day.enabled = true; }
         }
 

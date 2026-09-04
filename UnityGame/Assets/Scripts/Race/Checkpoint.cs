@@ -16,7 +16,7 @@ namespace DreamCar.Race
 
         void OnTriggerEnter(Collider other)
         {
-            var manager = FindFirstObjectByType<RaceManager>();
+            var manager = FindAnyObjectByType<RaceManager>();
             if (manager) manager.OnCheckpointHit(other, this);
         }
 

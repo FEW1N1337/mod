@@ -139,7 +139,7 @@ namespace DreamCar.Core
             if (t.disablePostProcessing) return;
             if (t.postProfile == null) return;
 
-            var volume = FindFirstObjectByType<Volume>();
+            var volume = FindAnyObjectByType<Volume>();
             if (volume == null)
             {
                 var go = new GameObject("~PostProcessVolume");
@@ -159,7 +159,7 @@ namespace DreamCar.Core
             // Detect()'i doğrudan çağırıyoruz: bu bileşen execution order -50 ile
             // QualityAutoDetect.Start()'tan önce koşar, yani DetectedTier henüz
             // hesaplanmamış olurdu.
-            var detector = FindFirstObjectByType<QualityAutoDetect>();
+            var detector = FindAnyObjectByType<QualityAutoDetect>();
             if (detector != null) return detector.Detect();
 
             // Detector sahnede yoksa doğrudan donanımdan hesapla

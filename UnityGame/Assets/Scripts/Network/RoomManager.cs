@@ -33,11 +33,11 @@ namespace DreamCar.Network
 
         void Start()
         {
-            if (addGameModeManager && !FindFirstObjectByType<GameModeManager>())
+            if (addGameModeManager && !FindAnyObjectByType<GameModeManager>())
                 gameObject.AddComponent<GameModeManager>();
             if (applyMapPreset)
             {
-                var sel = FindFirstObjectByType<MapSelector>();
+                var sel = FindAnyObjectByType<MapSelector>();
                 if (sel) sel.ApplyForRoom();
             }
             if (PhotonNetwork.InRoom) SpawnLocalCar();
@@ -120,7 +120,7 @@ namespace DreamCar.Network
 
             // Minimap kamerası yerel aracı takip eder. Araç ancak odaya girilince
             // doğduğu için bu bağlantı Editor'de kurulamıyor.
-            var minimap = FindFirstObjectByType<UI.Minimap>();
+            var minimap = FindAnyObjectByType<UI.Minimap>();
             if (minimap) minimap.target = _localCar.transform;
 
             // Interest management mesafeyi bu araca göre ölçer.
@@ -129,7 +129,7 @@ namespace DreamCar.Network
 
             // Sürücüyü somut tip yerine IDriveInput üzerinden alıyoruz: prefab
             // WheelCollider'lı CarController da olabilir, RCCP'li RCCPCarAdapter da.
-            var input = FindFirstObjectByType<InputSystemMobile.MobileTouchInput>();
+            var input = FindAnyObjectByType<InputSystemMobile.MobileTouchInput>();
             if (input) input.car = _localCar.GetComponent<Car.IDriveInput>();
         }
 

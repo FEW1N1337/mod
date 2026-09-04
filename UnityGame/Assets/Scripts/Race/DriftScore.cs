@@ -70,7 +70,7 @@ namespace DreamCar.Race
                 // Liderlik tablosuna hiç skor gönderilmiyordu: SubmitDriftScore'un
                 // proje genelinde tek geçişi tanımın kendisiydi, yani Drift
                 // sekmesi her oyuncu için kalıcı olarak boştu.
-                var lb = FindFirstObjectByType<Backend.PlayFabLeaderboards>();
+                var lb = FindAnyObjectByType<Backend.PlayFabLeaderboards>();
                 if (lb) lb.SubmitDriftScore(_bestCombo);
             }
         }

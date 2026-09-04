@@ -21,7 +21,7 @@ namespace DreamCar.Voice
 
         void Start()
         {
-            if (!controller) controller = FindFirstObjectByType<VoiceChatController>();
+            if (!controller) controller = FindAnyObjectByType<VoiceChatController>();
 
             if (pushToTalkButton)
             {

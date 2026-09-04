@@ -22,7 +22,7 @@ namespace DreamCar.Race
             // onu çalışma anında AddComponent ediyor. Alan atanmadığı için
             // Update eskiden ilk satırda dönüyordu — tablo hiç dolmazdı.
             // Yarış modu dışında hiç yok, o durumda paneli gizliyoruz.
-            if (!race) race = FindFirstObjectByType<RaceManager>();
+            if (!race) race = FindAnyObjectByType<RaceManager>();
             if (!race)
             {
                 if (label.gameObject.activeSelf) label.gameObject.SetActive(false);

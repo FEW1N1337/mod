@@ -25,7 +25,7 @@ namespace DreamCar.UI
 
         void Start()
         {
-            _backend = FindFirstObjectByType<PlayFabLeaderboards>();
+            _backend = FindAnyObjectByType<PlayFabLeaderboards>();
             if (closeButton) closeButton.onClick.AddListener(Close);
             if (raceTabButton) raceTabButton.onClick.AddListener(() => Show(PlayFabLeaderboards.RaceBestLapStat));
             if (driftTabButton) driftTabButton.onClick.AddListener(() => Show(PlayFabLeaderboards.DriftScoreStat));

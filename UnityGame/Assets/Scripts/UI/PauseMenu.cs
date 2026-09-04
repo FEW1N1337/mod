@@ -54,7 +54,7 @@ namespace DreamCar.UI
             // settingsPanel bağlı değilse "Ayarlar" butonu sessizce hiçbir şey yapıyordu.
             // Sahnede kapalı duran bir SettingsScreen varsa onu açalım (bileşen kendi
             // panelinin üzerinde ve panel kapalı başladığı için Include şart).
-            var screen = FindFirstObjectByType<SettingsScreen>(FindObjectsInactive.Include);
+            var screen = FindAnyObjectByType<SettingsScreen>(FindObjectsInactive.Include);
             if (screen) screen.Open();
         }
 

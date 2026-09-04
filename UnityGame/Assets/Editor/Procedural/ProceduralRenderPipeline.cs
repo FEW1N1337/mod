@@ -227,7 +227,9 @@ namespace DreamCar.EditorTools.Procedural
 
             // Android: 64-bit zorunlu (Play Store şartı), IL2CPP olmadan seçilemez.
             PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
-            PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel24;
+            // API 24 Unity 6'da [Obsolete] ve Play Store'un kabul ettiği minimumun
+            // altında; desteklenen en düşük seviye 26 (Android 8.0).
+            PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel26;
 
             // HEDEF API'yi SABİT BİR SAYIYA ÇAKMIYORUZ.
             //
