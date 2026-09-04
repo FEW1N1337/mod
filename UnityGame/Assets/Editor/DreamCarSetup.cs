@@ -356,7 +356,19 @@ namespace DreamCar.EditorTools
             var nickInput = MakeInputField(mainPanel, "NicknameInput", "Kullanıcı adı", new Vector2(-680f, 480f));
             // OYNA altta ortada — garaj artik ekranin ortasini kapliyor.
             var playBtn = MakeButton(mainPanel, "PlayButton", "OYNA", new Vector2(200f, -230f), key: "play");
+            // Ekrandaki TEK vurgu noktası. Nav butonları beyaz hap olduğu için
+            // birincil eylemin ayrışması gerekiyor; etiket MakeButton'dan beyaz
+            // geliyor ve kırmızı hapta doğru kalıyor.
+            Skin(playBtn.GetComponent<Image>(), "pill", Palette.Accent);
             var statusText = MakeText(mainPanel, "StatusText", "Bağlanıyor…", new Vector2(0f, 400f), 26);
+
+            // Para göstergesi — kullanıcı adının hemen altında. Bakiye ana
+            // menüde HİÇ görünmüyordu (yalnızca mağaza panelleri açıkken ve
+            // oyun içi HUD'da); Dream Road'da her ekranda üstte duruyor.
+            // Konum sol üst: sağ üst köşede sürücü seviyesi rozeti var.
+            var menuMoney = MakeMoneyPill(mainPanel, "MoneyPill",
+                                          new Vector2(-680f, 390f), new Vector2(360f, 76f));
+            mainPanel.AddComponent<MoneyDisplay>().label = menuMoney;
 
             // Sürücü seviyesi rozeti — sağ üst. Kullanıcı adının (sol üst)
             // karşısında. DriverProfile ~Bootstrap'te; rozet Start'ta bağlanıyor.
@@ -411,7 +423,13 @@ namespace DreamCar.EditorTools
             // olmadan doğurmak hata üretir. Alan zaten null kontrolüyle korunuyor.
 
             // Lobby panel (inactive by default)
-            var lobbyPanel = MakeUiChild(canvasGo, "LobbyPanel");
+            //
+            // modal: true — iki sebep. (1) Oda listesinin ARKA PLANI YOKTU:
+            // panel şeffaftı ve arkasında dönen 3B garaj sahnesi satırların
+            // içinden görünüyordu. (2) Açık tema geçişi modal panelleri
+            // "Backdrop" çocuğundan tanıyor; bu olmadan lobi koyu kalırdı —
+            // oysa kullanıcının örnek verdiği ekran tam olarak bu ekran.
+            var lobbyPanel = MakeUiChild(canvasGo, "LobbyPanel", modal: true);
             lobbyPanel.SetActive(false);
             mainMenuUI.lobbyPanel = lobbyPanel;
 
@@ -485,6 +503,10 @@ namespace DreamCar.EditorTools
 
             // Reconnect overlay
             BuildReconnectOverlay(canvasGo, boot);
+
+            // Dream Road açık teması — EN SONDA, bütün paneller kurulduktan
+            // sonra. Daha erken çağrılırsa sonradan eklenen çocuklar koyu kalır.
+            ApplyLightTheme(canvasGo);
 
             // Save
             EditorSceneManager.SaveScene(scene, MainMenuPath);
@@ -769,10 +791,11 @@ namespace DreamCar.EditorTools
             // Para göstergesi. Serbest sürüş artık kilometre ve drift başına
             // ödeme yapıyor (FreeRoamMode); bakiye ekranda olmazsa oyuncu
             // kazandığını yalnızca menüye dönünce fark eder.
-            var moneyText = MakeText(hudPanel, "MoneyText", "0 ₺", Vector2.zero, 34);
-            moneyText.alignment = TextAlignmentOptions.MidlineLeft;
-            AnchorCorner(moneyText.GetComponent<RectTransform>(),
-                         new Vector2(0f, 1f), new Vector2(330f, 70f), new Vector2(280f, 60f));
+            var moneyText = MakeMoneyPill(hudPanel, "MoneyPill", Vector2.zero, new Vector2(320f, 72f));
+            // MakeMoneyPill etiketi döndürüyor; köşeye hizalanacak olan HAPIN
+            // kendisi, yani etiketin ebeveyni.
+            AnchorCorner((RectTransform)moneyText.transform.parent,
+                         new Vector2(0f, 1f), new Vector2(350f, 70f), new Vector2(320f, 72f));
 
             var hud = hudPanel.AddComponent<InGameHUD>();
             hud.speedText = speedText;
@@ -1235,6 +1258,11 @@ namespace DreamCar.EditorTools
             AnchorCorner(pauseBtn.GetComponent<RectTransform>(),
                          new Vector2(0f, 1f), new Vector2(1360f, 70f), new Vector2(140f, 90f));
             UnityEventTools.AddPersistentListener(pauseBtn.onClick, pauseScript.Toggle);
+
+            // Dream Road açık teması — oyun içi modal ekranlar da (duraklatma,
+            // ayarlar, oyuncu listesi, bildirme) menüyle aynı dile geçiyor.
+            // HUD'un kendisi modal DEĞİL: oyunun üstünde koyu kalıyor.
+            ApplyLightTheme(canvasGo);
         }
 
         // ---------------------------------------------------------- Build Settings
@@ -1612,23 +1640,23 @@ namespace DreamCar.EditorTools
             // Konumlar MainPanel'in ALT KENARINA sabitlendi: mutlak y -300/-400
             // 21:9 telefonda (görünür yarı-aralık ±454) ikinci sırayı ekran
             // dışına taşıyordu.
-            var navSettings = MakeIconButton(mainPanel, "NavSettings", "Ayarlar", Vector2.zero, "icon_gear", key: "settings");
+            var navSettings = MakeIconButton(mainPanel, "NavSettings", "Ayarlar", Vector2.zero, "icon_gear", key: "settings", light: true);
             AnchorTo(navSettings.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(600f, 190f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navSettings.onClick, settings.Open);
-            var navLeaderboard = MakeIconButton(mainPanel, "NavLeaderboard", "Liderlik", Vector2.zero, "icon_trophy", key: "leaderboard");
+            var navLeaderboard = MakeIconButton(mainPanel, "NavLeaderboard", "Liderlik", Vector2.zero, "icon_trophy", key: "leaderboard", light: true);
             AnchorTo(navLeaderboard.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(-450f, 75f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navLeaderboard.onClick, leaderboard.Open);
-            var navAchievements = MakeIconButton(mainPanel, "NavAchievements", "Başarımlar", Vector2.zero, "icon_flag", key: "achievements");
+            var navAchievements = MakeIconButton(mainPanel, "NavAchievements", "Başarımlar", Vector2.zero, "icon_flag", key: "achievements", light: true);
             AnchorTo(navAchievements.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(-150f, 75f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navAchievements.onClick, achievements.Open);
-            var navShop = MakeIconButton(mainPanel, "NavShop", "Mağaza", Vector2.zero, "icon_coin", key: "shop");
+            var navShop = MakeIconButton(mainPanel, "NavShop", "Mağaza", Vector2.zero, "icon_coin", key: "shop", light: true);
             AnchorTo(navShop.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(-300f, 190f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navShop.onClick, coinShop.Open);
-            var navStats = MakeIconButton(mainPanel, "NavStats", "İstatistik", Vector2.zero, "icon_chart", key: "stats.title");
+            var navStats = MakeIconButton(mainPanel, "NavStats", "İstatistik", Vector2.zero, "icon_chart", key: "stats.title", light: true);
             AnchorTo(navStats.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(150f, 75f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navStats.onClick, stats.Open);
@@ -1636,18 +1664,18 @@ namespace DreamCar.EditorTools
             // İkinci sıra — birinci sıra beş butonla dolu.
             // RoomCreatorUI'de Open/Close yok, panel alanı da yok — paneli doğrudan
             // açıp kapatıyoruz. GameObject.SetActive kalıcı listener hedefi olabiliyor.
-            var navCreate = MakeIconButton(mainPanel, "NavCreateRoom", "Oda Kur", Vector2.zero, "icon_plus", key: "room.create");
+            var navCreate = MakeIconButton(mainPanel, "NavCreateRoom", "Oda Kur", Vector2.zero, "icon_plus", key: "room.create", light: true);
             AnchorTo(navCreate.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(0f, 190f), new Vector2(280f, 100f));
             UnityEventTools.AddBoolPersistentListener(navCreate.onClick, createPanel.SetActive, true);
             UnityEventTools.AddBoolPersistentListener(rcClose.onClick, createPanel.SetActive, false);
-            var navRegion = MakeIconButton(mainPanel, "NavRegion", "Bölge", Vector2.zero, "icon_globe");
+            var navRegion = MakeIconButton(mainPanel, "NavRegion", "Bölge", Vector2.zero, "icon_globe", light: true);
             AnchorTo(navRegion.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(300f, 190f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navRegion.onClick, region.Open);
 
             // ShopUI'de Open/Close yok — paneli doğrudan açıp kapatıyoruz.
-            var navCarShop = MakeIconButton(mainPanel, "NavCarShop", "Araçlar", Vector2.zero, "icon_car", key: "garage");
+            var navCarShop = MakeIconButton(mainPanel, "NavCarShop", "Araçlar", Vector2.zero, "icon_car", key: "garage", light: true);
             AnchorTo(navCarShop.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(-600f, 190f), new Vector2(280f, 100f));
             UnityEventTools.AddBoolPersistentListener(navCarShop.onClick, carShopPanel.SetActive, true);
@@ -1696,7 +1724,7 @@ namespace DreamCar.EditorTools
                 playedWith.entryPrefab = MakeRowPrefabTemplate(socialPanel, "PlayedWithRow", 1, "Ekle");
             }
 
-            var navSocial = MakeIconButton(mainPanel, "NavSocial", "Sosyal", Vector2.zero, "icon_emote", key: "played_with");
+            var navSocial = MakeIconButton(mainPanel, "NavSocial", "Sosyal", Vector2.zero, "icon_emote", key: "played_with", light: true);
             AnchorTo(navSocial.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(450f, 75f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navSocial.onClick, social.Open);
@@ -1704,13 +1732,13 @@ namespace DreamCar.EditorTools
             // İkinci sıranın boş kalan solundaki yuva. Yatayda 750 + 140 = 890,
             // 1920 referans genişliğin yarısı olan 960'ın altında — 21:9'da
             // ekran daha da geniş olduğu için orada da sığıyor.
-            var navMod = MakeIconButton(mainPanel, "NavMod", "Modifiye", Vector2.zero, "icon_gear", key: "garage");
+            var navMod = MakeIconButton(mainPanel, "NavMod", "Modifiye", Vector2.zero, "icon_gear", key: "garage", light: true);
             AnchorTo(navMod.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(-750f, 75f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navMod.onClick, modShop.Open);
 
             // Görevler — ikinci sıranın sağ ucundaki boş yuva (x=750).
-            var navMissions = MakeIconButton(mainPanel, "NavMissions", "Görevler", Vector2.zero, "icon_flag", key: null);
+            var navMissions = MakeIconButton(mainPanel, "NavMissions", "Görevler", Vector2.zero, "icon_flag", key: null, light: true);
             AnchorTo(navMissions.GetComponent<RectTransform>(), new Vector2(0.5f, 0f),
                      new Vector2(750f, 75f), new Vector2(280f, 100f));
             UnityEventTools.AddPersistentListener(navMissions.onClick, missions.Open);
@@ -1873,10 +1901,24 @@ namespace DreamCar.EditorTools
             public static readonly Color SurfaceDeep = new(0f, 0f, 0f, 0.55f);
             public static readonly Color Stroke      = new(1f, 1f, 1f, 0.16f);
             public static readonly Color ButtonBg    = new(0.16f, 0.18f, 0.26f, 0.95f);
-            public static readonly Color Accent      = new(0.24f, 0.72f, 1f, 1f);
-            public static readonly Color AccentDim   = new(0.24f, 0.72f, 1f, 0.35f);
+            // Dream Road'un vurgu rengi KIRMIZI (#E0392E). Tek jeton: hız ibresi,
+            // XP çubuğu, nitro, görev ilerlemesi ve seçili durum bunu okuyor.
+            public static readonly Color Accent      = new(0.878f, 0.224f, 0.180f, 1f);
+            public static readonly Color AccentDim   = new(0.878f, 0.224f, 0.180f, 0.35f);
             public static readonly Color Good        = new(0.36f, 0.85f, 0.48f, 1f);
             public static readonly Color TextDim     = new(1f, 1f, 1f, 0.45f);
+
+            // --- Açık tema (Dream Road) ---
+            // Modal ekranlar açık zemine geçiyor. Bu jetonlar ApplyLightPanel
+            // tarafından yukarıdaki koyu karşılıklarının YERİNE yazılıyor.
+            public static readonly Color BackdropLight  = new(0.949f, 0.953f, 0.961f, 1f);
+            public static readonly Color RowLight       = new(1f, 1f, 1f, 1f);
+            public static readonly Color BarLight       = new(0.85f, 0.86f, 0.88f, 1f);
+            // AÇIK ZEMİNDE METİN. MakeText renk atamıyor ve TMP varsayılanı
+            // beyaz: açık zemin veren her yol bu ikisinden birini AÇIKÇA
+            // yazmak zorunda, yoksa beyaz üstüne beyaz yazı olur (hata basmaz).
+            public static readonly Color TextOnLight    = new(0.086f, 0.094f, 0.114f, 1f);
+            public static readonly Color TextDimOnLight = new(0.086f, 0.094f, 0.114f, 0.55f);
         }
 
         const string UiSpriteFolder = "Assets/Generated/UI";
@@ -1906,6 +1948,156 @@ namespace DreamCar.EditorTools
             // ikonlar olduğu gibi çizilir.
             img.type = sprite.border != Vector4.zero ? Image.Type.Sliced : Image.Type.Simple;
             return img;
+        }
+
+        // İki rengi epsilon'la karşılaştırır. ApplyLightPanel jetonları RENKTEN
+        // tanıyor ve float eşitliği güvenilmez.
+        static bool Same(Color a, Color b) =>
+            Mathf.Abs(a.r - b.r) < 0.01f && Mathf.Abs(a.g - b.g) < 0.01f &&
+            Mathf.Abs(a.b - b.b) < 0.01f && Mathf.Abs(a.a - b.a) < 0.01f;
+
+        // Bir modal paneli Dream Road'un açık temasına çevirir.
+        //
+        // NEDEN TOPLU GEÇİŞ: MakeText renk ATAMIYOR, TMP varsayılanı beyaz.
+        // Bu dosyada 81 MakeText çağrısı var; zeminleri açığa çevirip metinleri
+        // tek tek koyulaştırmak 81 unutma şansı demek — ve unutulan yer HATA
+        // BASMADAN beyaz üstüne beyaz olur. Onun yerine panel kurulduktan sonra
+        // tek geçiş:
+        //
+        //   - Tanıdığı jetonu açık karşılığıyla değiştirir; TANIMADIĞI rengi
+        //     ellemez (accent dolgular, başarım ikonunun altın/grisi, mod
+        //     ürününün kendi rengi olduğu gibi kalır).
+        //   - Her metnin rengini ARKASINDAKİ YÜZEYE göre seçer: koyu hapın
+        //     üstündeki beyaz etikete dokunmaz, beyaz satırın üstündekini
+        //     koyultur. (Beyaz hap isteyen buton rengini zaten MakeButton'da
+        //     kendi yazıyor — light: true.)
+        //
+        // Panelin İÇERİĞİ KURULDUKTAN SONRA çağrılmalı; önce çağrılırsa
+        // sonradan eklenen çocuklar koyu kalır.
+        static void ApplyLightPanel(GameObject panel)
+        {
+            // includeInactive: satır ŞABLONLARI SetActive(false) ile duruyor.
+            // Onları atlarsak listelerdeki her satır koyu kalırdı.
+            foreach (var img in panel.GetComponentsInChildren<Image>(true))
+            {
+                if (img.name == "Backdrop") { img.color = Palette.BackdropLight; continue; }
+
+                if (Same(img.color, Palette.Surface) || Same(img.color, Palette.PanelBg))
+                    img.color = Palette.RowLight;
+                else if (Same(img.color, Palette.SurfaceDeep) || Same(img.color, Palette.Stroke))
+                    img.color = Palette.BarLight;
+                else if (Same(img.color, Palette.TextDim))
+                    img.color = Palette.TextDimOnLight;
+            }
+
+            // Metin rengi ARKASINDAKİ YÜZEYDEN karar veriliyor, bileşen
+            // türünden değil.
+            //
+            // İlk denemem "Button'ın altındaki metne dokunma" idi ve YANLIŞTI:
+            // oda listesi satırının KÖKÜ Button (LobbyUI GetComponent<Button>()
+            // arıyor, GetComponentInChildren değil) ve o kök artık BEYAZ. O
+            // kural lobinin üç sütununu da beyaz bırakırdı — yani kullanıcının
+            // örnek verdiği ekran boş görünürdü.
+            //
+            // Bu döngü Image geçişinden SONRA çalışıyor, dolayısıyla yüzeyler
+            // nihai rengini almış oluyor.
+            foreach (var t in panel.GetComponentsInChildren<TMP_Text>(true))
+            {
+                var backing = BackingSurface(t.transform, panel.transform);
+                // Yüzey bulunamadıysa metin doğrudan panelin üzerinde: orası
+                // Backdrop, yani açık.
+                bool onLight = !backing || Luma(backing.color) > 0.55f;
+                if (!onLight) continue;   // koyu hapın üstündeki beyaz etiket
+
+                t.color = Same(t.color, Palette.TextDim)
+                    ? Palette.TextDimOnLight
+                    : Palette.TextOnLight;
+            }
+        }
+
+        // Metnin ARKASINDAKİ yüzey: kendisinden başlayıp panele kadar yukarı
+        // çıkar, yeterince opak ilk Image'i döndürür. Yarı saydam süsler
+        // (HeaderBand gradyanı gibi) zemin sayılmaz, üzerinden geçilir.
+        static Image BackingSurface(Transform t, Transform stopAt)
+        {
+            for (var cur = t; cur; cur = cur.parent)
+            {
+                var img = cur.GetComponent<Image>();
+                if (img && img.color.a > 0.35f) return img;
+                if (cur == stopAt) break;
+            }
+            return null;
+        }
+
+        static float Luma(Color c) => 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;
+
+        // Modal panelleri YAPIDAN bulur: MakeUiChild(modal: true) her birine
+        // "Backdrop" adlı bir çocuk ekliyor, başka hiçbir şey eklemiyor. Yani
+        // panel listesini elle tutmaya gerek yok — ileride eklenen modal ekran
+        // da otomatik açık temaya giriyor.
+        static void ApplyLightTheme(GameObject canvasGo)
+        {
+            foreach (var tr in canvasGo.GetComponentsInChildren<Transform>(true))
+                if (tr.Find("Backdrop")) ApplyLightPanel(tr.gameObject);
+        }
+
+        // Dream Road'un para göstergesi: beyaz hap · madeni para · bakiye ·
+        // kırmızı daire içinde artı. YENİ SPRITE ÜRETİLMİYOR — pill, circle,
+        // icon_coin ve icon_plus ProceduralUISprites'ta zaten var.
+        // Bakiye metnini döndürür.
+        static TMP_Text MakeMoneyPill(GameObject parent, string name, Vector2 anchoredPos,
+                                      Vector2 size)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent.transform, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchoredPosition = anchoredPos;
+            rt.sizeDelta = size;
+            Skin(go.GetComponent<Image>(), "pill", Palette.RowLight);
+
+            var coin = new GameObject("Coin", typeof(RectTransform), typeof(Image));
+            coin.transform.SetParent(go.transform, false);
+            var coinRt = coin.GetComponent<RectTransform>();
+            coinRt.anchorMin = new Vector2(0f, 0.5f); coinRt.anchorMax = new Vector2(0f, 0.5f);
+            coinRt.anchoredPosition = new Vector2(42f, 0f);
+            coinRt.sizeDelta = new Vector2(44f, 44f);
+            var coinImg = coin.GetComponent<Image>();
+            Skin(coinImg, "icon_coin", new Color(0.93f, 0.72f, 0.20f, 1f));
+            coinImg.preserveAspect = true;
+            coinImg.raycastTarget = false;
+
+            var label = MakeText(go, "Label", "0 ₺", Vector2.zero, 32);
+            // BEYAZ HAP: TMP varsayılanı (beyaz) burada görünmez olurdu.
+            label.color = Palette.TextOnLight;
+            label.alignment = TextAlignmentOptions.MidlineLeft;
+            var lRt = label.GetComponent<RectTransform>();
+            lRt.anchorMin = Vector2.zero; lRt.anchorMax = Vector2.one;
+            lRt.offsetMin = new Vector2(76f, 0f); lRt.offsetMax = new Vector2(-66f, 0f);
+            label.enableAutoSizing = true;
+            label.fontSizeMin = 20f; label.fontSizeMax = 32f;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+
+            var plus = new GameObject("Plus", typeof(RectTransform), typeof(Image));
+            plus.transform.SetParent(go.transform, false);
+            var plusRt = plus.GetComponent<RectTransform>();
+            plusRt.anchorMin = new Vector2(1f, 0.5f); plusRt.anchorMax = new Vector2(1f, 0.5f);
+            plusRt.anchoredPosition = new Vector2(-34f, 0f);
+            plusRt.sizeDelta = new Vector2(50f, 50f);
+            var plusImg = plus.GetComponent<Image>();
+            Skin(plusImg, "circle", Palette.Accent);
+            plusImg.raycastTarget = false;
+
+            var glyph = new GameObject("Glyph", typeof(RectTransform), typeof(Image));
+            glyph.transform.SetParent(plus.transform, false);
+            var gRt = glyph.GetComponent<RectTransform>();
+            gRt.anchorMin = Vector2.zero; gRt.anchorMax = Vector2.one;
+            gRt.offsetMin = new Vector2(11f, 11f); gRt.offsetMax = new Vector2(-11f, -11f);
+            var gImg = glyph.GetComponent<Image>();
+            Skin(gImg, "icon_plus", Color.white);
+            gImg.preserveAspect = true;
+            gImg.raycastTarget = false;
+
+            return label;
         }
 
         // BUILD EVERYTHING zinciri sprite'ları sahnelerden önce üretiyor, ama
@@ -2011,8 +2203,10 @@ namespace DreamCar.EditorTools
             return t;
         }
 
+        // light: Dream Road'un ikincil butonu — BEYAZ hap, koyu etiket.
+        // Varsayılan false, yani mevcut 62 çağrının hiçbiri etkilenmiyor.
         static Button MakeButton(GameObject parent, string name, string label,
-                                 Vector2 anchoredPos, string key = null)
+                                 Vector2 anchoredPos, string key = null, bool light = false)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
             go.transform.SetParent(parent.transform, false);
@@ -2023,8 +2217,11 @@ namespace DreamCar.EditorTools
             // kontrolleri daha önce büyütülmüştü, geri kalan 25+ buton
             // varsayılanda kalmıştı.
             rt.sizeDelta = new Vector2(280f, 120f);
-            Skin(go.GetComponent<Image>(), "pill", Palette.ButtonBg);
+            Skin(go.GetComponent<Image>(), "pill", light ? Palette.RowLight : Palette.ButtonBg);
             var t = MakeText(go, "Label", label, Vector2.zero, 36, key);
+            // Açık hapta TMP varsayılanı (beyaz) görünmez. Rengi zeminle AYNI
+            // BLOKTA yazıyoruz — bu dosyadaki tek kural bu.
+            if (light) t.color = Palette.TextOnLight;
             var tRt = t.GetComponent<RectTransform>();
             tRt.anchorMin = Vector2.zero; tRt.anchorMax = Vector2.one;
             tRt.offsetMin = Vector2.zero; tRt.offsetMax = Vector2.zero;
@@ -2035,9 +2232,10 @@ namespace DreamCar.EditorTools
         // butonu düz metindi; ikon hem tanınmayı hızlandırıyor hem arayüzü
         // "kart" hissine yaklaştırıyor.
         static Button MakeIconButton(GameObject parent, string name, string label,
-                                     Vector2 anchoredPos, string iconName, string key = null)
+                                     Vector2 anchoredPos, string iconName, string key = null,
+                                     bool light = false)
         {
-            var btn = MakeButton(parent, name, label, anchoredPos, key);
+            var btn = MakeButton(parent, name, label, anchoredPos, key, light);
             var sprite = Ui(iconName);
             if (!sprite) return btn;   // sprite'lar üretilmemiş: düz butonla kal
 
@@ -2055,6 +2253,9 @@ namespace DreamCar.EditorTools
             var img = icon.GetComponent<Image>();
             img.sprite = sprite;
             img.preserveAspect = true;
+            // Sprite'lar BEYAZ maske olarak üretiliyor: beyaz hapta beyaz ikon
+            // görünmez. Etiketle aynı rengi alıyor.
+            img.color = light ? Palette.TextOnLight : Color.white;
             // İkon dekoratif: ışın hedefi açık kalırsa butonun kendi tıklamasını
             // yemez ama gereksiz raycast maliyeti çıkarır.
             img.raycastTarget = false;
@@ -2267,7 +2468,9 @@ namespace DreamCar.EditorTools
             var handleRt = handle.GetComponent<RectTransform>();
             // 32x36 ≈ 15 dp — projedeki en küçük dokunma hedefiydi.
             handleRt.sizeDelta = new Vector2(64f, 64f);
-            Skin(handle.GetComponent<Image>(), "circle", Color.white);
+            // Beyaz daire AÇIK ZEMİNDE kaybolur — sürgülerin hepsi modal
+            // ekranlarda (Ayarlar, Oda Kur) ve orası artık açık tema.
+            Skin(handle.GetComponent<Image>(), "circle", Palette.TextOnLight);
 
             var slider = go.GetComponent<Slider>();
             slider.fillRect = fillRt;
@@ -2451,7 +2654,9 @@ namespace DreamCar.EditorTools
             iconRt.offsetMin = Vector2.zero; iconRt.offsetMax = Vector2.zero;
             var iconImg = icon.GetComponent<Image>();
             iconImg.preserveAspect = true;
-            iconImg.color = Palette.TextDim;
+            // ShopUI buraya aracın küçük resmini koyuyor (sprite atıyor, rengi
+            // hiç yazmıyor). Herhangi bir tint resmi boyar — beyaz bırakılmalı.
+            iconImg.color = Color.white;
 
             var nameText = MakeText(row, "Text0", "", Vector2.zero, 30);
             var nameRt = nameText.GetComponent<RectTransform>();
@@ -2685,7 +2890,10 @@ namespace DreamCar.EditorTools
             iconRt.anchorMax = new Vector2(0.075f, 0.82f);
             iconRt.offsetMin = Vector2.zero; iconRt.offsetMax = Vector2.zero;
             var iconImg = icon.GetComponent<Image>();
-            Skin(iconImg, "circle", Color.white);
+            // Beyaz daire beyaz satırda görünmez. Renk kullanan slotlarda
+            // ModShopUI zaten üstüne ürünün kendi rengini yazıyor; bu yalnızca
+            // renksiz slotların (motor, turbo, fren…) varsayılanı.
+            Skin(iconImg, "circle", Palette.TextDimOnLight);
             iconImg.preserveAspect = true;
 
             // Metin sütunları BUTONDAN ÖNCE kuruluyor: ModShopUI

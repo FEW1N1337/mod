@@ -9,6 +9,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using TMPro;
 
 namespace DreamCar.EditorTools
 {
@@ -159,6 +160,29 @@ namespace DreamCar.EditorTools
                     notes.Add($"{name}: DriverLevelBadge yok — seviye rozeti görünmez.");
                 if (All<DreamCar.UI.MissionPanel>().Length == 0)
                     notes.Add($"{name}: MissionPanel yok — görev ekranı açılamaz.");
+            }
+
+            // 5c) GÖRÜNMEZ YAZI. Arayüz açık temaya geçince ortaya çıkan yeni
+            //     sessiz hata ailesi: MakeText renk atamıyor, TMP varsayılanı
+            //     BEYAZ. Bir yüzey beyaza çevrilip metnin rengi yazılmayı
+            //     unutulursa beyaz üstüne beyaz olur — ne derleme hatası, ne
+            //     çalışma anı istisnası, sadece boş görünen bir panel. Bu
+            //     denetim tam olarak onu yakalıyor.
+            foreach (var text in All<TMP_Text>())
+            {
+                // Boş metin ATLANMIYOR: asıl riskli olanlar satır ŞABLONLARI
+                // ve onların metni tam da boş — kontrast hatası oradaysa
+                // listede her satırda görünür.
+                if (text.color.a < 0.1f) continue;   // bilerek şeffaf
+
+                var backing = TextBacking(text.transform);
+                // Zemin bulunamadı: metin doğrudan sahnenin/kameranın üstünde,
+                // neyin üzerine düştüğünü buradan bilemeyiz.
+                if (!backing) continue;
+
+                if (Mathf.Abs(Luma(text.color) - Luma(backing.color)) < 0.22f)
+                    errors.Add($"{name}: '{PathOf(text.transform)}' yazısı zeminiyle " +
+                               "AYNI parlaklıkta — okunmuyor (beyaz üstüne beyaz).");
             }
 
             // 6) BİLGİ AMAÇLI: DreamCar bileşenlerindeki null referans alanları.
@@ -428,6 +452,27 @@ namespace DreamCar.EditorTools
             foreach (var slot in knownSlots)
                 if (catalog.InSlot(slot).Count == 0)
                     notes.Add($"'{slot}' slotunda hiç parça yok — sekmesi boş açılır.");
+        }
+
+        // Metnin arkasındaki ilk yeterince opak yüzey. DreamCarSetup'taki
+        // BackingSurface ile aynı kural — orası boyuyor, burası denetliyor.
+        static Image TextBacking(Transform t)
+        {
+            for (var cur = t; cur; cur = cur.parent)
+            {
+                var img = cur.GetComponent<Image>();
+                if (img && img.color.a > 0.35f) return img;
+            }
+            return null;
+        }
+
+        static float Luma(Color c) => 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;
+
+        static string PathOf(Transform t)
+        {
+            var sb = new StringBuilder(t.name);
+            for (var p = t.parent; p; p = p.parent) sb.Insert(0, p.name + "/");
+            return sb.ToString();
         }
 
         static Transform FindChild(Transform root, string name)
