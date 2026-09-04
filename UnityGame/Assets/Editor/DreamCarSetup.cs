@@ -433,7 +433,11 @@ namespace DreamCar.EditorTools
             lobbyPanel.SetActive(false);
             mainMenuUI.lobbyPanel = lobbyPanel;
 
-            var lobbyTitle = MakeText(lobbyPanel, "LobbyTitle", "Odalar", new Vector2(-500f, 400f), 64);
+            // ÜST ÜSTE BİNİYORDU: başlık (-500, 400) varsayılan 600 genişlikle
+            // -800..-200 arasını kaplıyor, arama kutusu (-400, 400) ise
+            // -650..-150 arasını. İkisi de y=400'deydi ve "Odalar" yazısı
+            // arama kutusunun içinden geçiyordu. Başlık yukarı alındı.
+            var lobbyTitle = MakeText(lobbyPanel, "LobbyTitle", "Odalar", new Vector2(-500f, 470f), 64);
             var quickJoinBtn = MakeButton(lobbyPanel, "QuickJoinButton", "Hızlı Katıl", new Vector2(400f, 400f), key: "room.quick_join");
             var createNameInput = MakeInputField(lobbyPanel, "CreateRoomInput", "Yeni oda adı", new Vector2(400f, 300f));
             var createBtn = MakeButton(lobbyPanel, "CreateButton", "OLUŞTUR", new Vector2(400f, 200f), key: "room.create");
@@ -445,8 +449,10 @@ namespace DreamCar.EditorTools
             // Arama kutusu — Dream Road'daki gibi listenin üstünde. Sekiz harita
             // × varyantlarla oda sayısı hızla artıyor, isimle filtrelemeden
             // arkadaşının odasını bulmak kaydırmaya kalıyor.
+            // Liste (-400, 0) 600x700 → y -350..350. Arama kutusu tam üstünde,
+            // başlığın altında: 345..415.
             var searchInput = MakeInputField(lobbyPanel, "SearchInput", "Oda ara…",
-                                             new Vector2(-400f, 400f));
+                                             new Vector2(-400f, 380f));
 
             var lobbyUI = lobbyPanel.AddComponent<LobbyUI>();
             lobbyUI.createRoomInput = createNameInput;
