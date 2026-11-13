@@ -1,0 +1,36 @@
+---
+name: beyin-doktor
+description: Beyin kasasının gerçekten çalışıp çalışmadığını denetler - kaynak güncelliği, hook/worker durumu, skill çakışmaları, güncelleme sorunları. Tetik - "beyin doktor", "beyin çalışıyor mu", "hafıza bozuk", "kasa sağlık kontrolü", "hook çalışmıyor", "/beyin-doktor". Kullanma - sürüm yükseltme (beyin-guncelle), not alma (beyin).
+---
+
+# Beyin doktoru
+
+Vault kökündeki `beyin.py` ile çalış. macOS/Linux: `python3 beyin.py doctor`; Windows: `py -3 beyin.py doctor`. Eski Bash hook listelerini veya başka bir kullanıcının yollarını kopyalama.
+
+Çıktıdaki sürüm, bekleyen/başarısız işler, son sync, kaynak çakışmaları ve skill durumunu oku. Komut exit 0 olsa bile boş lifecycle geçmişini 'istemci bağlantısı doğrulandı' diye yorumlama. Hata loglarını veya özel notları sohbete dökmeden, arızayı ve en küçük düzeltmeyi açıkla.
+
+Kaynak değişikliği indekslenmemişse `python3 beyin.py sync`; skill dosyaları farklıysa `python3 beyin.py skill-sync` ile kontrollü uzlaştır. İki taraf da değişmişse dosyaları koru ve hangi sürümün seçilmesi gerektiğini belirt. Güncelleme yarım kaldıysa `beyin-guncelle` yolunu kullan; runtime veritabanını veya kullanıcı dosyalarını silerek sağlık göstergesini yeşile çevirme.
+
+İstemci bağlantısını doğrulamak gerektiğinde özel veri içermeyen bir deneme notu kullan. Yeni gerçek oturumda yalnız hook bağlamından bu nottaki bilgiyi istemek, dosyanın varlığını kontrol etmekten daha güçlü kanıttır. Codex'te doğru proje ve `/hooks` güvenini, Claude'da yeni proje oturumunu, Antigravity headless kullanımında `--add-dir VAULT` bağını, Kiro IDE/CLI V3'te vault klasörünü ve `.kiro/hooks/beyin-v3.json` dosyasını, OpenCode'da vault klasöründe açılmasını ve `.opencode/plugins/beyin-v3.js` dosyasını, OMP'de vault klasöründe açılmasını ve `.omp/hooks/pre/beyin-v3.ts` dosyasını kontrol et. Pi'de `.pi/extensions/beyin-v3.ts`, proje güveni ve yeni oturumu kontrol et; dış projede yalnız açık `--beyin-project-root` kapsamlı bridge'i kullan (`docs/v3/PI.md` ürün belgesi). Güven hashlerini yazma ve bypass ile alınan sonucu normal kurulum kanıtı sayma.
+
+`companion_hygiene` bölümü companion dosyalarının karakter sayısını gösterir. `over_limit` içinde Last-Session.md veya Threads.md varsa bu bir hafıza hijyeni bulgusudur, senkronizasyon arızası değildir: `python3 beyin.py companion-compact --dry-run` ile planı göster, uygunsa `companion-compact` çalıştır. Komut eski bölümleri kelimesi kelimesine `Arşiv/` altına taşır, hiçbir metni silmez. Kurallar.md, Core.md ve Journal.md bilerek birikir; boyutları yalnız bilgi olarak raporlanır.
+
+`state_storage` vault dışındaki yerel indeksin boyutunu, boş sayfalarını, olay kaydı sayısını ve kalmış eski geçici dosyaları gösterir; bilgi amaçlıdır. `compact_suggested: true` ise kullanıcıya iki sayıyı söyle ve `python3 beyin.py state-compact --dry-run` ile planı göster; uygunsa `state-compact` çalıştır. Komut yalnız saklama süresini geçmiş olay kayıtlarını ve eski geçici dosyaları siler, sonra indeksi VACUUM ile küçültür; vault dosyalarına dokunmaz. `memory.sqlite3` dosyasını elle silme.
+
+`companion_rules_opening` Claude Code açılışının Kurallar.md'den ne kadarını tam gösterdiğini hook'un kendi hesabıyla verir. `status: clipped` ise kural metni (`chars`) bu ayarlarla açılışın tam gösterebildiği `share` karakterini aşıyor ve aradaki kurallar her oturumda atlanıyor; bu bir arıza değildir. Kullanıcıya iki sayıyı söyle, kuralları kısaltmayı ve uzun gerekçeyle ayrıntıyı ayrı bir nota (ör. `Kurallar-Detay.md`) taşımayı öner. Kurallar.md'yi kendiliğinden yeniden yazma.
+
+`instruction_references` bölümü AGENTS.md, CLAUDE.md, companion Kurallar.md ve skill klasörlerindeki `[[wikilink]]` ve `[metin](yol)` bağlantılarından vault içinde karşılığı olmayanları dosya ve satırıyla listeler; kod blokları sayılmaz. Bu bilgi amaçlıdır, durumu `needs_attention` yapmaz: kullanıcıya hangi talimatın artık olmayan bir nota işaret ettiğini söyle, hedef taşındıysa bağlantıyı düzeltmeyi öner, kendiliğinden not uydurma.
+
+`scheduled_check` kullanıcının kendi kurduğu zamanlayıcının son `scheduled-check` koşusunu gösterir. `never_run` bir arıza değildir; kullanıcı istemciler kapalıyken de denetim ya da bildirim isterse `docs/v3/PREFERENCES.md` içindeki zamanlayıcı örneğini öner, kendiliğinden görev kurma. `error` ya da beklenenden büyük `age_hours` görürsen zamanlayıcının çalışmadığını söyle.
+
+`validity.ignored_rejections` içindeki kayıtlarda `validity: rejected` yazıyor ama `kind` inference ya da preference değil, bu yüzden iddia hala güncel bağlamda. Kullanıcı bu iddiayı gerçekten reddettiyse kaynağa `kind: inference` (ya da `preference`) ekle; reddetmediyse `validity` alanını kaldır. Kaynağı silme.
+
+`validity.rejected_dependents` reddedilmiş bir çıkarıma `[[wikilink]]` ya da `[metin](yol)` ile bağlanan güncel notları listeler; `ambiguous_rejected_links` aynı dosya adını taşıyan birden çok nottan biri reddedilmiş olduğunda bağlantıyı ayrıca gösterir. Bu bilgi amaçlıdır, durumu `needs_attention` yapmaz: bağlantı reddin gerekçesini anlatıyor olabilir. Kullanıcıya hangi notun reddedilmiş iddiaya dayandığını söyle; not o iddiayı hala doğru sayıyorsa düzeltmeyi ya da `supersedes` ile yeni nota bağlamayı öner. Notu kendiliğinden değiştirme veya reddetme.
+
+`review.due` notun kendi `review_at` tarihinin geldiğini gösterir: bir fikri yeniden değerlendirme zamanı, arıza değil. Kullanıcıya hangi notların beklediğini söyle; tarihi ileri almayı, notu göreve çevirmeyi ya da emekliye ayırmayı öner, kararı ona bırak. `review.invalid` gerçek tarih olmayan değerleri listeler; doğru tarihi kullanıcıya sor, tahmin etme.
+
+`inbox` bölümü yalnız kullanıcı `--inbox-report on` dediyse doludur: gelen kutusu klasörlerinde bekleyen not sayısı ve en eski notun yaşı. `attention` olan klasör için kullanıcıya kaç notun ne kadar süredir beklediğini söyle ve işlemeyi öner; notları kendiliğinden taşıma, sınıflandırma veya silme. Liste boşsa ya da gelen kutusu başka adla duruyorsa kullanıcıya `--inbox-folder` ile klasör adını vermesini öner; adı tahmin etme.
+
+Kullanıcıya üç şey söyle: çalışan kısım, doğrulanmamış/bozuk kısım, varsa tek sonraki düzeltme. Ham JSON yerine kısa ve somut bir sonuç ver. Kullanıcının mevcut onayı güvenli düzeltmeyi kapsıyorsa gereksiz tekrar onay isteme.
+
+V3.1: `doctor` içindeki `updates` en son sürüm kontrolünü gösterir; ağ hatası güncel olunduğunu kanıtlamaz. Yalnız sürüm sorusunda `beyin.py update --check --metadata-only` kullan. Güncelleme talebini beyin-guncelle skill'ine yönlendir.

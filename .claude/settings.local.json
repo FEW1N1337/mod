@@ -1,0 +1,71 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/python3 /home/user/mod/.claude/scripts/beyin_v3_hook.py --vault /home/user/mod --state /root/.local/state/beyin-v3/09455ac03a3b8164 --harness claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/python3 /home/user/mod/.claude/scripts/beyin_v3_hook.py --vault /home/user/mod --state /root/.local/state/beyin-v3/09455ac03a3b8164 --harness claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/python3 /home/user/mod/.claude/scripts/beyin_v3_hook.py --vault /home/user/mod --state /root/.local/state/beyin-v3/09455ac03a3b8164 --harness claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/python3 /home/user/mod/.claude/scripts/beyin_v3_hook.py --vault /home/user/mod --state /root/.local/state/beyin-v3/09455ac03a3b8164 --harness claude",
+            "timeout": 5
+          }
+        ],
+        "matcher": "Edit|Write|apply_patch|MultiEdit|NotebookEdit"
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/python3 /home/user/mod/.claude/scripts/beyin_v3_hook.py --vault /home/user/mod --state /root/.local/state/beyin-v3/09455ac03a3b8164 --harness claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/python3 /home/user/mod/.claude/scripts/beyin_v3_hook.py --vault /home/user/mod --state /root/.local/state/beyin-v3/09455ac03a3b8164 --harness claude",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

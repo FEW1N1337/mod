@@ -1,0 +1,18 @@
+{
+  "beyin-v3": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "/usr/local/bin/python3 /home/user/mod/.claude/scripts/beyin_v3_hook.py --vault /home/user/mod --state /root/.local/state/beyin-v3/09455ac03a3b8164 --harness antigravity --event PreInvocation",
+        "timeout": 5
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "/usr/local/bin/python3 /home/user/mod/.claude/scripts/beyin_v3_hook.py --vault /home/user/mod --state /root/.local/state/beyin-v3/09455ac03a3b8164 --harness antigravity --event Stop",
+        "timeout": 5
+      }
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Beyin SessionStart",
+      "trigger": "SessionStart",
+      "action": {
+        "type": "command",
+        "command": "/usr/local/bin/python3 /home/user/mod/.claude/scripts/beyin_v3_kiro.py --vault /home/user/mod --state /root/.local/state/beyin-v3/09455ac03a3b8164 --event SessionStart"
+      },
+      "timeout": 10
+    },
+    {
+      "name": "Beyin UserPromptSubmit",
+      "trigger": "UserPromptSubmit",
+      "action": {
+        "type": "command",
+        "command": "/usr/local/bin/python3 /home/user/mod/.claude/scripts/beyin_v3_kiro.py --vault /home/user/mod --state /root/.local/state/beyin-v3/09455ac03a3b8164 --event UserPromptSubmit"
+      },
+      "timeout": 10
+    },
+    {
+      "name": "Beyin PostToolUse",
+      "trigger": "PostToolUse",
+      "action": {
+        "type": "command",
+        "command": "/usr/local/bin/python3 /home/user/mod/.claude/scripts/beyin_v3_kiro.py --vault /home/user/mod --state /root/.local/state/beyin-v3/09455ac03a3b8164 --event PostToolUse"
+      },
+      "timeout": 10,
+      "matcher": "write"
+    },
+    {
+      "name": "Beyin Stop",
+      "trigger": "Stop",
+      "action": {
+        "type": "command",
+        "command": "/usr/local/bin/python3 /home/user/mod/.claude/scripts/beyin_v3_kiro.py --vault /home/user/mod --state /root/.local/state/beyin-v3/09455ac03a3b8164 --event Stop"
+      },
+      "timeout": 10
+    }
+  ]
+}

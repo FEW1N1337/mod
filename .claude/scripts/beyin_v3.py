@@ -1,0 +1,2203 @@
+"""Local, source-backed memory foundation. No model or network dependencies."""
+from __future__ import annotations
+
+from collections import Counter
+from contextlib import contextmanager
+from datetime import date, datetime
+import functools
+import difflib
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import posixpath
+import re
+import sqlite3
+import stat
+import sys
+import tempfile
+import unicodedata
+import urllib.parse
+
+
+# Every supported client. "manual" is accepted for receipts only.
+HARNESSES = ("codex", "claude", "antigravity", "hermes", "opencode", "omp", "kiro", "pi")
+
+# Clients newer than the receipt validator of released 3.12.0, which rejects any other
+# `harness` value and degrades sync. Their receipt sources are written as `harness: manual`
+# plus `client: <name>`, a field older versions ignore, so a rollback or an older device keeps
+# reading them while this version still attributes the receipt to its client (#385).
+RECEIPT_CLIENTS = ("pi",)
+RECEIPT_CLIENT_NAME = re.compile(r"[a-z][a-z0-9_-]{0,31}", re.ASCII)
+
+# rejected_at grammar: a date, optionally with an RFC 3339-style time.
+REJECTED_AT = re.compile(r"\d{4}-\d{2}-\d{2}(?:[T ](?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:\d{2})?)?", re.ASCII)
+
+# Keep adjacent installed modules importable when this file is loaded by path.
+_MODULE_DIR = str(Path(__file__).resolve().parent)
+if _MODULE_DIR not in sys.path:
+    sys.path.insert(0, _MODULE_DIR)
+
+# Frontmatter keys other tools write instead of updated_at, in precedence order.
+RECENCY_ALIASES = ("updated", "modified", "last_modified", "date_modified")
+
+
+def _in_package_container(pinned: str) -> bool:
+    """True when a pinned path runs through an MSIX package container."""
+    parts = [part.lower() for part in pinned.replace("\\", "/").split("/") if part]
+    return "packages" in parts and "localcache" in parts[parts.index("packages") + 1:]
+
+
+def default_state(vault: Path) -> Path:
+    """Keep mutable state outside the vault, separated by canonical vault path."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local")))
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library/Application Support"
+    else:
+        base = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))
+    key = hashlib.sha256(str(Path(vault).resolve()).encode()).hexdigest()[:16]
+    return base / "beyin-v3" / key
+
+
+def _is_absolute_cross_platform(raw: str) -> bool:
+    """True if a path is absolute on any supported platform (Windows or POSIX)."""
+    return bool(re.match(r"^([A-Za-z]:[/\\]|[/\\])", raw))
+
+
+def _resolve_state_path(pinned: Path) -> Path:
+    """Validate a pin even when non-strict realpath suppresses invalid-path errors."""
+    if "\0" in str(pinned):
+        raise ValueError("embedded null character in state path")
+    resolved = Path(pinned).expanduser().resolve()
+    try:
+        resolved.stat()
+    except FileNotFoundError:
+        pass  # A valid state directory may not have been created yet.
+    return resolved
+
+
+def resolve_state(vault: Path, pinned: Path) -> Path:
+    """Resolve a foreign OS/user's conventional default; preserve custom and local pins."""
+    expected = default_state(vault).resolve()
+    raw = str(pinned)
+    if not raw or not raw.strip():
+        return expected
+    if _in_package_container(raw):
+        try:
+            resolved = _resolve_state_path(pinned)
+            if _is_absolute_cross_platform(str(resolved)):
+                return resolved
+        except (OSError, ValueError, RuntimeError):
+            pass
+        return expected
+    portable = raw.replace("\\", "/")
+    # Match complete standard layouts, rather than a generic /state/ or /local/ suffix.
+    # A copied vault normally changes its absolute path and therefore its hash.
+    conventional = re.fullmatch(
+        r"(?:[A-Za-z]:/Users/[^/]+/AppData/Local|/home/[^/]+/\.local/state|"
+        r"/root/\.local/state|/Users/[^/]+/Library/Application Support)/beyin-v3/[0-9a-f]{16}",
+        portable, re.IGNORECASE)
+    local_parent = str(expected.parent).replace("\\", "/").casefold()
+    if conventional and portable.rsplit("/", 1)[0].casefold() != local_parent:
+        return expected
+    try:
+        resolved = _resolve_state_path(pinned)
+    except (OSError, ValueError, RuntimeError):
+        return expected
+
+    if not Path(pinned).expanduser().is_absolute():
+        if re.match(r"^[A-Za-z]:[/\\]", raw) or (sys.platform == "win32" and raw.startswith(("/", "\\"))):
+            return expected
+    return resolved
+# Privacy must work in the contracted standalone core/no-sync checkout too.
+# Hygiene imports this same predicate instead of making retrieval depend on it.
+SENSITIVE_WORDS = re.compile(
+    r'(?:kasa|sifre|parola|kimlik|kimlig|finans|finansal|musteri|vergi|fatura|maas|ozel|gizli|gizlilik)'
+    r'(?:ler|lar)?(?:i|im|in|imiz|leri|lari)?'
+    r'|(?:private|secret|password|credential)s?')
+_SENSITIVE_FOLD = str.maketrans({'ş': 's', 'ğ': 'g', 'ü': 'u', 'ö': 'o', 'ç': 'c', 'ı': 'i', 'â': 'a', 'î': 'i', 'û': 'u'})
+
+def sensitive_fold(name):
+    """NFC, Turkish-aware casefold and ASCII-fold a name: 'MÜŞTERİLER' and NFD 'Şifre' both fold."""
+    text = unicodedata.normalize('NFC', str(name)).replace('İ', 'i').replace('I', 'i').lower()
+    return unicodedata.normalize('NFC', text.replace('̇', '')).translate(_SENSITIVE_FOLD)
+
+
+def sensitive_excluded(name):
+    """True when a directory name carries a kasa-class word (any position, any case/normal form)."""
+    return any(SENSITIVE_WORDS.fullmatch(word) for word in re.findall(r'[^\W\d_]+', sensitive_fold(name)))
+
+
+def sensitive_source(source):
+    """A vault-relative source inside a sensitive folder must not enter the memory index or context."""
+    return isinstance(source, str) and any(sensitive_excluded(part) for part in Path(source).parts[:-1])
+
+
+class RevisionConflict(ValueError):
+    pass
+
+
+class ReceiptConflict(ValueError):
+    pass
+
+
+MAX_RECEIPT_LINKS = 20
+
+
+def _plain_link(value):
+    """An http(s) URL a receipt may name as an external result: no spaces, controls or credentials."""
+    if not 0 < len(value) <= 2048 or re.search(r"[\s\x00-\x1f\x7f]", value):
+        return False
+    try:
+        parts = urllib.parse.urlsplit(value)
+        return parts.scheme in ("http", "https") and bool(parts.hostname) and parts.username is None and parts.password is None
+    except ValueError:
+        return False
+
+
+def _receipt_lf(text):
+    """Receipt text identity ignores CRLF/CR spelling, not other whitespace."""
+    if isinstance(text, bytes):
+        return text.replace(b'\r\n', b'\n').replace(b'\r', b'\n')
+    return text.replace('\r\n', '\n').replace('\r', '\n')
+
+
+def _receipt_same_summary(indexed, summary):
+    """Replay identity against an indexed summary, ignoring CRLF/CR/LF spelling.
+
+    V3.12 and older read a CRLF checkout (core.autocrlf) by dropping only the
+    final LF, so the index kept a trailing CR no writer sent. That one final
+    CR may be absent from a replay; any other text difference still conflicts.
+    """
+    summary = _receipt_lf(summary)
+    return _receipt_lf(indexed) == summary or (indexed.endswith('\r') and _receipt_lf(indexed[:-1]) == summary)
+
+
+def _json(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _rejected_inference(record):
+    """A rejected personal inference is history, not current context.
+
+    Old sources may use status=rejected; status is still the task lifecycle field.
+    """
+    return (record.get("kind") in ("inference", "preference") and
+            (record.get("validity") == "rejected" or record.get("status") == "rejected"))
+
+
+# A note whose own status says it was replaced is history, like a note another trusted note
+# supersedes. Every read route drops these unless the caller asks for statuses explicitly.
+# Any other status (current, verified, aktif, waiting, a custom word) stays deliverable: an
+# allow-list of `active` alone silently hid most real vaults' notes from per-turn context.
+RETIRED_STATUSES = frozenset(("superseded", "retired", "archived", "archive", "deprecated", "obsolete",
+                              "replaced", "arsiv", "arsivlendi", "eski", "emekli", "gecersiz"))
+_STATUS_FOLD = str.maketrans("ŞşĞğÜüÇçÖöİIı", "SsGgUuCcOoiii")
+
+
+def _status_word(record):
+    """First word of the status, case and Turkish-letter folded; missing status means active.
+
+    A task without a status is not active: task_create always writes one.
+    """
+    value = record.get("status")
+    if not isinstance(value, str) or not value.strip():
+        return "" if record.get("kind") == "task" else "active"
+    word = re.match(r"[^\W_]+", unicodedata.normalize("NFC", value.strip()).translate(_STATUS_FOLD).casefold())
+    return word.group(0) if word else ""
+
+
+def _status_allowed(record, allowed):
+    """allowed: None for the default read gate, else a set of folded status words."""
+    word = _status_word(record)
+    return word not in RETIRED_STATUSES if allowed is None else word in allowed
+
+
+def _allowed_statuses(statuses):
+    if statuses is None:
+        return None
+    if isinstance(statuses, str):
+        statuses = [statuses]
+    return {_status_word({"status": value}) for value in statuses}
+
+
+CLOSED_TASK_STATUSES = frozenset((
+    "done", "cancelled", "canceled", "kapandi", "completed",
+    "tamamlandi", "iptal", "closed", "bitti", "cozuldu", "resolved"
+))
+
+
+def _is_task(record):
+    return record.get("kind") == "task" or str(record.get("source", "")).startswith("tasks/")
+
+
+def _is_closed_task(record):
+    return _is_task(record) and _status_word(record) in CLOSED_TASK_STATUSES
+
+
+def is_due_task(record, today=None):
+    if not _is_task(record):
+        return False
+    if _status_word(record) not in ("active", "waiting", "inbox"):
+        return False
+    raw_due = record.get("due_at")
+    if not raw_due:
+        return False
+    try:
+        due = date.fromisoformat(str(raw_due)[:10]).isoformat()
+    except (ValueError, TypeError):
+        return False
+    target_today = str(today)[:10] if today else date.today().isoformat()
+    return due <= target_today
+
+
+def _supersedes_key(value):
+    """Normalize a human-readable supersedes reference without substring matching."""
+    if not isinstance(value, str):
+        return ""
+    value = value.strip()
+    if value.startswith("[[") and value.endswith("]]"):
+        # [[path#heading|alias]] and [[path^block]] name the note before the anchor.
+        value = re.split(r"[|#^]", value[2:-2], maxsplit=1)[0].strip()
+    return value.replace("\\", "/").strip("/")
+
+
+def _trusted_record(record):
+    return (record.get("trust") != "untrusted" and record.get("trusted") is not False
+            and record.get("status") != "untrusted" and record.get("kind") != "untrusted"
+            and not _rejected_inference(record))
+
+
+def _cyclic_supersedes(edges):
+    """Resolved supersedes edges that lie on a cycle, in O(V+E) via iterative Kosaraju.
+
+    An edge is cyclic when its ends share a strongly connected component: applying it would
+    retire every member of the loop. The walk is iterative so a long chain cannot raise
+    RecursionError and fail open.
+    """
+    reverse = {}
+    for source, targets in edges.items():
+        reverse.setdefault(source, [])
+        for target in targets:
+            reverse.setdefault(target, []).append(source)
+
+    seen, order = set(), []
+    for root in reverse:
+        if root in seen:
+            continue
+        seen.add(root)
+        stack = [(root, iter(edges.get(root, ())))]
+        while stack:
+            node, targets = stack[-1]
+            target = next(targets, None)
+            if target is None:
+                order.append(node)
+                stack.pop()
+            elif target not in seen:
+                seen.add(target)
+                stack.append((target, iter(edges.get(target, ()))))
+
+    components = {}
+    for root in reversed(order):
+        if root in components:
+            continue
+        component = len(components)
+        components[root] = component
+        stack = [root]
+        while stack:
+            for target in reverse[stack.pop()]:
+                if target not in components:
+                    components[target] = component
+                    stack.append(target)
+
+    return {(source, target) for source, targets in edges.items() for target in targets
+            if components[source] == components[target]}
+
+
+def resolve_supersedes(records):
+    """Resolve trusted supersedes references to record ids and report links that do nothing.
+
+    A value is an explicit id, else a vault path (with or without .md) or [[link]] by its whole
+    value, else its last segment when exactly one note has that file name. Never a substring.
+    A reference that resolves to the note itself retires nothing and is reported (#206).
+    Untrusted notes neither retire nor are counted as targets. An edge on a supersedes cycle
+    (A->B->...->A) retires nothing either: applying it would silently retire every member, so
+    it is reported with the other dead references instead.
+    """
+    trusted = [record for record in records if isinstance(record, dict) and _trusted_record(record)]
+    by_id = {record.get("id"): record for record in trusted if isinstance(record.get("id"), str)}
+    by_path, by_name = {}, {}
+    for record in trusted:
+        source = str(record.get("source", "")).replace("\\", "/").strip("/")
+        if not source:
+            continue
+        path_key = source[:-3] if source.casefold().endswith(".md") else source
+        by_path.setdefault(path_key.casefold(), []).append(record)
+        by_name.setdefault(path_key.rsplit("/", 1)[-1].casefold(), []).append(record)
+    retired, dead = set(), []
+    resolved = []  # (record, raw, target) edges, applied after the cycle check
+    edges = {}
+    for record in trusted:
+        values = record.get("supersedes", [])
+        if isinstance(values, str):
+            values = [values]
+        if not isinstance(values, list):
+            continue
+        for raw in values:
+            key = _supersedes_key(raw)
+            folded = key[:-3] if key.casefold().endswith(".md") else key
+            target, reason = by_id.get(key), None
+            if target is None and folded:
+                matches = by_path.get(folded.casefold(), [])
+                if not matches:
+                    matches = by_name.get(folded.rsplit("/", 1)[-1].casefold(), [])
+                if len(matches) == 1:
+                    target = matches[0]
+                elif matches:
+                    reason = "ambiguous supersedes reference"
+            if target is None:
+                reason = reason or "unresolved supersedes reference"
+            elif target is record or target.get("id") == record.get("id"):
+                target, reason = None, "supersedes reference points to the note itself"
+            if target is None:
+                dead.append({"id": record.get("id"), "source": record.get("source", ""), "value": raw, "reason": reason})
+            else:
+                resolved.append((record, raw, target))
+                edges.setdefault(record.get("id"), set()).add(target["id"])
+    cyclic = _cyclic_supersedes(edges)
+    for record, raw, target in resolved:
+        if (record.get("id"), target["id"]) in cyclic:
+            dead.append({"id": record.get("id"), "source": record.get("source", ""), "value": raw,
+                         "reason": "supersedes reference is part of a cycle"})
+        else:
+            retired.add(target["id"])
+    return retired, dead
+
+
+_WIKI_LINK = re.compile(r"\[\[([^\[\]\n]+)\]\]")
+# A destination is <angle bracketed> (may hold spaces) or a bare path; an optional "title" may follow.
+_MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]\n]*\]\(\s*(?:<([^<>\n]+)>|([^()<>\s]+))(?:\s+\"[^\"]*\")?\s*\)")
+
+
+def _link_fold(value):
+    """Compare link targets and sources as NFC, case-folded, without .md: a macOS/iCloud
+    file name can be stored decomposed (NFD) while the link a person typed is composed."""
+    value = unicodedata.normalize("NFC", value)
+    return (value[:-3] if value.casefold().endswith(".md") else value).casefold()
+
+
+def _link_keys(record):
+    """Vault-relative link targets in a record's text: [[wikilinks]] by name, Markdown links by path.
+
+    A Markdown link is resolved against the note's folder; URLs and in-page anchors are skipped.
+    """
+    text = record.get("text") if isinstance(record.get("text"), str) else ""
+    keys = []
+    for match in _WIKI_LINK.finditer(text):
+        keys.append((match.group(0), _supersedes_key(match.group(0))))
+    folder = posixpath.dirname(str(record.get("source", "")).replace("\\", "/"))
+    for match in _MARKDOWN_LINK.finditer(text):
+        target = urllib.parse.unquote((match.group(1) or match.group(2)).split("#", 1)[0]).strip()
+        if not target or re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", target):
+            continue
+        path = posixpath.normpath(target.lstrip("/") if target.startswith("/") else posixpath.join(folder, target))
+        if path.startswith("../") or path == "..":
+            continue
+        keys.append((match.group(0), path))
+    return keys
+
+
+def rejected_dependents(records):
+    """Current notes that link to a rejected inference or preference, for a person to review.
+
+    Rejecting an inference keeps it out of context, but a note that cites it as support still
+    delivers the claim it rests on (MARKDOWN.md asks for those to be corrected separately).
+    Links resolve like supersedes: a whole vault path (with or without .md), else a file name that
+    exactly one note has; an ambiguous name that could be a rejected note is listed apart.
+    Only the listing is produced: whether the citation still holds is the reader's call. A note
+    that is itself rejected or retired (by status or by another note's supersedes), or that
+    supersedes the rejected note, is not listed.
+    """
+    records = [record for record in records if isinstance(record, dict)]
+    if not any(_rejected_inference(record) for record in records):
+        return [], []
+    superseded = resolve_supersedes(records)[0]
+    by_id, by_path, by_name = {}, {}, {}
+    for record in records:
+        if isinstance(record.get("id"), str):
+            by_id[record["id"]] = record
+        source = str(record.get("source", "")).replace("\\", "/").strip("/")
+        if not source:
+            continue
+        path_key = _link_fold(source)
+        by_path.setdefault(path_key, []).append(record)
+        by_name.setdefault(path_key.rsplit("/", 1)[-1], []).append(record)
+
+    def matches_for(key):
+        folded = _link_fold(key)
+        if not folded:
+            return []
+        return by_path.get(folded) or by_name.get(folded.rsplit("/", 1)[-1], [])
+
+    dependents, ambiguous = {}, {}
+    for record in records:
+        if (_rejected_inference(record) or _status_word(record) in RETIRED_STATUSES or
+                record.get("id") in superseded):
+            continue
+        replaces = record.get("supersedes", [])
+        replaces = [replaces] if isinstance(replaces, str) else replaces if isinstance(replaces, list) else []
+        replaced = set()
+        for value in replaces:
+            key = _supersedes_key(value)
+            found = [by_id[key]] if key in by_id else matches_for(key)
+            if len(found) == 1:
+                replaced.add(id(found[0]))
+        for raw, key in _link_keys(record):
+            matches = matches_for(key)
+            rejected = [match for match in matches if _rejected_inference(match) and match is not record]
+            if not rejected:
+                continue
+            if len(matches) > 1:
+                ambiguous.setdefault((record.get("source", ""), raw), {
+                    "id": record.get("id"), "source": record.get("source", ""), "link": raw,
+                    "candidates": sorted(match.get("source", "") for match in matches)})
+                continue
+            target = rejected[0]
+            if id(target) in replaced:
+                continue
+            dependents.setdefault((record.get("source", ""), target.get("source", "")), {
+                "id": record.get("id"), "source": record.get("source", ""), "link": raw,
+                "rejected_id": target.get("id"), "rejected_source": target.get("source", "")})
+    return ([dependents[key] for key in sorted(dependents)], [ambiguous[key] for key in sorted(ambiguous)])
+
+
+# Opt-in project scope for vaults organized by folder. Without this file an explicit
+# project matches only a record's own project field, so a vault that never writes that
+# field has an empty scope for every explicit-project command.
+PROJECT_SCOPES_FILE = ".beyin-projects.json"
+
+
+def _scope_path(value):
+    if not isinstance(value, str):
+        raise ValueError("project scope folder must be a string")
+    folder = unicodedata.normalize("NFC", value.replace("\\", "/")).strip().strip("/")
+    parts = folder.split("/")
+    if not folder or value.strip().startswith(("/", "\\")) or re.match(r"[A-Za-z]:", folder) or ".." in parts or "." in parts:
+        raise ValueError("project scope folder must be vault-relative")
+    return folder
+
+
+def _scope_key(value):
+    return unicodedata.normalize("NFC", value.replace("\\", "/")).casefold()
+
+
+def _scope_folder_exists(vault_root, folder):
+    """Every configured folder must name a real vault folder under the matching rule.
+
+    A mistyped or renamed folder would otherwise match nothing, and with shared_unscoped
+    its notes would silently join every other project's scope.
+    """
+    current = Path(vault_root)
+    for part in folder.split("/"):
+        key = _scope_key(part)
+        try:
+            with os.scandir(current) as entries:
+                match = next((entry.name for entry in entries if entry.is_dir() and _scope_key(entry.name) == key), None)
+        except OSError:
+            return False
+        if match is None:
+            return False
+        current = current / match
+    return True
+
+
+def _scope_entry_label(value):
+    """A bounded, quoted spelling of one configured entry for warnings."""
+    text = value if isinstance(value, str) else repr(value)
+    return repr(text[:120] + ("..." if len(text) > 120 else ""))
+
+
+def _skipped_scope_targets(vault_root, value):
+    """Scope keys of the vault folders a skipped entry may have meant; empty outside the vault.
+
+    "" stands for the whole vault. A key only ever blocks records for every project (#419)
+    and never grants a scope, so a generous guess cannot widen anything.
+    """
+    if not isinstance(value, str):
+        return set()
+    raw = unicodedata.normalize("NFC", value.replace("\\", "/")).strip()
+    root = Path(vault_root)
+    joined = raw if raw.startswith("/") or re.match(r"[A-Za-z]:", raw) else str(root).replace("\\", "/") + "/" + raw
+    targets = [joined]
+    # Follow links read-only, such as /var -> /private/var. Only an absolute path of this OS:
+    # never a network share, nor a drive or root-relative path resolved against the process cwd.
+    if os.path.isabs(joined) and not joined.startswith("//"):
+        try:
+            targets.append(os.path.realpath(joined))
+        except (OSError, RuntimeError, ValueError):
+            pass
+    bases = [root]
+    try:
+        bases.append(root.resolve())
+    except (OSError, RuntimeError, ValueError):
+        pass
+    keys = set()
+    for base in bases:
+        base = posixpath.normpath(_scope_key(str(base))).rstrip("/")
+        for target in targets:
+            target = posixpath.normpath(_scope_key(target))
+            if target == base:
+                keys.add("")
+            elif target.startswith(base + "/"):
+                keys.add(target[len(base) + 1:])
+    return keys
+
+
+def _scope_warning(message):
+    try:
+        print("Warning: " + message, file=sys.stderr)
+    except Exception:
+        pass
+
+
+def read_project_scopes(vault_root):
+    """None when the vault has no scope file: every gate keeps its exact-field behavior.
+
+    folders maps a vault-relative folder to a project; a record's own non-empty project
+    field wins. shared_unscoped lets a project query also see records no folder or field
+    assigns to any project. Another project's records never enter a project's scope.
+    Missing folders are skipped with a warning so unrelated projects remain fully functional (#317).
+    An invalid entry (escaping or absolute path, empty project, a folder assigned twice) is
+    skipped with a warning instead of failing every explicit project (#419): the folder it
+    may name is blocked for every project, and shared_unscoped stays off until it is fixed.
+    A malformed file still fails closed.
+    """
+    path = Path(vault_root) / PROJECT_SCOPES_FILE
+    if path.is_symlink():
+        raise ValueError("project scopes must be a regular vault-local file")
+    if not path.exists():
+        return None
+    try:
+        # Match the project-scope helper and doctor, including UTF-8 BOM files.
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (ValueError, OSError) as exc:
+        raise ValueError("invalid project scopes file; expected JSON") from exc
+    if not isinstance(data, dict) or set(data) - {"folders", "shared_unscoped"}:
+        raise ValueError("project scopes accept only folders and shared_unscoped")
+    folders = data.get("folders", {})
+    shared = data.get("shared_unscoped", False)
+    if not isinstance(folders, dict) or not isinstance(shared, bool):
+        raise ValueError("folders must be an object and shared_unscoped a boolean")
+    mapped = {}
+    blocked = set()
+    skipped = 0
+    for raw, project in folders.items():
+        try:
+            folder = _scope_path(raw)
+        except ValueError as exc:
+            skipped += 1
+            _scope_warning(f"skipped project scope entry {_scope_entry_label(raw)} in {PROJECT_SCOPES_FILE}: {exc}")
+            blocked.update(_skipped_scope_targets(vault_root, raw))
+            continue
+        key = _scope_key(folder)
+        if not isinstance(project, str) or not project.strip():
+            skipped += 1
+            _scope_warning(f"skipped project scope entry {_scope_entry_label(raw)} in {PROJECT_SCOPES_FILE}: "
+                           "project scope names must be non-empty strings")
+            blocked.add(key)
+            continue
+        if not _scope_folder_exists(vault_root, folder):
+            print(f"Warning: project scope folder not found in the vault: {folder}", file=sys.stderr)
+            # Keep the boundary for stale indexed rows used by explicit --no-sync.
+            # Dropping it would expose the other project's notes as shared_unscoped.
+        if mapped.get(key, project) != project:
+            skipped += 1
+            _scope_warning(f"skipped project scope entry {_scope_entry_label(raw)} in {PROJECT_SCOPES_FILE}: "
+                           "project scope folder is assigned twice")
+            blocked.add(key)
+        mapped[key] = project
+    for key in blocked:
+        mapped.pop(key, None)
+    if skipped and shared:
+        _scope_warning(f"shared_unscoped stays off until the skipped {PROJECT_SCOPES_FILE} entries are fixed")
+    # Longest folder first, so a nested folder can belong to a different project.
+    return {"folders": sorted(mapped.items(), key=lambda item: -len(item[0])),
+            "shared_unscoped": shared and not skipped,
+            "blocked": sorted(blocked, key=len, reverse=True)}
+
+
+# record_scope result for a folder named only by a skipped scope entry: equal to no project
+# and never None, so it can neither join a project nor the shared scope.
+BLOCKED_SCOPE = object()
+
+
+def record_scope(record, scopes):
+    """The project a record belongs to under the scope file, or None when unscoped.
+
+    A record under a folder blocked by a skipped entry gets BLOCKED_SCOPE unless a longer,
+    valid folder claims it: a skipped nested entry never falls back to its parent's project.
+    """
+    project = record.get("project")
+    if isinstance(project, str) and project.strip():
+        return project
+    source = _scope_key(str(record.get("source", "")))
+    blocked = max((len(key) for key in scopes.get("blocked", ())
+                   if key == "" or source.startswith(key + "/")), default=-1)
+    for folder, name in scopes["folders"]:
+        if source.startswith(folder + "/"):
+            return name if len(folder) > blocked else BLOCKED_SCOPE
+    return BLOCKED_SCOPE if blocked >= 0 else None
+
+
+# Turkish is agglutinative, so exact token intersection loses "fark" against "farki" and
+# "not" against "notlar". Every token is replaced by ONE canonical stem, with the same
+# function on the query and the document side. Replacement, not expansion: the score stays
+# "how many query words matched", which STRICT_MIN_SHARED and the idf weight depend on.
+# A hyphenated name is the one exception (_COMPOUND): a note also counts its joined
+# spelling, and a query uses that spelling only in place of a missing part (_query_compounds).
+# Input reaches the stemmer already ASCII folded, so the table is written folded too.
+_VOWELS = frozenset("aeiou")
+_VOICELESS = frozenset("cfhkpst")
+# (suffix, minimum stem length, what the character before the suffix must be). Longest
+# first, peeled to a fixpoint: a fixed pass count breaks query/document symmetry, because
+# "kutuphanesi" needs one more pass than "kutuphane" to reach the same stem.
+# The n-buffered forms carry a stem floor of 5 because their n only ever follows a
+# possessive vowel, so "cobanin" reads as coban+in while "arabanin" reads as araba+n+in.
+_SUFFIXES = (
+    # Verb endings (#430) peel only after l or n, which cover passive/reflexive forms:
+    # kurulmali, kurulmasin, kurulur, kurulmus and kuruldu all reach "kurul". This is a
+    # conservative spelling heuristic, not a voice classifier.
+    ("masin", 4, "ln"), ("mesin", 4, "ln"), ("mali", 5, "ln"), ("meli", 5, "ln"),
+    ("iyordu", 4, "ln"), ("uyordu", 4, "ln"), ("iyor", 4, "ln"), ("uyor", 4, "ln"),
+    ("acak", 4, "ln"), ("ecek", 4, "ln"), ("acag", 4, "ln"), ("eceg", 4, "ln"),
+    # Other consonant stems (#430): calisiyor, calisir, calismali, calisacak and calismis
+    # reach the past tense stem "calist", which "calisti" already peels to. The bare stem
+    # and the infinitive stay apart: they are how a prompt asks for an action (goster,
+    # calistirmak gerekiyor), so such a prompt still matches no conjugation of its verb in
+    # a note. m stays out: calismiyor is the negation, and the audit pairs it against
+    # calisiyor. The aorist needs a vowel before one consonant other than d: calistir
+    # (causative) and kalitedir (copula) are not calis+ir or kalited+ir.
+    ("iyordu", 4, "verb"), ("uyordu", 4, "verb"), ("iyor", 4, "verb"), ("uyor", 4, "verb"),
+    ("masin", 4, "verb"), ("mesin", 4, "verb"), ("mali", 5, "verb"), ("meli", 5, "verb"),
+    ("acak", 4, "verb"), ("ecek", 4, "verb"), ("acag", 4, "verb"), ("eceg", 4, "verb"),
+    ("mis", 4, "verb"), ("mus", 4, "verb"),
+    ("ir", 5, "aorist"), ("ur", 5, "aorist"),
+    ("imiz", 4, "consonant"), ("umuz", 4, "consonant"), ("iniz", 4, "consonant"), ("unuz", 4, "consonant"),
+    ("nden", 5, "vowel"), ("ndan", 5, "vowel"),
+    ("ten", 4, "voiceless"), ("tan", 4, "voiceless"), ("den", 4, "voiced"), ("dan", 4, "voiced"),
+    ("nin", 5, "vowel"), ("nun", 5, "vowel"), ("nde", 5, "vowel"), ("nda", 5, "vowel"),
+    ("miz", 4, "vowel"), ("muz", 4, "vowel"), ("niz", 4, "vowel"), ("nuz", 4, "vowel"),
+    ("yla", 4, "vowel"), ("yle", 4, "vowel"),
+    ("ler", 3, "any"), ("lar", 3, "any"),
+    ("mak", 4, "ln"), ("mek", 4, "ln"), ("mis", 4, "ln"), ("mus", 4, "ln"),
+    ("te", 4, "voiceless"), ("ta", 4, "voiceless"), ("de", 4, "voiced"), ("da", 4, "voiced"),
+    ("si", 4, "vowel"), ("su", 4, "vowel"), ("ya", 4, "vowel"), ("ye", 4, "vowel"),
+    ("yi", 4, "vowel"), ("yu", 4, "vowel"),
+    ("in", 4, "consonant"), ("un", 4, "consonant"), ("im", 4, "consonant"), ("um", 4, "consonant"),
+    ("le", 4, "consonant"), ("la", 4, "consonant"),
+    # Past tense needs i or u before the l or n as well: "buildi" and "backendi" are a
+    # loanword plus a possessive, not a passive verb.
+    ("di", 5, "passive"), ("du", 5, "passive"), ("ma", 4, "ln"), ("me", 4, "ln"),
+    # The aorist floor is 5: kurul+ur, but not the nouns sinir or kenar.
+    ("ir", 5, "ln"), ("ur", 5, "ln"), ("ar", 5, "ln"), ("er", 5, "ln"),
+    ("i", 4, "consonant"), ("u", 4, "consonant"), ("e", 4, "consonant"), ("a", 4, "consonant"),
+)
+# Keep the larger suffix table off the hot path without changing rule precedence.
+_SUFFIXES_BY_LAST = {
+    last: tuple(rule for rule in _SUFFIXES if rule[0][-1] == last)
+    for last in {suffix[-1] for suffix, _, _ in _SUFFIXES}
+}
+
+
+# Vowel loss (#430): a few roots drop their last vowel before a vowel suffix, so peeling
+# "metni" stops at "metn" while "metin" stays whole. The peeled short form is mapped back
+# to the root, on both sides. Forms that are often another word stay out: resmi (official)
+# for resim, emre (the name Emre) for emir, and al-in (take) for alin.
+_VOWEL_LOSS = {
+    "sehr": "sehir", "fikr": "fikir", "beyn": "beyin", "metn": "metin", "kism": "kisim",
+    "hukm": "hukum", "nehr": "nehir", "zihn": "zihin", "vakt": "vakit", "nesl": "nesil",
+    "seyr": "seyir", "haps": "hapis", "keyf": "keyif", "kayb": "kayip", "kayd": "kayit",
+    "nakd": "nakit", "cism": "cisim", "zulm": "zulum", "kahr": "kahir", "sekl": "sekil",
+    "gonl": "gonul", "gogs": "gogus",
+    # A three-letter loss stops above the stem floor, so each surviving form is listed.
+    "ismi": "isim", "ismin": "isim", "isme": "isim", "akli": "akil", "aklin": "akil",
+    "akla": "akil", "agzi": "agiz", "agzin": "agiz", "agza": "agiz", "oglu": "ogul",
+    "oglun": "ogul", "omru": "omur", "omrun": "omur", "emri": "emir", "emrin": "emir",
+}
+# These short forms are also another word, which the suffix that reached them tells apart:
+# devri and devrinde come from devir, devre and devreye (circuit, activation) end in e and
+# devrim (revolution) in im; burnu and burnundan come from burun, while English burn takes
+# no suffix; karni comes from karin, karne (report card) ends in e.
+_VOWEL_LOSS_AFTER = {
+    "devr": ("devir", frozenset(("i", "in", "iniz"))),
+    "burn": ("burun", frozenset(("u", "un", "um", "umuz", "unuz"))),
+    "karn": ("karin", frozenset(("i", "in", "im", "imiz", "iniz"))),
+}
+
+
+def _attaches(stem, gate):
+    previous = stem[-1]
+    if gate == "vowel":
+        return previous in _VOWELS
+    if gate == "consonant":
+        return previous not in _VOWELS
+    if gate == "voiceless":
+        return previous in _VOICELESS
+    if gate == "voiced":
+        return previous not in _VOICELESS
+    if gate == "ln":
+        return previous in "ln"
+    if gate == "passive":
+        return previous in "ln" and stem[-2] in "iu"
+    if gate == "verb":
+        return previous not in _VOWELS and previous not in "lnm"
+    if gate == "aorist":
+        return previous not in _VOWELS and previous not in "lnmd" and stem[-2] in _VOWELS
+    return True
+
+
+def _harmonizes(stem, suffix):
+    """Weak vowel harmony: only an unambiguous last vowel (a/e) can decide."""
+    tone = next((c for c in suffix if c in _VOWELS), "")
+    if tone not in ("a", "e"):
+        return True
+    for character in reversed(stem):
+        if character in _VOWELS:
+            return character not in ("a", "e") or character == tone
+    return True
+
+
+@functools.lru_cache(maxsize=16384)
+def _stem(word):
+    last = ""
+    # Words under 5 characters are already stems; peeling them merges unrelated roots.
+    while len(word) >= 5:
+        # Claude ends in the spelling of a Turkish locative suffix. Preserve the
+        # name after peeling a real suffix, without scanning past folded vowels
+        # (tarihte, hakime and kabulde need the existing weak harmony rule).
+        if word == "claude":
+            break
+        for suffix, floor, gate in _SUFFIXES_BY_LAST.get(word[-1], ()):
+            if not word.endswith(suffix):
+                continue
+            stem = word[:-len(suffix)]
+            if len(stem) < floor or not _attaches(stem, gate) or not _harmonizes(stem, suffix):
+                continue
+            if gate in ("verb", "aorist"):
+                # The past tense stem: t after a voiceless consonant, d otherwise. A d before
+                # a vowel suffix is a softened t (kaydediyor, kaydetti).
+                if stem[-1] == "d" and suffix[0] in _VOWELS:
+                    stem = stem[:-1] + "t"
+                return stem + ("t" if stem[-1] in _VOICELESS else "d")
+            word, last = stem, suffix
+            break
+        else:
+            break
+    word = _VOWEL_LOSS.get(word, word)
+    if word in _VOWEL_LOSS_AFTER and last in _VOWEL_LOSS_AFTER[word][1]:
+        word = _VOWEL_LOSS_AFTER[word][0]
+    # Consonant softening: kitap/kitabi and ornek/ornegi (soft g is already folded to g).
+    # A b or g after a vowel goes back to p or k on every stem, peeled or not, so both
+    # sides agree. d is left alone: past tense stems like "dened" would land on "denet".
+    if len(word) >= 4 and word[-1] in "bg" and word[-2] in _VOWELS:
+        word = word[:-1] + ("p" if word[-1] == "b" else "k")
+    return word
+
+
+# A possessive on a three-letter root stays on the word: _stem keeps four letters, so "boyum"
+# (my height) keeps its own stem while the note says "Boy: 180". Only a query word tries the
+# root (_query_roots); note-side stems never change, so dur/durum and yay/yayin stay apart.
+# -m after a vowel stays out: _stem leaves it on verbal nouns too (yedeklemenin -> yedeklem).
+_SHORT_ROOT_SUFFIXES = (
+    ("im", "consonant"), ("um", "consonant"), ("in", "consonant"), ("un", "consonant"),
+    ("i", "consonant"), ("u", "consonant"),
+)
+
+
+@functools.lru_cache(maxsize=16384)
+def _short_root(stem):
+    """The three-letter root one possessive shorter than stem, or None; _stem peels longer ones."""
+    for suffix, gate in _SHORT_ROOT_SUFFIXES:
+        root = stem[:-len(suffix)]
+        if not stem.endswith(suffix) or len(root) != 3 or not _attaches(root, gate):
+            continue
+        # Folding keeps rounding: i follows a, e, i (a ı e i) and u follows o, u (o ö u ü).
+        last = next((c for c in reversed(root) if c in _VOWELS), "")
+        if last not in ("aei" if suffix[0] == "i" else "ou"):
+            continue
+        # Softening as in _stem (kabim, cebim). A short g stays: dag, sag and yag end in a real g.
+        return root[:-1] + "p" if root[-1] == "b" and root[-2] in _VOWELS else root
+    return None
+
+
+# A hyphenated name (#430) keeps its parts and also counts once as the joined word, so
+# claude-mem meets claudemem and e-posta meets eposta. NFKD has turned the other hyphen
+# forms into these two. All-digit compounds stay parts: a date or range is not a name, and
+# neither is a joined chain longer than any name. The scan starts at a hyphen, which few
+# characters are; a pattern tried at every word start costs as much as reading the words.
+_HYPHEN = re.compile("[-\u2010](?=[a-z0-9])")
+_WORD_END = re.compile("[a-z0-9]+\\Z")
+_COMPOUND = re.compile("[a-z0-9]+(?:[-\u2010][a-z0-9]+)+")
+
+
+def _fold(text):
+    """The casefolded, accent-free text that _token_counts reads words from."""
+    text = unicodedata.normalize("NFKD", str(text).casefold())
+    return "".join(c for c in text if not unicodedata.combining(c)).replace("ı", "i")
+
+
+def _compounds(text):
+    """(joined spelling, parts) of every hyphenated name in folded text."""
+    end = 0
+    for hyphen in _HYPHEN.finditer(text):
+        at = hyphen.start()
+        if at < end or not text[at - 1:at].isalnum():
+            continue  # inside the previous name, or a dash that follows a space
+        # A joined name has at most 64 characters, so its first part starts within reach.
+        word = _WORD_END.search(text, max(end, at - 65), at)
+        if word is None:
+            continue
+        compound = _COMPOUND.match(text, word.start())
+        end = compound.end()
+        parts = compound.group().replace("\u2010", "-").split("-")
+        joined = "".join(parts)
+        if len(joined) <= 64 and not joined.isdigit():
+            yield joined, parts
+
+
+def _token_counts(text):
+    """Stem -> occurrence count; the keys are exactly _tokens(text)."""
+    text = _fold(text)
+    counts = Counter(_stem(word) for word in re.findall(r"[a-z0-9]+", text))
+    for joined, _parts in _compounds(text):
+        counts[_stem(joined)] += 1
+    return counts
+
+
+def _tokens(text):
+    return set(_token_counts(text))
+
+
+@functools.lru_cache(maxsize=1)
+def _counts_version():
+    # Counts also depend on stemming, folding and Python's Unicode tables. Hash the
+    # implementation rather than relying on a probe to exercise every changed rule.
+    return hashlib.sha256(Path(__file__).read_bytes()).hexdigest() + ':' + unicodedata.unidata_version
+
+
+class _CountCache:
+    """Disposable whole-note counts, never eligibility or query-dependent scores."""
+    MAX_BYTES = 64 * 1024 * 1024
+
+    def __init__(self, state_dir):
+        self.path = Path(state_dir) / 'token-counts.json'
+        self.entries, self.used, self.changed = {}, {}, False
+        try:
+            self.version = _counts_version()
+            if not self.path.is_symlink() and self.path.stat().st_size <= self.MAX_BYTES:
+                blob = json.loads(self.path.read_text(encoding='utf-8'))
+                if (isinstance(blob, dict) and blob.get('version') == self.version
+                        and isinstance(blob.get('records'), dict)):
+                    self.entries = blob['records']
+        except (OSError, ValueError, RecursionError):
+            self.version = None  # unavailable implementation or cache: compute normally
+
+    def counts(self, text):
+        key = hashlib.sha256(text.encode('utf-8', 'surrogatepass')).hexdigest()
+        entry = self.entries.get(key)
+        if (not isinstance(entry, dict) or not all(
+                isinstance(word, str) and type(count) is int and count > 0
+                for word, count in entry.items())):
+            entry = dict(_token_counts(text))
+            self.changed = True
+        self.used[key] = entry
+        # Stopword removal and short-root folding mutate the caller's copy.
+        return Counter(entry)
+
+    def save(self):
+        if not self.changed:
+            return
+        temporary = None
+        try:
+            version = self.version or _counts_version()
+            # Keep other scopes and both filename-salience variants within a bound.
+            entries = dict(self.entries) if len(self.entries) <= 2 * len(self.used) + 256 else {}
+            entries.update(self.used)
+            # Preserve Counter's first-seen key order as well as its values: strict
+            # ranking constructs sets from these keys before summing floating weights.
+            data = json.dumps(dict(version=version, records=entries), ensure_ascii=False, separators=(',', ':'))
+            if len(data.encode('utf-8')) > self.MAX_BYTES or self.path.is_symlink():
+                return
+            with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=self.path.parent,
+                                             prefix='.token-counts-', suffix='.tmp', delete=False) as handle:
+                temporary = handle.name
+                os.chmod(temporary, 0o600)
+                handle.write(data)
+            os.replace(temporary, self.path)
+            temporary = None
+        except (OSError, ValueError):
+            pass  # a missing, unwritable or concurrently replaced cache is only slower
+        finally:
+            if temporary:
+                try:
+                    os.unlink(temporary)
+                except OSError:
+                    pass
+
+
+# Stopwords are matched against stems, so Turkish content words had to leave the list:
+# "notlar", "kararlari", "projede", "nedenleri" and "durumu" all stem onto entries that
+# used to be here, which emptied the query instead of widening it.
+STOPWORDS = _tokens("the a an is are was were what which who when where how why of to in on at for from with and or does did do has have latest current please tell about my our this that it its project projects status decision decisions show find get ve veya bir bu su o ne kim nasil hangi nedir neydi mi mu icin ile bana benim bizim olarak olan oldu en son guncel soyle getir bul yok say ignore disregard no")
+
+
+def _strict_terms(terms):
+    """Filter out non-topical terms in strict mode (#358).
+
+    Drops single-character tokens and numeric-only tokens shorter than 3 digits
+    (e.g. '1', '2', '42'). Preserves years ('2026'), 3+ digit numbers ('200'),
+    and alphanumeric identifiers ('722b4dd').
+    """
+    return {t for t in terms if len(t) >= 2 and not (t.isdigit() and len(t) < 3)}
+
+
+# bu and su are stopwords; their oblique stem (bunu, sunun, bunlar -> bun) is not a topic either.
+_PRONOUN_ROOTS = frozenset(("bun", "sun"))
+
+# Nouns made from a verb with -Im/-Um look like a possessive on the verb (durum, dur + um).
+# Note frequency cannot tell them apart: a vault may say dur or ver in more notes than durum
+# or verim, so these never fall back to the verb.
+_WHOLE_WORDS = _tokens("durum kurum verim yazım yapım seçim bölüm sürüm doğum yorum konum tutum biçim "
+                       "bilim geçim kesim satım giyim dikim dönüm çözüm basım takım tanım çekim döküm "
+                       "dolum yayım ölçüm")
+
+
+def _query_roots(terms, frequency, ignored=frozenset()):
+    """Query term -> the shorter root (_short_root) it also matches.
+
+    A root joins only where more notes use it than the inflected word: boyum is rare beside
+    boy. A noun of its own (_WHOLE_WORDS) keeps matching itself only, however common its verb.
+    frequency(stem) is the number of notes that use the stem. A term still counts once, and a
+    root serves one term only: "boyum boyun" must not pass the two-word gate on one "Boy".
+    """
+    alternatives = {}
+    for term in sorted(terms):
+        root = None if term in _WHOLE_WORDS else _short_root(term)
+        if (root and root not in terms and root not in ignored and root not in _PRONOUN_ROOTS
+                and root not in alternatives.values() and frequency(root) > frequency(term)):
+            alternatives[term] = root
+    return alternatives
+
+
+def _query_compounds(query, terms):
+    """(terms, {term: joined stem}): a query's hyphenated names as alternatives (#430).
+
+    A note counts a hyphenated name joined as well (_token_counts). In a query the joined
+    stem is no term of its own: it stands in for the name's first part that is still a term,
+    in a note without that part, so claude-mem still meets claudemem. A hyphenated word then
+    never counts for more terms than its remaining parts: "e-posta" shares one term with a
+    note about an e-posta, not posta and eposta, and one word cannot pass the two-term gate.
+    Parts that were all dropped (stopwords, single letters, short numbers) leave nothing.
+    """
+    text = _fold(query)
+    compounds = list(_compounds(text))
+    if not compounds:
+        return terms, {}
+    written = {_stem(word) for word in re.findall(r"[a-z0-9]+", text)}
+    terms, alternatives = set(terms), {}
+    for joined, parts in compounds:
+        joined = _stem(joined)
+        if joined in written or joined not in terms:
+            continue  # also written whole, already handled, or ignored like a project word
+        terms.discard(joined)
+        part = next((part for part in map(_stem, parts) if part in terms and part not in alternatives), None)
+        if part is not None:
+            alternatives[part] = joined
+    return terms, alternatives
+
+
+def _fold_query_roots(term_counts, terms, ignored, compounds=None):
+    """Count each note's _query_roots occurrences under the query term, in place.
+
+    compounds (_query_compounds) fold the same way where neither the term nor its root is in the note.
+    """
+    term_counts = list(term_counts)
+    alternatives = _query_roots(terms, lambda token: sum(1 for counts in term_counts if token in counts), ignored)
+    for counts in term_counts:
+        for term, root in alternatives.items():
+            if root in counts:
+                counts[term] += counts.pop(root)
+        for term, joined in (compounds or {}).items():
+            if term not in counts and joined in counts:
+                counts[term] = counts.pop(joined)
+
+
+# Conventional Unicode hyphens/dashes and compatibility forms of ASCII hyphen.
+# Keep this filename-only: mathematical minus and arbitrary punctuation are not prefixes.
+_NAME_SEPARATORS = str.maketrans({c: " " for c in "-_\u2010\u2011\u2012\u2013\u2014\u2015\ufe63\uff0d"})
+
+
+def _name_candidates(record):
+    """Candidate names for title-salience matching (#354): title, stem, stripped stem, aliases."""
+    candidates = []
+    title = str(record.get("title", "")).strip()
+    if title:
+        candidates.append(title[:160])
+    source = str(record.get("source", "")).strip()
+    if source:
+        stem = Path(source).stem.translate(_NAME_SEPARATORS).strip()
+        if stem:
+            candidates.append(stem[:160])
+            stripped = re.sub(r"^[0-9]+[ \t\-_]+", "", stem).strip()
+            if stripped and stripped != stem:
+                candidates.append(stripped[:160])
+    aliases = record.get("aliases", [])
+    if isinstance(aliases, list):
+        for a in aliases[:32]:
+            if isinstance(a, str) and a.strip():
+                candidates.append(a.strip()[:160])
+    return candidates
+
+
+NAME_GENERIC_TERMS = _tokens("durum proje projeler not notlar karar kararlar arsiv sablon genel ozet guncel")
+
+
+def _name_match_score(record, terms):
+    """Salience signal when query terms contain all meaningful words of a note's name (#354).
+
+    Returns the number of matching name terms (higher = more specific title match),
+    or 0 if no candidate name is fully covered by the query terms.
+    """
+    if not terms:
+        return 0
+    best_score = 0
+    for cand in _name_candidates(record):
+        # Parts only: a joined hyphenated name must not demand that the query hyphenate too.
+        cand_tokens = _tokens(cand.translate(_NAME_SEPARATORS)) - STOPWORDS
+        meaningful = {t for t in cand_tokens if len(t) >= 2}
+        if meaningful and meaningful - NAME_GENERIC_TERMS and meaningful.issubset(terms):
+            if len(meaningful) > best_score:
+                best_score = len(meaningful)
+    return best_score
+
+
+def _path_redirected(path):
+    """Symlinks and Windows reparse points require a fresh realpath check."""
+    try:
+        info = os.lstat(path)
+    except OSError:
+        # Let the original resolver/type check decide missing or inaccessible paths.
+        return True
+    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_reparse_tag", 0))
+
+
+class MemoryStore:
+    def __init__(self, state_dir, vault_root, read_only=False, busy_timeout=10):
+        self.read_only = bool(read_only)
+        # Seconds a connection waits for another process's write lock. A hook reading
+        # while the sync worker commits passes its remaining budget instead of the default.
+        self.busy_timeout = float(busy_timeout)
+        self.vault_root = Path(vault_root).expanduser().resolve()
+        if not self.vault_root.is_dir():
+            raise ValueError("vault_root must be an existing directory")
+        self.state_dir = Path(state_dir).expanduser().resolve()
+        if self.state_dir.is_relative_to(self.vault_root):
+            raise ValueError("runtime must be outside vault")
+        self.database = self.state_dir / "memory.sqlite3"
+        if self.database.is_symlink():
+            raise ValueError("database must not be a symlink")
+        if self.read_only:
+            if not self.state_dir.is_dir() or not self.database.is_file():
+                raise ValueError("read-only runtime is not initialized")
+            try:
+                with self._connect() as db:
+                    binding = db.execute("SELECT value FROM metadata WHERE key='vault_root'").fetchone()
+            except sqlite3.Error as exc:
+                raise ValueError("read-only runtime is not initialized") from exc
+            if not binding:
+                raise ValueError("read-only runtime is not bound to a vault")
+            if binding[0] != str(self.vault_root):
+                raise ValueError("runtime belongs to another vault")
+            return
+        self.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.state_dir.chmod(0o700)
+        with self._connect() as db:
+            if not db.execute("PRAGMA page_count").fetchone()[0]:
+                # Only a new file can take this without a VACUUM: pages freed by event retention
+                # return to the file system in bounded steps (#585). Older releases read it unchanged.
+                db.execute("PRAGMA auto_vacuum=INCREMENTAL")
+            db.executescript("""
+                CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS events(
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    record_id TEXT NOT NULL,
+                    revision INTEGER NOT NULL,
+                    record TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS events_record_sequence ON events(record_id,sequence);
+            """)
+            root = str(self.vault_root)
+            binding = db.execute("SELECT value FROM metadata WHERE key='vault_root'").fetchone()
+            if binding and binding[0] != root:
+                raise ValueError("runtime belongs to another vault")
+            if not binding and db.execute("SELECT COUNT(*) FROM records").fetchone()[0]:
+                raise ValueError("unbound existing runtime requires explicit migration")
+            db.execute("INSERT OR IGNORE INTO metadata VALUES ('vault_root',?)", (root,))
+        self.database.chmod(0o600)
+
+    @contextmanager
+    def _connect(self):
+        if self.read_only:
+            db = sqlite3.connect(self.database.resolve().as_uri() + "?mode=ro", uri=True, timeout=self.busy_timeout)
+            db.execute("PRAGMA query_only=ON")
+        else:
+            db = sqlite3.connect(self.database, timeout=self.busy_timeout)
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
+
+    def _require_writable(self):
+        if self.read_only:
+            raise ValueError("read-only runtime does not permit writes")
+
+    def close(self):
+        """Connections are scoped to each operation; provided for callers."""
+
+    def context_for(self, harness, query, **kwargs):
+        if kwargs.get("strict") is True and self.STRICT_PASSAGES:
+            try:
+                if _MODULE_DIR not in sys.path:
+                    sys.path.insert(0, _MODULE_DIR)
+                from beyin_v3_passage import context_for as passage_context
+                return passage_context(self, harness, query, **kwargs)
+            except Exception:
+                pass  # a real failure or a still-building index keeps the note-level path
+        return shared_context(self, harness, query, **kwargs)
+
+    def _source(self, value, *, _resolved=None):
+        if not isinstance(value, str) or not value or Path(value).is_absolute():
+            raise ValueError("source must be an existing vault-relative file")
+        if ".." in Path(value).parts:
+            raise ValueError("source traversal rejected")
+        path = self.vault_root / value
+        target = _resolved if path.is_relative_to(self.vault_root) else None
+        if target is not None:
+            # A file or directory can become a symlink after the scan's first read.
+            # Reuse the realpath only while its vault-relative components stay real;
+            # otherwise resolve again, preserving _source's inside/outside decision.
+            cursor, boundary = str(path), str(self.vault_root.parent)
+            while cursor != boundary:
+                if _path_redirected(cursor):
+                    target = None
+                    break
+                cursor = os.path.dirname(cursor)
+        if target is None:
+            target = path.resolve()
+        if not target.is_relative_to(self.vault_root) or not target.is_file():
+            raise ValueError("source missing or outside vault")
+        return Path(value).as_posix()
+
+    def _validate(self, record, *, _resolved_source=None):
+        if not isinstance(record, dict):
+            raise ValueError("record must be an object")
+        record = json.loads(_json(record))
+        if not isinstance(record.get("id"), str) or not record["id"].strip():
+            raise ValueError("record id required")
+        if not isinstance(record.get("text"), str):
+            raise ValueError("record text required")
+        # Sync shares its checked realpath; still recheck existence/type and reread
+        # the source here so edits during the scan cannot validate stale bytes.
+        record["source"] = self._source(record.get("source"), _resolved=_resolved_source)
+        record["source_sha256"] = hashlib.sha256((self.vault_root / record["source"]).read_bytes()).hexdigest()
+        current = record.get("updated_at")
+        if current is None or (isinstance(current, str) and not current.strip()):
+            # Obsidian templates date notes as updated/modified, so without these the
+            # recency tie-break is empty for every note. Non-ISO text would sort as ancient,
+            # and file mtime is not a date: synced vaults rewrite it.
+            for alias in RECENCY_ALIASES:
+                value = record.get(alias)
+                if isinstance(value, str):
+                    v = value.strip()
+                    # YYYY/MM/DD, or day-first DD.MM.YYYY / DD-MM-YYYY / DD/MM/YYYY as Turkish
+                    # templates write it. A converted value must be a real date: month-first text such
+                    # as 12/31/2026 stays unset instead of becoming 2026-31-12.
+                    m = re.match(r"^(\d{4})/(\d{2})/(\d{2})(.*)$", v)
+                    parts = (m[1], m[2], m[3], m[4]) if m else None
+                    if parts is None:
+                        m = re.match(r"^(\d{2})([-/.])(\d{2})\2(\d{4})(.*)$", v)
+                        parts = (m[4], m[3], m[1], m[5]) if m else None
+                    if parts is not None:
+                        try:
+                            datetime(int(parts[0]), int(parts[1]), int(parts[2]))
+                        except ValueError:
+                            continue
+                        v = f"{parts[0]}-{parts[1]}-{parts[2]}{parts[3]}"
+                    if re.match(r"^\d{4}-\d{2}-\d{2}", v):
+                        record["updated_at"] = v
+                        break
+        for field in ("project", "kind", "status", "updated_at"):
+            if field in record and not isinstance(record[field], str):
+                raise ValueError(field + " must be a string")
+        if record.get("kind") in ("inference", "preference"):
+            if record.get("validity", "current") not in ("current", "rejected"):
+                raise ValueError("inference validity must be current or rejected")
+            for field in ("rejected_reason", "rejected_at"):
+                if field in record and not isinstance(record[field], str):
+                    raise ValueError(field + " must be a string")
+            if record.get("validity") == "rejected":
+                if not isinstance(record.get("rejected_reason"), str) or not record["rejected_reason"].strip():
+                    raise ValueError("rejected_reason required for rejected validity")
+                # A date or an RFC 3339-style timestamp. The explicit grammar keeps acceptance
+                # identical across Python versions (3.14 fromisoformat also takes T24:00).
+                rejected_at = record.get("rejected_at")
+                if not isinstance(rejected_at, str) or not REJECTED_AT.fullmatch(rejected_at):
+                    raise ValueError("rejected_at must be an ISO date or timestamp for rejected validity")
+                try:
+                    datetime.fromisoformat(rejected_at)
+                except ValueError as exc:
+                    raise ValueError("rejected_at must be an ISO date or timestamp for rejected validity") from exc
+        record.setdefault("facts", {})
+        if not isinstance(record["facts"], dict):
+            raise ValueError("facts must be an object")
+        record.setdefault("revision", 1)
+        if type(record["revision"]) is not int or record["revision"] < 1:
+            raise ValueError("positive revision required")
+        record.setdefault("visibility", "internal")
+        if record["visibility"] not in ("public", "internal", "private"):
+            raise ValueError("invalid visibility")
+        supersedes = record.get("supersedes", [])
+        if isinstance(supersedes, str):
+            supersedes = [supersedes]
+        if not isinstance(supersedes, list) or not all(isinstance(v, str) for v in supersedes):
+            raise ValueError("supersedes must contain record ids")
+        if record["id"] in supersedes:
+            raise ValueError("record cannot supersede itself")
+        record["supersedes"] = supersedes
+        return record
+
+    def ingest(self, record):
+        self._require_writable()
+        record = self._validate(record)
+        payload = _json(record)
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            old = db.execute("SELECT payload FROM records WHERE id=?", (record["id"],)).fetchone()
+            if old:
+                if old[0] != payload:
+                    raise RevisionConflict("existing id; use update_task with expected revision")
+            else:
+                db.execute("INSERT INTO records VALUES (?,?)", (record["id"], payload))
+                db.execute("INSERT INTO events(event_type,record_id,revision,record) VALUES ('ingest',?,?,?)", (record["id"], record["revision"], payload))
+        return record
+
+    def update_task(self, id, expected_revision, changes):
+        self._require_writable()
+        if not isinstance(changes, dict) or {"id", "revision"} & changes.keys():
+            raise ValueError("id and revision cannot be changed")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT payload FROM records WHERE id=?", (id,)).fetchone()
+            if not row:
+                raise KeyError(id)
+            record = json.loads(row[0])
+            if type(expected_revision) is not int or record["revision"] != expected_revision:
+                raise RevisionConflict("revision conflict; reread source")
+            record.update(changes)
+            record["revision"] = expected_revision + 1
+            record = self._validate(record)
+            db.execute("UPDATE records SET payload=? WHERE id=?", (_json(record), id))
+            db.execute("INSERT INTO events(event_type,record_id,revision,record) VALUES ('update',?,?,?)", (id, record["revision"], _json(record)))
+        return record
+
+    def history(self, record_id, audience="internal"):
+        """Source-verified immutable snapshots, ordered by global event sequence.
+
+        Databases created before events were added have no invented prehistory.
+        A verified current source authorizes historical revisions of that record;
+        each event still has to pass the requested visibility boundary. A record
+        that synchronization deleted (source removed or no longer valid) keeps its
+        audit trail: the snapshot stored in its final delete event sets the
+        boundary instead, because there is no current source left to verify.
+        Old snapshots expire under beyin_v3_retention.py; the newest event of a
+        current record is always kept (#585).
+        """
+        if audience not in ("public", "internal", "private"):
+            raise ValueError("invalid audience")
+        allowed = {"public"} if audience == "public" else {"public", "internal"} if audience == "internal" else {"public", "internal", "private"}
+        with self._connect() as db:
+            current = db.execute("SELECT payload FROM records WHERE id=?", (record_id,)).fetchone()
+            rows = db.execute("SELECT sequence,event_type,record_id,revision,record FROM events WHERE record_id=? ORDER BY sequence", (record_id,)).fetchall()
+            quarantined = {}
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='receipt_view_history'").fetchone():
+                quarantined = dict(db.execute("SELECT source,through_sequence FROM receipt_view_history"))
+        if not rows or (not current and rows[-1][1] != "delete"):
+            return []
+        boundary = json.loads(current[0] if current else rows[-1][4])
+        # A formerly indexed receipt view cannot authorize its own leaked audit
+        # trail. Later clean notes at a retired path have sequences past the cutoff.
+        if rows[-1][0] <= quarantined.get(boundary.get("source"), 0):
+            return []
+        if (boundary.get("visibility") not in allowed or boundary.get("trust") == "untrusted" or
+                boundary.get("trusted") is False or boundary.get("status") == "untrusted" or
+                boundary.get("kind") == "untrusted"):
+            return []
+        if current:
+            try:
+                source = self._source(boundary.get("source"))
+                actual = hashlib.sha256((self.vault_root / source).read_bytes()).hexdigest()
+                if actual != boundary.get("source_sha256"):
+                    return []
+            except (ValueError, OSError, TypeError):
+                return []
+        return [{"sequence": row[0], "event_type": row[1], "record_id": row[2], "revision": row[3], "record": record}
+                for row in rows if (record := json.loads(row[4])).get("visibility") in allowed and
+                row[0] > quarantined.get(record.get("source"), 0) and
+                record.get("trust") != "untrusted" and record.get("trusted") is not False and
+                record.get("status") != "untrusted" and record.get("kind") != "untrusted"]
+
+    def submit_receipt(self, event_id, summary, refs, harness, links=None):
+        self._require_writable()
+        if not isinstance(event_id, str) or not event_id.strip():
+            raise ValueError("event_id required")
+        if not isinstance(summary, str) or not summary.strip():
+            raise ValueError("summary required")
+        if harness not in HARNESSES + ("manual",):
+            raise ValueError("unsupported harness")
+        if not isinstance(refs, list) or not refs:
+            raise ValueError("source refs required")
+        summary = _receipt_lf(summary)
+        event = {"event_id": event_id, "summary": summary, "refs": [self._source(ref) for ref in refs], "harness": harness}
+        if links:
+            if not isinstance(links, list) or len(links) > MAX_RECEIPT_LINKS or not all(
+                    isinstance(link, str) and _plain_link(link) for link in links):
+                raise ValueError("links must be http(s) URLs without spaces or credentials")
+            event["links"] = list(links)
+        payload = _json(event)
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            old = db.execute("SELECT payload FROM receipts WHERE id=?", (event_id,)).fetchone()
+            if old:
+                previous = json.loads(old[0])
+                if (not _receipt_same_summary(previous["summary"], summary) or
+                        (previous["refs"], previous.get("links")) != (event["refs"], event.get("links"))):
+                    raise ReceiptConflict("event_id reused with different payload")
+                event = previous
+            db.execute("INSERT OR IGNORE INTO receipts VALUES (?,?)", (event_id, payload))
+        return dict(event, id=event_id, status="succeeded")
+
+    def retrieve(self, query, project=None, audience="internal", statuses=None, limit=5, budget_chars=8000, strict=False, today=None, explicit=False):
+        # explicit=True is the `beyin.py context` command: see the unscoped explicit rules below.
+        return self._retrieve(query, project, audience, statuses, limit, budget_chars, strict=strict, today=today,
+                              explicit=explicit)
+
+    def candidates(self, query, project=None, audience="internal", statuses=None, limit=32, strict=False, today=None):
+        """Bounded eligible candidates before any final context packing.
+
+        Callers must build separately bounded provider cards and pack final output.
+        A long leading source must not hide later candidates from a reranker.
+        """
+        if type(limit) is not int or not 0 <= limit <= 128:
+            raise ValueError("candidate limit must be 0..128")
+        return self._retrieve(query, project, audience, statuses, limit, 0,
+                              strict=strict, candidate_only=True, today=today)
+
+    def snapshot_context(self, audience="internal", budget_chars=6000, limit=5, project=None, today=None):
+        """Explicit bounded current-state snapshot; normal empty queries abstain."""
+        return self._retrieve("", project=project, audience=audience, statuses=("active", "waiting", "inbox"),
+                              limit=limit, budget_chars=budget_chars, snapshot=True, today=today)
+
+    def due_tasks_context(self, audience="internal", budget_chars=1500, limit=5, project=None, today=None):
+        """Bounded due task snapshot when ambient snapshot is skipped."""
+        if audience not in ("public", "internal", "private"):
+            raise ValueError("invalid audience")
+        today_iso = str(today)[:10] if today else date.today().isoformat()
+        with self._connect() as db:
+            rows = db.execute("SELECT payload FROM records WHERE payload LIKE '%\"due_at\"%' ORDER BY id")
+            records = [json.loads(row[0]) for row in rows]
+        records = [record for record in records if is_due_task(record, today_iso)]
+        # Most openings have no due task: do not decode the whole index on that path.
+        # When tasks exist, supersession must still see every trusted record, including
+        # non-task and private replacements that the delivery audience cannot see.
+        if not records:
+            return pack_context([], limit, budget_chars)
+        superseded = self._superseded_ids()
+        eligible, stale_count = self._eligible(audience=audience, project=project, records=records)
+        due_records = [r for r in eligible if r["id"] not in superseded]
+        due_records.sort(key=lambda r: (str(r.get("due_at", ""))[:10], r.get("id", "")))
+        return pack_context(due_records, limit, budget_chars, stale_count)
+
+    def source_snapshot(self, source_names, audience="internal", budget_chars=3000, source_directory=None, text_transform=None):
+        """Return a bounded, source-verified continuity set in requested order."""
+        if (not isinstance(source_names, (list, tuple)) or
+                not all(isinstance(name, str) and name and "/" not in name and "\\" not in name
+                        for name in source_names) or
+                type(budget_chars) is not int or budget_chars < 0):
+            raise ValueError("invalid source snapshot request")
+        if audience not in ("public", "internal", "private"):
+            raise ValueError("invalid audience")
+        allowed = {"public"} if audience == "public" else {"public", "internal"} if audience == "internal" else {"public", "internal", "private"}
+        # Decode only rows that can match; the full Python gates below still decide.
+        # Markdown-owned records: sync writes markdown_sources(id, source) in the same
+        # transaction as the payload, so their basenames are read from that small table.
+        # Other records (ingest): every writer stores _json() payloads, so a matching
+        # source contains the name exactly as _json() serializes it (Unicode, escapes).
+        # Both are supersets of the matches; anything unusual keeps the full scan.
+        needles = list(dict.fromkeys(_json(name)[1:-1] for name in source_names))
+        wanted = set(source_names)
+        with self._connect() as db:
+            try:
+                owned = db.execute("SELECT id, source FROM markdown_sources").fetchall()
+            except sqlite3.OperationalError:
+                owned = None  # a store that never synced Markdown has no ownership table
+            ids = None if owned is None else sorted(id for id, source in owned if Path(source).name in wanted)
+            if ids is None or len(needles) > 128 or len(ids) > 512:
+                query, params = "SELECT payload FROM records ORDER BY id", ()
+            else:
+                other = "id NOT IN (SELECT id FROM markdown_sources) AND (" + (
+                    " OR ".join("instr(payload, ?) > 0" for _ in needles) or "0") + ")"
+                clause = ("id IN (" + ",".join("?" * len(ids)) + ") OR (" + other + ")") if ids else other
+                query, params = "SELECT payload FROM records WHERE " + clause + " ORDER BY id", ids + needles
+            records = [json.loads(row[0]) for row in db.execute(query, params)]
+        candidates = {name: [] for name in source_names}
+        stale_count = 0
+        for record in records:
+            if sensitive_source(record.get("source")):
+                continue
+            if (record.get("visibility") not in allowed or record.get("trust") == "untrusted" or
+                    record.get("trusted") is False or record.get("status") == "untrusted" or
+                    record.get("kind") == "untrusted" or _rejected_inference(record)):
+                continue
+            source = record.get("source", "")
+            if source_directory is not None and Path(source).parent.as_posix() != source_directory:
+                continue
+            name = Path(source).name
+            if name not in candidates:
+                continue
+            try:
+                self._source(source)
+                actual = hashlib.sha256((self.vault_root / source).read_bytes()).hexdigest()
+                if actual != record.get("source_sha256"):
+                    stale_count += 1
+                    continue
+            except (ValueError, OSError):
+                stale_count += 1
+                continue
+            preferred = 0 if any(part.casefold().endswith(("companion", "echo")) for part in Path(source).parts[:-1]) else 1
+            candidates[name].append((preferred, len(source), source, record))
+        chosen = []
+        missing = []
+        for name in source_names:
+            if not candidates[name]:
+                missing.append(name)
+                continue
+            record = min(candidates[name], key=lambda item: item[:3])[3]
+            chosen.append({key: record[key] for key in ("id", "source", "title", "kind", "status", "updated_at") if key in record})
+            text = record.get("text", "")
+            chosen[-1]["text"] = text_transform(name, text) if text_transform else text
+        result = {"records": chosen, "citations": [{"id": record["id"], "source": record["source"]} for record in chosen],
+                  "requested_sources": list(source_names), "missing_sources": missing,
+                  "stale_excluded": stale_count, "truncated": False}
+        empty = json.loads(json.dumps(result))
+        for record in empty["records"]:
+            record["text"] = ""
+        available = budget_chars - len(_json(empty))
+        if available < 0:
+            return {"records": [], "citations": [], "requested_sources": list(source_names),
+                    "missing_sources": list(source_names), "stale_excluded": stale_count,
+                    "truncated": bool(chosen)}
+        share = available // max(1, len(chosen))
+        # A record shorter than its share hands the rest to the longer ones (#374): an equal
+        # split cut a 45k Kurallar.md to its fifth of the bound while the handoff files used a
+        # fraction of theirs, so the companion layer clipped and counted rules on a fragment.
+        lengths, left = sorted(len(record["text"]) for record in chosen), available
+        for index, length in enumerate(lengths[:-1]):
+            if length > share:
+                break
+            left -= length
+            share = left // (len(lengths) - index - 1)
+        marker = "[truncated]"
+        for record in chosen:
+            text = record["text"]
+            if len(text) > share:
+                keep = max(0, share - len(marker) - 1)
+                name = Path(record["source"]).name
+                if not keep:
+                    record["text"] = marker
+                elif name == "Journal.md":
+                    record["text"] = marker + "\n" + text[-keep:]
+                elif name == "Kurallar.md" and keep > 1:
+                    # Head and tail, as the companion layer shows a rule set: the head holds
+                    # the summary and the oldest rules, the tail the newest corrections (#374).
+                    keep -= 1
+                    record["text"] = text[:keep - keep // 2] + "\n" + marker + "\n" + text[len(text) - keep // 2:]
+                else:
+                    record["text"] = text[:keep] + "\n" + marker
+                result["truncated"] = True
+        prefix, suffix, middle = marker + "\n", "\n" + marker, "\n" + marker + "\n"
+        while any(record["text"] for record in chosen):
+            # JSON escapes can still overflow; cut the whole excess at once. One character
+            # per pass re-serialized the result for every newline of a long record (#374).
+            over = len(_json(result)) - budget_chars
+            if over <= 0:
+                break
+            record = max(chosen, key=lambda item: len(item["text"]))
+            text = record["text"]
+            if text.startswith(prefix) and len(text) > len(prefix):
+                record["text"] = prefix + text[len(prefix) + over:]
+            elif text.endswith(suffix) and len(text) > len(suffix):
+                record["text"] = text[:max(0, len(text) - len(suffix) - over)] + suffix
+            elif Path(record["source"]).name == "Kurallar.md" and text.find(middle) > 0:
+                head, tail = text.split(middle, 1)
+                record["text"] = head[:max(0, len(head) - over)] + middle + tail
+            else:
+                record["text"] = text[:max(0, len(text) - over)]
+            result["truncated"] = True
+        return result
+
+    @staticmethod
+    def _lexical_weights(ranked, terms, vocabularies):
+        """(weight, shared_count, record) for every candidate; see the strict comment for the formula."""
+        frequency = {}
+        for vocabulary in vocabularies.values():
+            for token in vocabulary:
+                frequency[token] = frequency.get(token, 0) + 1
+        total = max(1, len(vocabularies))
+        idf_max = math.log((total + 1) / 2) + 1
+        weighted = []
+        for shared_count, record in ranked:
+            vocabulary = vocabularies[record["id"]]
+            weight = sum(math.log((total + 1) / (frequency.get(token, 0) + 1)) + 1 for token in terms & vocabulary)
+            weighted.append((weight / idf_max / math.log(10 + len(vocabulary)), shared_count, record))
+        return weighted
+
+    @staticmethod
+    def _by_weight(weighted):
+        weighted.sort(key=lambda item: (item[1].get("updated_at", ""), item[1]["id"]), reverse=True)
+        weighted.sort(key=lambda item: -item[0])
+        return weighted
+
+    @staticmethod
+    def _name_candidates(record):
+        return _name_candidates(record)
+
+    @staticmethod
+    def _name_match_score(record, terms):
+        return _name_match_score(record, terms)
+
+    is_due_task = staticmethod(is_due_task)
+
+    def _strict_rank(self, ranked, terms, vocabularies, name_scores=None, today=None, allowed_statuses=None):
+        """Keep meaningful matches without making one-word queries impossible."""
+        min_shared = min(self.STRICT_MIN_SHARED, len(terms))
+        min_weight = self.STRICT_SINGLE_TERM_MIN_WEIGHT if len(terms) == 1 else self.STRICT_MIN_WEIGHT
+        today_iso = str(today)[:10] if today else date.today().isoformat()
+        weighted = []
+        for weight, shared_count, record in self._lexical_weights(ranked, terms, vocabularies):
+            if shared_count >= min_shared and weight >= min_weight:
+                if name_scores and record["id"] in name_scores:
+                    weight += self.NAME_MATCH_STRICT_WEIGHT * name_scores[record["id"]]
+                if is_due_task(record, today_iso):
+                    weight += self.DUE_STRICT_BONUS
+                elif allowed_statuses is None and _is_closed_task(record):
+                    weight -= self.CLOSED_TASK_PENALTY
+                weighted.append((weight, record))
+        return self._by_weight(weighted)
+
+    BM25_K1 = 1.5
+    BM25_B = 0.75
+    NAME_MATCH_WEIGHT = 20.0
+    NAME_MATCH_STRICT_WEIGHT = 10.0
+    DUE_BONUS = 50.0
+    DUE_STRICT_BONUS = 25.0
+    CLOSED_TASK_PENALTY = 50.0
+
+    def _weighted_rank(self, ranked, terms, term_counts, name_scores=None, today=None, allowed_statuses=None,
+                       factors=None):
+        """Order without dropping anything: Okapi BM25 over stem counts, no thresholds.
+
+        A raw shared-term count favours whichever note has the largest vocabulary, so one long
+        hub note can win every query; a presence-only idf weight still cannot tell a note that
+        is about a term from one that mentions it once. Records with no shared term (scoped
+        listings, snapshots) weigh 0 and keep their previous updated_at order. factors scales
+        the BM25 part of a record's weight only (opt-in dominant-project demotion); name, due
+        and closed-task adjustments keep their size, so a negative weight is never raised.
+        """
+        total = len(term_counts)
+        lengths = {rid: sum(counts.values()) for rid, counts in term_counts.items()}
+        average = sum(lengths.values()) / total if total else 0
+        frequency = {term: sum(1 for counts in term_counts.values() if term in counts) for term in terms}
+        today_iso = str(today)[:10] if today else date.today().isoformat()
+        weighted = []
+        for _, record in ranked:
+            counts = term_counts[record["id"]]
+            norm = self.BM25_K1 * (1 - self.BM25_B + self.BM25_B * (lengths[record["id"]] / average if average else 0))
+            weight = sum(math.log((total - frequency[term] + 0.5) / (frequency[term] + 0.5) + 1) *
+                         counts[term] * (self.BM25_K1 + 1) / (counts[term] + norm)
+                         for term in terms if counts.get(term))
+            if factors and record["id"] in factors:
+                weight *= factors[record["id"]]
+            if name_scores and record["id"] in name_scores:
+                weight += self.NAME_MATCH_WEIGHT * name_scores[record["id"]]
+            if is_due_task(record, today_iso):
+                weight += self.DUE_BONUS
+            elif allowed_statuses is None and _is_closed_task(record):
+                weight -= self.CLOSED_TASK_PENALTY
+            weighted.append((weight, record))
+        return self._by_weight(weighted)
+
+    # Unscoped explicit lookups (`beyin.py context` without --project, which passes
+    # explicit=True; not strict, not a snapshot) can opt into two extra rules in the runtime
+    # retrieval.json (docs/v3/PREFERENCES.md). Both are off by default; scoped (--project)
+    # queries, the strict hook path, companion retrieval, the advisor pools and plain
+    # retrieve()/candidates() calls never use them.
+    # Admission ("unscoped_min_shared": 2): a multiword query needs two shared query words,
+    # the same gate as the strict hook path, so a question that shares one common word with
+    # some note ("password", "recipe") abstains instead of returning that note. A full name
+    # match or a word naming the record's own project still admits it alone; one-word
+    # queries keep their single shared word, and a typo fix counts for the word it fixes.
+    # Dominant project ("unscoped_dominant_weight": 0 < w < 1): when one project owns more
+    # than DOMINANT_PROJECT_SHARE of the eligible records (in an index of at least
+    # DOMINANT_PROJECT_MIN_RECORDS), the BM25 part of its records' weights is multiplied by
+    # w, so a large course or archive project cannot fill every unscoped top-5 by volume
+    # alone. Nothing is removed. The demotion is skipped when a query word names that
+    # project (its id, or the name of a folder mapped to it in .beyin-projects.json).
+    # Why opt-in (#532): on one 698-note vault whose course project held 83 % of the notes,
+    # w = 0.25 raised English top-1 from 14 to 16 of 20 but lowered top-3 from 18 to 17, and
+    # admission cost one later-read note its top-5 place (8 -> 7). On the repository's
+    # frozen fixtures queried through this path, demotion lowers recall whenever the answers
+    # live inside the dominant project, at every w from 0.25 to 0.9, and admission drops one
+    # expected decision note while it cuts everyday/agent-command noise from 12 and 13 to
+    # 5 and 4 of 15.
+    DOMINANT_PROJECT_SHARE = 0.5
+    DOMINANT_PROJECT_MIN_RECORDS = 20
+
+    def _unscoped_settings(self):
+        """(min_shared, dominant_weight) from the runtime retrieval.json; (1, 1.0) is off."""
+        try:
+            if _MODULE_DIR not in sys.path:
+                sys.path.insert(0, _MODULE_DIR)
+            from beyin_v3_passage import unscoped_settings
+        except ImportError:
+            return 1, 1.0
+        value = unscoped_settings(self.state_dir)
+        return value["min_shared"], value["dominant_weight"]
+
+    def _record_projects(self, records):
+        """Project of every record (scope file folders included) and the words naming each project."""
+        try:
+            scopes = read_project_scopes(self.vault_root)
+        except ValueError:
+            scopes = None  # an invalid scope file is reported by scoped queries and doctor
+        owners, names = {}, {}
+        for record in records:
+            owner = record_scope(record, scopes) if scopes else record.get("project")
+            if isinstance(owner, str) and owner.strip():
+                owners[record["id"]] = owner
+                names.setdefault(owner, set()).update(_tokens(owner))
+        for folder, owner in (scopes or {}).get("folders", ()):
+            names.setdefault(owner, set()).update(_tokens(folder.rsplit("/", 1)[-1]))
+        return owners, names
+
+    def _unscoped_rules(self, ranked, terms, typo_fixes, vocabularies, eligible, name_scores,
+                        min_shared, dominant_weight):
+        """Opt-in admission and dominant-project factors for unscoped explicit lookups (see above).
+
+        terms are the query's own words; typo_fixes maps a misspelled word to the vocabulary
+        words searched for it, which count once, for that word. Returns (ranked, factors).
+        """
+        owners, names = self._record_projects(eligible)
+        if min_shared > 1:
+            needed = min(min_shared, len(terms))
+            groups = [typo_fixes.get(term, set()) | {term} for term in terms]
+            # A full name match (#354) or a word naming the record's own project is enough
+            # evidence on its own: "tavla oyunu ne durumda" must still reach the tavla notes.
+            ranked = [(score, record) for score, record in ranked
+                      if sum(1 for group in groups if group & vocabularies[record["id"]]) >= needed or
+                      record["id"] in name_scores or terms & names.get(owners.get(record["id"]), set())]
+        if dominant_weight >= 1 or not ranked or len(eligible) < self.DOMINANT_PROJECT_MIN_RECORDS:
+            return ranked, None
+        counts = Counter(owners.values())
+        dominant = {owner for owner, count in counts.items()
+                    if count > self.DOMINANT_PROJECT_SHARE * len(eligible) and not (terms & names[owner])}
+        factors = {record["id"]: dominant_weight for _, record in ranked if owners.get(record["id"]) in dominant}
+        return ranked, factors or None
+
+    # Strict automatic context: multiword queries need two shared words so that an incidental
+    # common word cannot pull an unrelated note into the prompt. One-word queries use a
+    # separate weight floor and still reject weak matches. Weight = sum of relative idf over
+    # shared terms, divided by log(10 + note vocabulary size). Relative idf (idf / idf of a
+    # term seen in exactly one note) keeps the scale independent of vault size, so the
+    # threshold works for a 20-note vault and a 300-note vault alike.
+    # Calibration (real vault, 265 notes, 16 prompts): irrelevant prompts scored 0.19-0.37,
+    # relevant 0.33-1.21; 0.30 silenced 6/7 irrelevant and kept 7/7 relevant.
+    STRICT_MIN_SHARED = 2
+    STRICT_MIN_WEIGHT = 0.30
+    # A single query term cannot meet the two-term gate; still exclude incidental long-note hits.
+    STRICT_SINGLE_TERM_MIN_WEIGHT = 0.20
+    STRICT_EXCLUDE = ("daily/",)  # session logs are records, not knowledge; they match everything
+
+    # Per-turn strict context ranks Markdown passages instead of whole notes and delivers the
+    # matching block (#83, beyin_v3_passage.py). An empty passage result is an answer.
+    STRICT_PASSAGES = True
+
+    def _records(self):
+        with self._connect() as db:
+            return [json.loads(row[0]) for row in db.execute("SELECT payload FROM records ORDER BY id")]
+
+    def _eligible(self, audience="internal", project=None, rejected_only=False, records=None):
+        """Visibility, trust, project and source-freshness gates shared by every retrieval path.
+
+        rejected_only inverts the rejection gate alone, for rejected_matches: the same
+        scope applies to history that is looked up but never delivered. records lets a
+        caller that also needs the supersession set read the table once.
+        """
+        if audience not in ("public", "internal", "private"):
+            raise ValueError("invalid audience")
+        if records is None:
+            records = self._records()
+        allowed = {"public"} if audience == "public" else {"public", "internal"} if audience == "internal" else {"public", "internal", "private"}
+        # Read only for an explicit project: the per-turn hook path passes none.
+        scopes = read_project_scopes(self.vault_root) if project is not None else None
+        eligible = []
+        stale_count = 0
+        for record in records:
+            # Old indexes can still hold these notes until the next sync. Never deliver them.
+            if sensitive_source(record.get("source")):
+                continue
+            if record["visibility"] not in allowed or record.get("trust") == "untrusted" or record.get("trusted") is False or record.get("status") == "untrusted" or record.get("kind") == "untrusted" or _rejected_inference(record) != rejected_only:
+                continue
+            if project is not None:
+                if scopes is None:
+                    if record.get("project") != project:
+                        continue
+                else:
+                    scope = record_scope(record, scopes)
+                    if scope != project and not (scope is None and scopes["shared_unscoped"]):
+                        continue
+            try:
+                self._source(record["source"])
+                actual = hashlib.sha256((self.vault_root / record["source"]).read_bytes()).hexdigest()
+                if actual != record.get("source_sha256"):
+                    stale_count += 1
+                    continue
+            except (ValueError, OSError):
+                stale_count += 1
+                continue
+            eligible.append(record)
+        return eligible, stale_count
+
+    def _superseded_ids(self, records=None):
+        """Ids retired by any trusted record, not only by the ones this reader may see (#201)."""
+        return resolve_supersedes(self._records() if records is None else records)[0]
+
+    def _retrieve(self, query, project=None, audience="internal", statuses=None, limit=5, budget_chars=8000, snapshot=False, strict=False, candidate_only=False, today=None, explicit=False):
+        if audience not in ("public", "internal", "private"):
+            raise ValueError("invalid audience")
+        if not isinstance(query, str) or type(limit) is not int or limit < 0 or type(budget_chars) is not int or budget_chars < 0:
+            raise ValueError("invalid query or budget")
+        records = self._records()
+        eligible, stale_count = self._eligible(audience, project, records=records)
+        superseded = self._superseded_ids(records)
+        allowed_statuses = _allowed_statuses(statuses)
+        if strict:
+            try:
+                if _MODULE_DIR not in sys.path:
+                    sys.path.insert(0, _MODULE_DIR)
+                from beyin_v3_passage import _path_key, settings
+            except ImportError:
+                # Without the exclusion policy, strict fallback must not deliver sources.
+                return [] if candidate_only else pack_context([], limit, budget_chars, stale_count)
+            prefixes = tuple(_path_key(prefix) for prefix in settings(self.state_dir)["exclude"])
+            eligible = [record for record in eligible
+                        if not _path_key(str(record.get("source", ""))).startswith(prefixes)]
+        query_tokens = _tokens(query)
+        project_tokens = _tokens(project or "")
+        terms = query_tokens - STOPWORDS - project_tokens
+        scoped_listing = project is not None and bool(query_tokens & project_tokens) and not (query_tokens - STOPWORDS - project_tokens)
+        if strict:
+            terms, compounds = _query_compounds(query, _strict_terms(terms))
+            if not terms and not scoped_listing and not snapshot:
+                if candidate_only:
+                    return []
+                return pack_context([], limit, budget_chars, stale_count)
+        else:
+            terms, compounds = _query_compounds(query, terms)
+        ranked = []
+        vocabularies = {}
+        term_counts = {}
+        name_scores = {}
+        scanned = []
+        count_cache = _CountCache(self.state_dir) if terms else None
+        for record in eligible:
+            if record["id"] in superseded:
+                continue
+            if not _status_allowed(record, allowed_statuses):
+                continue
+            if strict and str(record.get("source", "")).startswith(self.STRICT_EXCLUDE):
+                continue
+            # Aliases are source metadata, never a shortcut around eligibility gates.
+            aliases = record.get("aliases", [])
+            aliases = aliases if isinstance(aliases, list) else []
+            alias_text = " ".join(a[:160] for a in aliases[:32] if isinstance(a, str))
+            name_score = self._name_match_score(record, terms)
+            # A filename is a salience signal only for an actual topical name match.
+            # Unrelated/generic stems must not widen candidates or dilute BM25 lengths.
+            source_stem = (Path(record.get("source", "")).stem.replace("-", " ").replace("_", " ")
+                           if name_score else "")
+            # Without a query term no count can score or reorder a record (snapshots, scoped
+            # listings, the advisor's eligibility pass), so the note text is not tokenised.
+            counts = (count_cache.counts(record["text"] + " " + _json(record["facts"]) + " " + str(record.get("title", "")) + " " + alias_text + " " + source_stem)
+                      if terms else Counter())
+            for stopword in STOPWORDS & counts.keys():
+                del counts[stopword]
+            term_counts[record["id"]] = counts
+            if name_score:
+                name_scores[record["id"]] = name_score
+            scanned.append(record)
+        # Root use is counted over every scanned note, so the counts are final only after the scan.
+        _fold_query_roots(term_counts.values(), terms, STOPWORDS | project_tokens, compounds)
+        for record in scanned:
+            vocabulary = set(term_counts[record["id"]])
+            vocabularies[record["id"]] = vocabulary
+            score = len(terms & vocabulary)
+            if score or record["id"] in name_scores or scoped_listing or snapshot:
+                ranked.append((score, record))
+        if count_cache is not None and not self.read_only:
+            count_cache.save()
+        # Typo tolerance: a query word that appears in no record ("zmaan", "anketii") also
+        # searches its closest vocabulary words, so misspelled prompts still reach the note.
+        # Strict mode stays exact so automatic injection never widens on a guess.
+        query_terms, typo_fixes = terms, {}
+        missing = {term for term in terms if len(term) >= 4 and not term.isdigit()}
+        if missing and not strict:
+            known = set().union(*vocabularies.values()) if vocabularies else set()
+            fixes = set()
+            for term in missing - known:
+                # Only swapped, missing or extra letters count as typos; a substituted letter makes
+                # another word (kural/kurul), so the letter counts may differ by at most one.
+                letters = Counter(term)
+                typo_fixes[term] = {word for word in difflib.get_close_matches(term, known, n=3, cutoff=0.75)
+                                    if sum(((letters - Counter(word)) + (Counter(word) - letters)).values()) <= 1}
+                fixes.update(typo_fixes[term])
+            fixes -= terms
+            if fixes:
+                terms = terms | fixes
+                seen = {record["id"] for _, record in ranked}
+                ranked = [(len(terms & vocabularies[record["id"]]), record) for _, record in ranked]
+                ranked += [(len(terms & vocabularies[record["id"]]), record) for record in eligible
+                           if record["id"] in vocabularies and record["id"] not in seen
+                           and terms & vocabularies[record["id"]]]
+        if strict and not snapshot:
+            ranked = self._strict_rank(ranked, terms, vocabularies, name_scores=name_scores,
+                                       today=today, allowed_statuses=allowed_statuses)
+        else:
+            factors = None
+            if explicit and project is None and not snapshot and not strict and query_terms:
+                min_shared, dominant_weight = self._unscoped_settings()
+                if min_shared > 1 or dominant_weight < 1:
+                    ranked, factors = self._unscoped_rules(ranked, query_terms, typo_fixes, vocabularies, eligible,
+                                                           name_scores, min_shared, dominant_weight)
+            ranked = self._weighted_rank(ranked, terms, term_counts, name_scores=name_scores,
+                                         today=today, allowed_statuses=allowed_statuses, factors=factors)
+        if candidate_only:
+            return [record for _, record in ranked[:limit]]
+        return pack_context([record for _, record in ranked], limit, budget_chars, stale_count)
+
+
+# A rejected claim is proposed again when the new text restates most of it. Coverage is
+# measured on the rejected statement, not on the new text, so a proposal that wraps the
+# old claim in extra context is still caught. Both constants are pinned by tests.
+REJECTED_MIN_SHARED = 2
+REJECTED_MIN_COVERAGE = 0.6
+# A title is a topic label more often than a claim: "Kahve tercihi" would otherwise match
+# any new claim that names the same topic, including the user's own correction.
+REJECTED_MIN_TITLE_TERMS = 3
+
+
+def rejected_matches(store, text, project, audience="internal", limit=4):
+    """Rejected inference/preference records in scope that the text restates.
+
+    Lexical and local: no model call, no write. The comparison uses _tokens, so casing,
+    Unicode form and Turkish suffixes normalize the same way on both sides. A record is
+    compared by its title and by its text separately, and the better coverage counts.
+    Only identities are returned; the rejected text and reason never leave this function,
+    so they cannot reach context or an advisor request.
+    """
+    if (not isinstance(text, str) or not isinstance(project, str) or not project.strip() or
+            type(limit) is not int or limit < 0):
+        raise ValueError("invalid rejected match query")
+    ignored = STOPWORDS | _tokens(project)
+    claim = _tokens(text) - ignored
+    if not claim:
+        return []
+    records, _ = store._eligible(audience, project, rejected_only=True)
+    matches = []
+    for record in records:
+        coverage = 0.0
+        for statement, minimum in ((str(record.get("title", "")), REJECTED_MIN_TITLE_TERMS), (record["text"], 0)):
+            terms = _tokens(statement) - ignored
+            if len(terms) < minimum:
+                continue
+            shared = len(claim & terms)
+            if shared >= REJECTED_MIN_SHARED:
+                coverage = max(coverage, shared / len(terms))
+        if coverage >= REJECTED_MIN_COVERAGE:
+            matches.append((coverage, record))
+    matches.sort(key=lambda item: (-item[0], item[1]["id"]))
+    return [{"record_id": record["id"], "source": record["source"],
+             "rejected_at": record.get("rejected_at"), "coverage": round(coverage, 3)}
+            for coverage, record in matches[:limit]]
+
+CONTEXT_MARKER = " [truncated]"
+MIN_CONTEXT_TEXT = 150     # smallest excerpt of a source that is worth a slot
+SHORT_CONTEXT_TEXT = 500   # a short source is reserved whole when it fits, else like a long one
+TOP_CONTEXT_TEXT = 1100    # the best source keeps at least this much: one passage window (#83)
+TOP_CONTEXT_SHARE = 0.4    # ... or this share of the budget, whichever is larger
+
+
+class PackedContext(dict):
+    """Packed context that remembers its unclipped sources in rank order.
+
+    The attribute is never serialized (json sees a plain dict), so render_context can
+    re-pack for the hook envelope from the originals instead of clipping a clip, and a
+    source dropped there returns its share to the better sources. `wider` holds the wider
+    version of a record (see pack_widened) that a later pack may use if its budget has room.
+    """
+    sources = ()
+    wider = {}
+    extensions = {}
+    evidence = {}
+
+
+def _clip_to(record, citation, room):
+    """Longest text prefix whose serialized record+citation fits in room, else None."""
+    text, best = record["text"], None
+    low, high = 0, len(text)
+    while low <= high:  # JSON escaping only grows with the prefix, so bisection is exact
+        middle = (low + high) // 2
+        candidate = dict(record, text=text[:middle] + CONTEXT_MARKER, text_truncated=True)
+        if len(_json(candidate)) + len(_json(citation)) <= room:
+            best, low = candidate, middle + 1
+        else:
+            high = middle - 1
+    return best
+
+
+def _clipped_size(record, citation, chars):
+    """Serialized size of record+citation with the first `chars` characters, or whole if shorter."""
+    full = len(_json(record)) + len(_json(citation))
+    if len(record["text"]) <= chars:
+        return full
+    return min(full, len(_json(dict(record, text=record["text"][:chars] + CONTEXT_MARKER, text_truncated=True)))
+               + len(_json(citation)))
+
+
+def pack_context(records, limit=5, budget_chars=8000, stale_count=0):
+    """Pack successfully delivered sources, not a prefix of attempted candidates.
+
+    An oversized metadata record cannot consume a source slot. Text may be clipped,
+    never identity/citation fields. used_chars measures compact record+citation JSON;
+    render_context additionally accounts for the complete hook envelope.
+
+    Budget is reserved before it is spent (#79). The best source first keeps the larger
+    of TOP_CONTEXT_TEXT characters and TOP_CONTEXT_SHARE of the budget, so a passage
+    (#83) reaches a small prompt whole and a long note keeps a real excerpt. Every
+    further source in rank order then reserves its floor (its first MIN_CONTEXT_TEXT
+    characters, or all of a short text when that fits); a source whose floor does not
+    fit is skipped without consuming a slot. What is left goes back in rank order.
+    Reservations are exact serialized sizes, JSON escaping included, so an admitted
+    source is never dropped later and one long note can no longer starve the rest.
+    """
+    if type(limit) is not int or limit < 0 or type(budget_chars) is not int or budget_chars < 0:
+        raise ValueError("invalid budget")
+    admitted, reserved, protected = [], 0, 0
+    for record in records:
+        if len(admitted) >= limit:
+            break
+        citation = {"id": record["id"], "source": record["source"]}
+        full = len(_json(record)) + len(_json(citation))
+        floor = _clipped_size(record, citation, MIN_CONTEXT_TEXT)
+        claim = full if len(record["text"]) <= SHORT_CONTEXT_TEXT else floor
+        if reserved + claim > budget_chars - protected:
+            claim = floor
+        if reserved + claim > budget_chars - protected:
+            continue
+        admitted.append([record, citation, full, claim])
+        reserved += claim
+        if len(admitted) == 1:
+            keep = max(_clipped_size(record, citation, TOP_CONTEXT_TEXT), int(budget_chars * TOP_CONTEXT_SHARE))
+            protected = max(0, min(full, keep, budget_chars) - claim)
+    spare = budget_chars - reserved
+    for item in admitted:
+        extra = min(spare, item[2] - item[3])
+        item[3] += extra
+        spare -= extra
+    selected, citations, sources = [], [], []
+    used, carry, clipped_any = 0, 0, False
+    for record, citation, full, allocation in admitted:
+        room = allocation + carry
+        source = record
+        if full > room:
+            record = _clip_to(record, citation, room)
+            if record is None:  # unreachable while room >= floor; never overspend
+                carry = room
+                continue
+        size = len(_json(record)) + len(_json(citation))
+        carry = room - size
+        selected.append(record)
+        sources.append(source)
+        citations.append(citation)
+        clipped_any = clipped_any or bool(record.get("text_truncated"))
+        used += size
+    omitted = len(records) - len(selected)
+    packed = PackedContext({"records": selected, "citations": citations, "abstained": not selected,
+                            "truncated": bool(omitted) or clipped_any, "omitted_count": omitted,
+                            "used_chars": used, "budget_chars": budget_chars, "stale_count": stale_count})
+    packed.sources = tuple(sources)
+    return packed
+
+
+def pack_widened(records, wider, limit=5, budget_chars=8000, stale_count=0, *, extensions=None):
+    """pack_context, then each wholly delivered record may take its wider version (id -> record)
+    from the room every record left over, in rank order.
+
+    A wider version (a second passage of the same note) never cuts another record short: it is
+    used whole or not at all, and only once each record's own text fits. A value may also be
+    a list of alternatives, in preference order; only the first whole one that fits is used.
+    The result's sources stay the narrow originals and .wider is kept, so every later pack
+    (the advisor's or the final envelope's) decides again at its own budget.
+    """
+    packed = pack_context(records, limit, budget_chars, stale_count)
+    widened, spare, chosen = False, budget_chars - packed["used_chars"], list(records)
+    whole = {r["id"] for r, s in zip(packed["records"], packed.sources) if r["text"] == s["text"]}
+    for position, record in enumerate(records):
+        broader = wider.get(record["id"])
+        if broader is None or record["id"] not in whole:
+            continue
+        alternatives = broader if isinstance(broader, (list, tuple)) else [broader]
+        for alternative in alternatives:
+            extra = len(_json(alternative)) - len(_json(record))
+            if extra <= spare:
+                chosen[position], spare, widened = alternative, spare - extra, True
+                break
+    if widened:
+        packed = pack_context(chosen, limit, budget_chars, stale_count)
+    # Optional source/section context spends only what the existing passage
+    # policy left over. Reserve every source's original second passage first;
+    # a rich first source must not displace a later source's answering passage.
+    if extensions:
+        spare = budget_chars - packed['used_chars']
+        chosen = list(packed['records'])
+        extended = False
+        for position, record in enumerate(chosen):
+            for alternative in extensions.get(record['id'], ()):
+                extra = len(_json(alternative)) - len(_json(record))
+                if extra <= spare:
+                    chosen[position], spare = alternative, spare - extra
+                    extended = True
+                    break
+        if extended:
+            prior = packed
+            packed = pack_context(chosen, len(chosen), budget_chars, stale_count)
+            packed['omitted_count'] = prior['omitted_count']
+            packed['truncated'] = packed['truncated'] or bool(prior['omitted_count'])
+    by_id = {r["id"]: r for r in records}
+    packed.sources = tuple(by_id[s["id"]] for s in packed.sources)
+    packed.wider = dict(wider)
+    packed.extensions = dict(extensions or {})
+    return packed
+
+
+def shared_context(store, harness, query, **kwargs):
+    """All supported harnesses call the same source-backed retrieval function."""
+    if harness not in HARNESSES:
+        raise ValueError("unsupported harness")
+    return store.retrieve(query, **kwargs)
+
+
+def codex_context(store, query, **kwargs):
+    return shared_context(store, "codex", query, **kwargs)
+
+
+def claude_context(store, query, **kwargs):
+    return shared_context(store, "claude", query, **kwargs)
+
+
+def optional_provider(enabled=False, factory=None):
+    """No provider code is imported or called unless explicitly enabled."""
+    if not enabled:
+        return None
+    if factory is None or not callable(factory):
+        raise ValueError("explicit provider factory required")
+    return factory()
+
+
+# Index bookkeeping the reader does not need: source hashes and revisions verify freshness,
+# created/modified are file dates beside updated_at, and the rest are defaults. Each costs every
+# delivered record its share of the budget, so the envelope leaves them out and the note text
+# keeps that room. A reader that needs a revision (task-update) reads it with `beyin.py context`.
+_BOOKKEEPING = ("source_sha256", "revision", "created", "modified", "visibility", "supersedes")
+_DEFAULTS = {"kind": "note", "facts": {}, "project": None}
+
+
+def _delivery_view(record):
+    """The part of a record the reader is shown; identity, citation and text stay whole."""
+    return {k: v for k, v in record.items()
+            if k not in _BOOKKEEPING and not (k in _DEFAULTS and v == _DEFAULTS[k])}
+
+
+def render_context(context, budget_chars, prefix="", suffix=""):
+    """Serialize a complete context within the delivery budget; never slice JSON.
+
+    Return the delivered projection as well so continuity cannot remember an omitted
+    source. Auxiliary receipt text yields to complete source identities and citations.
+    The envelope carries _delivery_view records; the projection keeps the full records
+    (clipped like the envelope), since continuity and dedupe identify sources by revision.
+    """
+    if type(budget_chars) is not int or budget_chars < 0:
+        raise ValueError("invalid budget")
+    records = context.get("records", [])
+    sources = getattr(context, "sources", ())
+    if len(sources) == len(records) and all(s["id"] == r["id"] for s, r in zip(sources, records)):
+        records = list(sources)  # re-clip the envelope from the originals, not from a clip
+    full = {r["id"]: r for r in records}
+    wider = getattr(context, "wider", {})
+    extensions = getattr(context, "extensions", {})
+    records = [_delivery_view(r) for r in records]
+    wider_views = {key: ([_delivery_view(r) for r in record] if isinstance(record, (list, tuple))
+                         else _delivery_view(record)) for key, record in wider.items()}
+    extension_views = {key: [_delivery_view(r) for r in choices] for key, choices in extensions.items()}
+    extra = {k: v for k, v in context.items() if k not in
+             {"records", "citations", "used_chars", "budget_chars", "omitted_count", "truncated", "abstained", "stale_count"}}
+    available = max(0, budget_chars - len(prefix))
+    payload_budget = available
+    while True:
+        packed = pack_widened(records, wider_views, len(records), payload_budget, context.get("stale_count", 0),
+                              extensions=extension_views)
+        packed["omitted_count"] += context.get("omitted_count", 0)
+        packed["truncated"] = packed["truncated"] or bool(context.get("truncated"))
+        packed.update(extra)
+        text = json.dumps(packed, ensure_ascii=False)
+        overflow = len(text) - available
+        if overflow <= 0:
+            tail = suffix if len(prefix) + len(text) + len(suffix) <= budget_chars else ""
+            delivered = PackedContext(packed, records=[
+                dict(full[r["id"]], **{k: r[k] for k in ("text", "text_truncated") if k in r})
+                for r in packed["records"]])
+            delivered.sources = tuple(full[s["id"]] for s in packed.sources)  # a re-render keeps identities
+            delivered.wider = dict(wider)
+            delivered.extensions = dict(extensions)
+            delivered.evidence = {r['id']: getattr(context, 'evidence', {})[r['id']]
+                                  for r in delivered['records'] if r['id'] in getattr(context, 'evidence', {})}
+            return prefix + text + tail, delivered
+        if payload_budget == 0:
+            # A nonsensically small budget cannot carry even an empty envelope.
+            return "", dict(packed, records=[], citations=[], abstained=True, used_chars=0)
+        payload_budget = max(0, payload_budget - overflow - 8)

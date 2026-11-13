@@ -1,0 +1,556 @@
+"""Folder-based project scope management (.beyin-projects.json) for explicit-project gates. No models."""
+import json
+import os
+from pathlib import Path
+import posixpath
+import re
+import sys
+import tempfile
+import unicodedata
+
+PROJECT_SCOPES_FILE = ".beyin-projects.json"
+
+
+def _scope_path(value):
+    if not isinstance(value, str):
+        raise ValueError("project scope folder must be a string")
+    folder = unicodedata.normalize("NFC", value.replace("\\", "/")).strip().strip("/")
+    parts = folder.split("/")
+    if not folder or value.strip().startswith(("/", "\\")) or re.match(r"[A-Za-z]:", folder) or ".." in parts or "." in parts:
+        raise ValueError("project scope folder must be vault-relative")
+    return folder
+
+
+def _scope_key(value):
+    return unicodedata.normalize("NFC", value.replace("\\", "/")).casefold()
+
+
+def _scope_folder_exists(vault_root, folder):
+    """Every configured folder must name a real vault folder under the matching rule.
+
+    A mistyped or renamed folder would otherwise match nothing, and with shared_unscoped
+    its notes would silently join every other project's scope.
+    """
+    current = Path(vault_root)
+    for part in folder.split("/"):
+        key = _scope_key(part)
+        try:
+            with os.scandir(current) as entries:
+                match = next((entry.name for entry in entries if entry.is_dir() and _scope_key(entry.name) == key), None)
+        except OSError:
+            return False
+        if match is None:
+            return False
+        current = current / match
+    return True
+
+
+def _scope_entry_label(value):
+    """A bounded, quoted spelling of one configured entry for warnings."""
+    text = value if isinstance(value, str) else repr(value)
+    return repr(text[:120] + ("..." if len(text) > 120 else ""))
+
+
+def _skipped_scope_targets(vault_root, value):
+    """Scope keys of the vault folders a skipped entry may have meant; empty outside the vault.
+
+    "" stands for the whole vault. A key only ever blocks records for every project (#419)
+    and never grants a scope, so a generous guess cannot widen anything.
+    """
+    if not isinstance(value, str):
+        return set()
+    raw = unicodedata.normalize("NFC", value.replace("\\", "/")).strip()
+    root = Path(vault_root)
+    joined = raw if raw.startswith("/") or re.match(r"[A-Za-z]:", raw) else str(root).replace("\\", "/") + "/" + raw
+    targets = [joined]
+    # Follow links read-only, such as /var -> /private/var. Only an absolute path of this OS:
+    # never a network share, nor a drive or root-relative path resolved against the process cwd.
+    if os.path.isabs(joined) and not joined.startswith("//"):
+        try:
+            targets.append(os.path.realpath(joined))
+        except (OSError, RuntimeError, ValueError):
+            pass
+    bases = [root]
+    try:
+        bases.append(root.resolve())
+    except (OSError, RuntimeError, ValueError):
+        pass
+    keys = set()
+    for base in bases:
+        base = posixpath.normpath(_scope_key(str(base))).rstrip("/")
+        for target in targets:
+            target = posixpath.normpath(_scope_key(target))
+            if target == base:
+                keys.add("")
+            elif target.startswith(base + "/"):
+                keys.add(target[len(base) + 1:])
+    return keys
+
+
+def _scope_warning(message):
+    try:
+        sys.stderr.write("Warning: " + message + "\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
+def _classify_scope_entries(vault_root, folders, warn):
+    """Split configured entries into usable mappings and skipped ones, without raising (#419).
+
+    A skipped entry (escaping or absolute path, empty project, folder assigned twice) blocks
+    the vault folder it may name for every project; nothing it names becomes shared.
+    """
+    mapped, spelled, blocked = {}, {}, set()
+    invalid, duplicate, missing = [], [], []
+
+    def skip(raw, reason, targets):
+        if warn:
+            _scope_warning(f"skipped project scope entry {_scope_entry_label(raw)} in {PROJECT_SCOPES_FILE}: {reason}")
+        blocked.update(targets)
+
+    for raw, project in folders.items():
+        try:
+            folder = _scope_path(raw)
+        except ValueError as exc:
+            invalid.append(f"{raw}: {exc}")
+            skip(raw, exc, _skipped_scope_targets(vault_root, raw))
+            continue
+        key = _scope_key(folder)
+        if not isinstance(project, str) or not project.strip():
+            invalid.append(f"{raw}: invalid project name")
+            skip(raw, "project scope names must be non-empty strings", {key})
+            continue
+        if not _scope_folder_exists(vault_root, folder):
+            missing.append(folder)
+            if warn:
+                _scope_warning(f"project scope folder not found in the vault: {folder}")
+            # Retain the mapping so stale --no-sync rows never become shared notes.
+        if mapped.get(key, project) != project:
+            duplicate.append(f"{folder} (assigned to {mapped[key]} and {project})")
+            skip(raw, "project scope folder is assigned twice", {key})
+        mapped[key] = project
+        spelled.setdefault(key, folder)
+    for key in blocked:
+        mapped.pop(key, None)
+    return {"mapped": mapped, "spelled": spelled, "blocked": blocked,
+            "invalid_entries": invalid, "duplicate_folders": duplicate, "missing_folders": missing}
+
+
+def read_project_scopes(vault_root):
+    """None when the vault has no scope file: every gate keeps its exact-field behavior.
+
+    folders maps a vault-relative folder to a project; a record's own non-empty project
+    field wins. shared_unscoped lets a project query also see records no folder or field
+    assigns to any project. Another project's records never enter a project's scope.
+    Missing folders are skipped with a warning so unrelated projects remain fully functional.
+    An invalid entry is skipped with a warning (#419): the folder it may name is blocked for
+    every project and shared_unscoped stays off until it is fixed. A malformed file still
+    fails closed.
+    """
+    path = Path(vault_root) / PROJECT_SCOPES_FILE
+    if path.is_symlink():
+        raise ValueError("project scopes must be a regular vault-local file")
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (ValueError, OSError) as exc:
+        raise ValueError("invalid project scopes file; expected JSON") from exc
+    if not isinstance(data, dict) or set(data) - {"folders", "shared_unscoped"}:
+        raise ValueError("project scopes accept only folders and shared_unscoped")
+    folders = data.get("folders", {})
+    shared = data.get("shared_unscoped", False)
+    if not isinstance(folders, dict) or not isinstance(shared, bool):
+        raise ValueError("folders must be an object and shared_unscoped a boolean")
+    entries = _classify_scope_entries(vault_root, folders, warn=True)
+    skipped = bool(entries["invalid_entries"] or entries["duplicate_folders"])
+    if skipped and shared:
+        _scope_warning(f"shared_unscoped stays off until the skipped {PROJECT_SCOPES_FILE} entries are fixed")
+    # Longest folder first, so a nested folder can belong to a different project.
+    return {
+        "folders": sorted(entries["mapped"].items(), key=lambda item: -len(item[0])),
+        "shared_unscoped": shared and not skipped,
+        "blocked": sorted(entries["blocked"], key=len, reverse=True),
+        "missing_folders": entries["missing_folders"],
+    }
+
+
+def check_project_scopes(vault_root):
+    """Inspect .beyin-projects.json for doctor. Reads only local file and vault directory names."""
+    path = Path(vault_root) / PROJECT_SCOPES_FILE
+    if not path.exists() and not path.is_symlink():
+        return {"status": "absent", "folders": {}, "shared_unscoped": False,
+                "missing_folders": [], "duplicate_folders": [], "invalid_entries": [], "warnings": []}
+    if path.is_symlink():
+        return {"status": "error", "error": "project scopes must be a regular vault-local file",
+                "folders": {}, "shared_unscoped": False, "missing_folders": [],
+                "duplicate_folders": [], "invalid_entries": [], "warnings": ["symlink_not_allowed"]}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception as exc:
+        return {"status": "error", "error": f"invalid JSON: {type(exc).__name__}",
+                "folders": {}, "shared_unscoped": False, "missing_folders": [],
+                "duplicate_folders": [], "invalid_entries": [], "warnings": ["invalid_json"]}
+    if not isinstance(data, dict):
+        return {"status": "error", "error": "expected JSON object",
+                "folders": {}, "shared_unscoped": False, "missing_folders": [],
+                "duplicate_folders": [], "invalid_entries": [], "warnings": ["not_an_object"]}
+    unknown_keys = sorted(set(data) - {"folders", "shared_unscoped"})
+    if unknown_keys:
+        return {"status": "error", "error": "unsupported keys: " + ", ".join(unknown_keys),
+                "folders": {}, "shared_unscoped": False, "missing_folders": [],
+                "duplicate_folders": [], "invalid_entries": [], "warnings": ["unsupported_keys"]}
+    folders = data.get("folders", {})
+    shared = data.get("shared_unscoped", False)
+    if not isinstance(folders, dict) or not isinstance(shared, bool):
+        return {"status": "error", "error": "folders must be an object and shared_unscoped a boolean",
+                "folders": {}, "shared_unscoped": False, "missing_folders": [],
+                "duplicate_folders": [], "invalid_entries": [], "warnings": ["invalid_types"]}
+
+    entries = _classify_scope_entries(vault_root, folders, warn=False)
+    missing_folders = entries["missing_folders"]
+    duplicate_folders = entries["duplicate_folders"]
+    invalid_entries = entries["invalid_entries"]
+    missing_keys = {_scope_key(folder) for folder in missing_folders}
+    valid_folders = {entries["spelled"][key]: project for key, project in entries["mapped"].items()
+                     if key not in missing_keys}
+
+    warnings = []
+    if missing_folders:
+        warnings.append(f"missing_folders: {len(missing_folders)}")
+    if duplicate_folders:
+        warnings.append(f"duplicate_folders: {len(duplicate_folders)}")
+    if invalid_entries:
+        warnings.append(f"invalid_entries: {len(invalid_entries)}")
+
+    skipped = bool(duplicate_folders or invalid_entries)
+    status = "error" if skipped else ("warning" if missing_folders else "ok")
+    return {
+        "status": status,
+        "folders": valid_folders,
+        "shared_unscoped": shared,
+        # What explicit project reads actually apply while skipped entries remain (#419).
+        "shared_unscoped_effective": shared and not skipped,
+        "blocked_folders": sorted(key or "." for key in entries["blocked"]),
+        "missing_folders": missing_folders,
+        "duplicate_folders": duplicate_folders,
+        "invalid_entries": invalid_entries,
+        "warnings": warnings,
+    }
+
+
+def _save_project_scopes(vault_root, data):
+    path = Path(vault_root) / PROJECT_SCOPES_FILE
+    content = (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    fd, temp_path = tempfile.mkstemp(prefix=".beyin-projects-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+
+
+def manage(vault_root, action, folder=None, project=None, shared_unscoped=None):
+    # Only real edits take the writer lock, which creates .beyin-note-write/ in the vault.
+    # Listing, an unknown action and --shared-unscoped outside add (#607) are refused or
+    # answered by _manage before any write, so they must leave the vault untouched.
+    if action not in ('add', 'remove', 'prune') or (shared_unscoped is not None and action != 'add'):
+        return _manage(vault_root, action, folder, project, shared_unscoped)
+    from types import SimpleNamespace
+    from beyin_v3_notes import locked
+    with locked(SimpleNamespace(root=Path(vault_root).resolve())):
+        return _manage(vault_root, action, folder, project, shared_unscoped)
+
+
+def _manage(vault_root, action, folder=None, project=None, shared_unscoped=None):
+    """CLI handler for beyin.py project-scope list|add|remove|prune."""
+    if shared_unscoped is not None and action != "add":
+        raise ValueError("--shared-unscoped is only supported with project-scope add; "
+                         "use project-scope add --folder <existing-folder> --project <project> "
+                         "--shared-unscoped on|off")
+    vault_root = Path(vault_root)
+    path = vault_root / PROJECT_SCOPES_FILE
+
+    if action == "list":
+        report = check_project_scopes(vault_root)
+        report["action"] = "list"
+        return report
+
+    if path.is_symlink():
+        raise ValueError('project scopes must be a regular vault-local file')
+    if path.exists():
+        # Never replace malformed user configuration with an empty object.
+        data = json.loads(path.read_text(encoding='utf-8-sig'))
+        if (not isinstance(data, dict) or set(data) - {'folders', 'shared_unscoped'} or
+                not isinstance(data.get('folders', {}), dict) or
+                not isinstance(data.get('shared_unscoped', False), bool)):
+            raise ValueError('invalid project scopes configuration; preserve and repair it first')
+        for configured_folder, configured_project in data.get('folders', {}).items():
+            if action != "prune":
+                try:
+                    _scope_path(configured_folder)
+                except ValueError as exc:
+                    # Name the entry; prune or a manual edit repairs it (#419).
+                    raise ValueError(f"{exc}: {_scope_entry_label(configured_folder)} in {PROJECT_SCOPES_FILE}; "
+                                     "fix it or run project-scope prune") from None
+            if not isinstance(configured_project, str) or not configured_project.strip():
+                raise ValueError('project scope names must be non-empty strings')
+
+    if action == "add":
+        if not folder or not isinstance(project, str) or not project.strip():
+            raise ValueError("project-scope add requires both --folder and --project")
+        folder_norm = _scope_path(folder)
+        if not _scope_folder_exists(vault_root, folder_norm):
+            raise ValueError("project scope folder not found in the vault: " + folder_norm)
+        data = {}
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8-sig"))
+            except Exception as exc:
+                raise ValueError(f"existing {PROJECT_SCOPES_FILE} is invalid JSON: {exc}") from exc
+            if not isinstance(data, dict):
+                data = {}
+        folders = data.get("folders", {})
+        if not isinstance(folders, dict):
+            folders = {}
+        # An explicit add reassigns this folder's existing normalized spelling.
+        for existing in list(folders):
+            if _scope_key(existing) == _scope_key(folder_norm):
+                del folders[existing]
+        folders[folder_norm] = project.strip()
+        data["folders"] = folders
+        if shared_unscoped is not None:
+            data["shared_unscoped"] = (shared_unscoped == "on")
+        elif "shared_unscoped" not in data:
+            data["shared_unscoped"] = False
+        _save_project_scopes(vault_root, data)
+        return {"status": "saved", "action": "add", "folder": folder_norm, "project": project.strip(),
+                "folders": folders, "shared_unscoped": data["shared_unscoped"]}
+
+    if action == "remove":
+        if not folder:
+            raise ValueError("project-scope remove requires --folder")
+        folder_norm = _scope_path(folder)
+        if not path.exists():
+            raise ValueError(f"{PROJECT_SCOPES_FILE} does not exist")
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+        except Exception as exc:
+            raise ValueError(f"existing {PROJECT_SCOPES_FILE} is invalid JSON: {exc}") from exc
+        folders = data.get("folders", {})
+        if not isinstance(folders, dict):
+            raise ValueError(f"{PROJECT_SCOPES_FILE} folders must be an object")
+
+        target_key = _scope_key(folder_norm)
+        matched_folder = next((f for f in folders if _scope_key(f) == target_key), None)
+        if not matched_folder:
+            raise ValueError(f"folder not found in project scopes: {folder_norm}")
+        del folders[matched_folder]
+        data["folders"] = folders
+        _save_project_scopes(vault_root, data)
+        return {"status": "saved", "action": "remove", "folder": matched_folder,
+                "folders": folders, "shared_unscoped": data.get("shared_unscoped", False)}
+
+    if action == "prune":
+        if not path.exists():
+            return {"status": "ok", "action": "prune", "pruned": [], "message": f"{PROJECT_SCOPES_FILE} absent", "folders": {}}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+        except Exception as exc:
+            raise ValueError(f"existing {PROJECT_SCOPES_FILE} is invalid JSON: {exc}") from exc
+        folders = data.get("folders", {})
+        if not isinstance(folders, dict):
+            raise ValueError(f"{PROJECT_SCOPES_FILE} folders must be an object")
+        pruned = []
+        for raw_folder in list(folders.keys()):
+            try:
+                norm = _scope_path(raw_folder)
+                if not _scope_folder_exists(vault_root, norm):
+                    pruned.append(raw_folder)
+                    del folders[raw_folder]
+            except ValueError:
+                pruned.append(raw_folder)
+                del folders[raw_folder]
+        if pruned:
+            data["folders"] = folders
+            _save_project_scopes(vault_root, data)
+            return {"status": "saved", "action": "prune", "pruned": pruned, "folders": folders,
+                    "shared_unscoped": data.get("shared_unscoped", False)}
+        return {"status": "ok", "action": "prune", "pruned": [], "message": "no missing folders to prune",
+                "folders": folders, "shared_unscoped": data.get("shared_unscoped", False)}
+
+    raise ValueError("unknown project-scope action: " + str(action))
+
+
+STANDARD_PROJECT_FOLDERS = ('projects', 'Projeler', 'projeler', 'Projects', '🏰 300-Projects', '300-Projects')
+
+
+def candidate_project_folders(vault_root=None) -> list[str]:
+    """Candidate project parent folders for rule discovery and project resolution (#467).
+    Prioritizes standard conventions and discovers root directories ending with
+    '-Projects' or '-Projeler' (such as official template '🏰 300-Projects').
+    """
+    seen = set()
+    result = []
+
+    def add(name: str):
+        if name and name not in seen:
+            seen.add(name)
+            result.append(name)
+
+    for folder in ('projects', 'Projeler', 'projeler', 'Projects', '🏰 300-Projects', '300-Projects'):
+        add(folder)
+
+    if vault_root is not None:
+        try:
+            root = Path(vault_root)
+            if root.is_dir():
+                for entry in sorted(root.iterdir()):
+                    if entry.is_dir() and not entry.is_symlink():
+                        name = entry.name
+                        lower = name.lower()
+                        if (
+                            lower.endswith(('-projects', '-projeler', '_projects', '_projeler')) or
+                            lower in ('projects', 'projeler')
+                        ):
+                            add(name)
+        except OSError:
+            pass
+
+    return result
+
+
+def is_project_parent_folder(name: str, vault_root=None) -> bool:
+    if not isinstance(name, str) or not name:
+        return False
+    if name in candidate_project_folders(vault_root):
+        return True
+    lower = name.lower()
+    return (
+        lower in ('projects', 'projeler') or
+        lower.endswith(('-projects', '-projeler', '_projects', '_projeler'))
+    )
+
+
+def resolve_active_project(vault, cwd):
+    """Resolve the active project name from the current working directory.
+    Matches .beyin-projects.json rules and standard/discovered project folders.
+    Also handles sibling/external repositories outside the vault.
+    Returns None if unscoped or ambiguous.
+    """
+    if vault is None or cwd is None:
+        return None
+    try:
+        vault_root = Path(vault).resolve(strict=True)
+        current = Path(cwd).resolve(strict=True)
+    except (RuntimeError, OSError, TypeError, ValueError):
+        # Handle symlink loops, deleted directories, or permission issues gracefully
+        return None
+
+    try:
+        scopes = read_project_scopes(vault_root)
+    except ValueError:
+        scopes = None
+
+    if not current.is_relative_to(vault_root):
+        cand_names = [current.name]
+        for p in current.parents:
+            if p == p.parent:
+                break
+            cand_names.append(p.name)
+            if len(cand_names) >= 4:
+                break
+        # Consider all discovery sources at each depth before walking outward.
+        for cand in cand_names:
+            cand_key = _scope_key(cand)
+            mapped = {project for folder, project in (scopes or {}).get("folders", [])
+                      if cand_key in (_scope_key(project), _scope_key(folder.split("/")[-1]))}
+            if mapped:
+                return next(iter(mapped)) if len(mapped) == 1 else None
+            for folder in candidate_project_folders(vault_root):
+                target = vault_root / folder / cand
+                if target.is_dir() and not target.is_symlink():
+                    return cand
+        return None
+
+    try:
+        rel_path = current.relative_to(vault_root).as_posix()
+    except (ValueError, TypeError):
+        return None
+
+    if scopes and "folders" in scopes:
+        target = _scope_key(rel_path)
+        # A folder named only by a skipped entry never takes its parent's project (#419).
+        blocked = max((len(key) for key in scopes.get("blocked", ())
+                       if key in ("", target) or target.startswith(key + "/")), default=-1)
+        for folder, project in scopes.get("folders", []):
+            if target == folder or target.startswith(folder + "/"):
+                if len(folder) > blocked:
+                    return project
+                break
+
+    parts = rel_path.split("/")
+    if len(parts) >= 2 and is_project_parent_folder(parts[0], vault_root):
+        return parts[1]
+
+    return None
+
+
+def resolve_project_from_query(vault, query):
+    """Detect if the query explicitly mentions a known project scope from the vault.
+    Returns the canonical project name if exactly one known project is mentioned,
+    or None if ambiguous (multiple mentioned) or none mentioned.
+    """
+    if not vault or not query or not isinstance(query, str) or not query.strip():
+        return None
+    try:
+        vault_root = Path(vault).resolve(strict=True)
+    except (RuntimeError, OSError, TypeError, ValueError):
+        return None
+
+    try:
+        scopes = read_project_scopes(vault_root)
+    except ValueError:
+        scopes = None
+
+    known = {}
+    if scopes and "folders" in scopes:
+        for folder, proj in scopes.get("folders", []):
+            known.setdefault(_scope_key(proj), set()).add(proj)
+            base = folder.split("/")[-1]
+            if base:
+                known.setdefault(_scope_key(base), set()).add(proj)
+
+    for folder in candidate_project_folders(vault_root):
+        p_dir = vault_root / folder
+        if p_dir.is_dir():
+            try:
+                for cand in p_dir.iterdir():
+                    if cand.is_dir() and not cand.is_symlink():
+                        known.setdefault(_scope_key(cand.name), {cand.name})
+            except OSError:
+                pass
+
+    if not known:
+        return None
+
+    q_folded = _scope_key(query)
+    matches = set()
+    for key, canon in known.items():
+        if len(key) < 3:
+            continue
+        pattern = r'(?<![\w\-])' + re.escape(key) + r'(?![\w\-])'
+        if re.search(pattern, q_folded):
+            matches.update(canon)
+
+    if len(matches) == 1:
+        return next(iter(matches))
+    return None

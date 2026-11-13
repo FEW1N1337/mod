@@ -1,0 +1,6 @@
+name: beyin-v3
+version: 1.0.0
+description: Beyin V3 source-backed memory for Hermes (context on every turn, SessionEnd receipt tracking).
+provides_hooks:
+  - pre_llm_call
+  - on_session_finalize
